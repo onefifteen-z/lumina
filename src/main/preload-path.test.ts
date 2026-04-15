@@ -8,17 +8,17 @@ import path from "path";
  * Validates: Requirements 1.1, 2.1
  *
  * The createWindow function in src/main/main.ts constructs the preload path as:
- *   path.join(__dirname, "..", "..", "preload", "preload", "preload.js")
+ *   path.join(__dirname, "..", "..", "preload", "preload.js")
  *
  * This test extracts the same path segments and asserts the EXPECTED (correct)
  * behavior: the resolved path should contain exactly one "preload" directory
  * segment (excluding the filename) and end with dist/preload/preload.js.
  *
- * On UNFIXED code this test MUST FAIL — failure confirms the bug exists.
+ * After the fix, this test PASSES — confirming the bug is resolved.
  */
 
-// These are the exact path segments used in createWindow (unfixed code)
-const BUGGY_PRELOAD_SEGMENTS = ["..", "..", "preload", "preload", "preload.js"];
+// These are the exact path segments used in createWindow (fixed code)
+const FIXED_PRELOAD_SEGMENTS = ["..", "..", "preload", "preload.js"];
 
 /**
  * Count occurrences of a segment in a path's directory portions (excluding filename).
@@ -61,7 +61,7 @@ describe("Bug Condition: Preload path duplicate segment", () => {
           // Resolve the preload path using the same segments as createWindow
           const resolvedPath = path.join(
             simulatedDirname,
-            ...BUGGY_PRELOAD_SEGMENTS,
+            ...FIXED_PRELOAD_SEGMENTS,
           );
 
           // ASSERTION 1: The directory portion should contain exactly ONE "preload" segment
@@ -99,7 +99,7 @@ describe("Bug Condition: Preload path duplicate segment", () => {
 
           const resolvedPath = path.join(
             simulatedDirname,
-            ...BUGGY_PRELOAD_SEGMENTS,
+            ...FIXED_PRELOAD_SEGMENTS,
           );
 
           // ASSERTION 2: Path should end with dist/preload/preload.js

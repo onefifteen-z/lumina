@@ -86,6 +86,22 @@ export interface VaultChangeEvent {
   filename: string;
 }
 
+/** A single message in a chat conversation. */
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: string; // ISO 8601
+}
+
+/** A complete chat session. */
+export interface ChatSession {
+  id: string;
+  systemPrompt: string;
+  messages: ChatMessage[];
+  createdAt: string; // ISO 8601
+}
+
 /** Typed IPC bridge API exposed to the renderer via contextBridge. */
 export interface WikiAPI {
   // Article CRUD

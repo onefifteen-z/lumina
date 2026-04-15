@@ -93,6 +93,12 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 - [x] Keyboard accessibility (focus rings, Tab navigation, Enter/Space activation)
 - [x] Final integration checkpoint — 108 tests passing, TypeScript clean, zero diagnostics
 
+## LLM Chat Feature
+
+Adding a full-featured LLM chat page to Lumina with multi-turn conversation support, streaming responses, and Markdown rendering. See `.kiro/specs/llm-chat/` for the full spec.
+
+- [x] ChatMessage and ChatSession shared type interfaces
+
 ## License
 
 MIT

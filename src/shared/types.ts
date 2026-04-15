@@ -1,0 +1,115 @@
+// Shared type definitions for LLM Wiki
+
+/** YAML frontmatter metadata stored at the top of each Markdown article file. */
+export interface FrontmatterData {
+  title: string;
+  tags: string[];
+  created: string; // ISO 8601 timestamp
+  modified: string; // ISO 8601 timestamp
+  [key: string]: unknown; // Allow additional user-defined fields
+}
+
+/** In-memory representation of a wiki article, mapping directly to a Markdown file on disk. */
+export interface ArticleFile {
+  frontmatter: FrontmatterData;
+  content: string; // Markdown body (everything after frontmatter)
+  rawContent: string; // Original full file content for round-trip fidelity
+}
+
+/** Lightweight article metadata used for lists, search indexing, and link resolution. */
+export interface ArticleMeta {
+  title: string;
+  filename: string;
+  tags: string[];
+  created: string;
+  modified: string;
+  wikilinks: string[]; // Titles of articles linked from this article
+  excerpt: string; // First ~200 chars of body for search result previews
+}
+
+/** A single search result entry. */
+export interface SearchResult {
+  title: string;
+  filename: string;
+  excerpt: string;
+  matches: SearchMatch[];
+  score: number;
+}
+
+/** Describes where a search match occurred. */
+export interface SearchMatch {
+  field: "title" | "content" | "tags";
+  snippet: string; // Context around the match with highlights
+}
+
+/** A parsed wikilink reference extracted from Markdown content. */
+export interface WikilinkRef {
+  target: string; // The article title referenced
+  alias?: string; // Optional display text: [[target|alias]]
+  position: { start: number; end: number }; // Character offsets in content
+}
+
+/** A parsed embed reference extracted from Markdown content. */
+export interface EmbedRef {
+  target: string; // The article title to embed
+  position: { start: number; end: number }; // Character offsets in content
+}
+
+/** Configuration for an LLM provider endpoint. */
+export interface LLMProviderConfig {
+  endpointUrl: string;
+  model: string;
+  // API key stored separately in OS keychain, referenced by provider ID
+}
+
+/** Application-level configuration persisted via electron-store. */
+export interface AppConfig {
+  vaultPath: string;
+  llmProvider: LLMProviderConfig | null;
+  theme: "light" | "dark" | "system";
+}
+
+/** Parameters for LLM content assistance actions. */
+export interface LLMAssistParams {
+  text: string;
+  action: "summarize" | "expand" | "refine";
+}
+
+/** Event emitted by the vault file watcher. */
+export interface VaultChangeEvent {
+  type: "add" | "change" | "unlink";
+  filename: string;
+}
+
+/** Typed IPC bridge API exposed to the renderer via contextBridge. */
+export interface WikiAPI {
+  // Article CRUD
+  listArticles(): Promise<ArticleMeta[]>;
+  getArticle(title: string): Promise<ArticleFile>;
+  saveArticle(article: ArticleFile): Promise<void>;
+  deleteArticle(title: string): Promise<void>;
+  articleExists(title: string): Promise<boolean>;
+
+  // Search
+  search(query: string): Promise<SearchResult[]>;
+  searchByTag(tag: string): Promise<ArticleMeta[]>;
+
+  // Link resolution
+  getBacklinks(title: string): Promise<string[]>;
+  resolveWikilink(target: string): Promise<{ exists: boolean; title: string }>;
+
+  // LLM
+  generateArticle(prompt: string): Promise<AsyncIterable<string>>;
+  assistContent(params: LLMAssistParams): Promise<string>;
+  isLLMAvailable(): Promise<boolean>;
+
+  // Config
+  getConfig(): Promise<AppConfig>;
+  saveConfig(config: Partial<AppConfig>): Promise<void>;
+  testLLMConnection(config: LLMProviderConfig): Promise<boolean>;
+  selectVaultFolder(): Promise<string | null>;
+
+  // Lifecycle
+  onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
+  confirmClose(): Promise<boolean>;
+}

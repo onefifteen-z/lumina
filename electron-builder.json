@@ -1,0 +1,17 @@
+{
+  "appId": "com.llmwiki.app",
+  "productName": "LLM Wiki",
+  "directories": {
+    "output": "build"
+  },
+  "files": ["dist/**/*", "package.json"],
+  "mac": {
+    "target": "dmg"
+  },
+  "win": {
+    "target": "nsis"
+  },
+  "linux": {
+    "target": "AppImage"
+  }
+}

@@ -8,6 +8,7 @@ import { serializeArticleFile } from '../../shared/markdown-parser';
 import { obsidianSyntaxExtensions } from '../extensions/obsidian-syntax';
 import { wikilinkAutocomplete } from '../extensions/wikilink-autocomplete';
 import type { ArticleFile, FrontmatterData } from '../../shared/types';
+import LLMAssistPanel from './LLMAssistPanel';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -28,6 +29,11 @@ const ArticleEditor: React.FC = () => {
   const savedContentRef = useRef('');
   const titleRef = useRef('');
   const [isDirty, setIsDirty] = useState(false);
+
+  // LLM Assist panel state
+  const [assistSelection, setAssistSelection] = useState('');
+  const [assistPosition, setAssistPosition] = useState<{ top: number; left: number } | null>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   // Keep titleRef in sync with title state
   useEffect(() => {
@@ -149,6 +155,26 @@ const ArticleEditor: React.FC = () => {
         const dirty = titleRef.current !== savedTitleRef.current || currentContent !== savedContentRef.current;
         setIsDirty(dirty);
       }
+      // Track text selection for LLM assist panel
+      if (update.selectionSet || update.docChanged) {
+        const sel = update.state.selection.main;
+        const selectedText = update.state.sliceDoc(sel.from, sel.to);
+        if (selectedText.trim().length > 0) {
+          // Compute position relative to the editor container
+          const coords = update.view.coordsAtPos(sel.from);
+          if (coords && editorContainerRef.current) {
+            const containerRect = editorContainerRef.current.getBoundingClientRect();
+            setAssistSelection(selectedText);
+            setAssistPosition({
+              top: coords.bottom - containerRect.top + 4,
+              left: Math.min(coords.left - containerRect.left, containerRect.width - 320),
+            });
+          }
+        } else {
+          setAssistSelection('');
+          setAssistPosition(null);
+        }
+      }
     });
 
     const state = EditorState.create({
@@ -262,6 +288,21 @@ const ArticleEditor: React.FC = () => {
     };
   }, []);
 
+  const handleAssistAccept = useCallback((replacement: string) => {
+    if (!viewRef.current) return;
+    const sel = viewRef.current.state.selection.main;
+    viewRef.current.dispatch({
+      changes: { from: sel.from, to: sel.to, insert: replacement },
+    });
+    setAssistSelection('');
+    setAssistPosition(null);
+  }, []);
+
+  const handleAssistDismiss = useCallback(() => {
+    setAssistSelection('');
+    setAssistPosition(null);
+  }, []);
+
   const handleBack = useCallback(() => {
     if (isDirty) {
       const discard = window.confirm('You have unsaved changes. Discard them and go back?');
@@ -321,7 +362,15 @@ const ArticleEditor: React.FC = () => {
       {loading ? (
         <div className="article-editor__loading">Loading article…</div>
       ) : (
-        <div className="article-editor__cm" ref={editorRef} />
+        <div className="article-editor__cm-wrapper" ref={editorContainerRef}>
+          <div className="article-editor__cm" ref={editorRef} />
+          <LLMAssistPanel
+            selectedText={assistSelection}
+            position={assistPosition}
+            onAccept={handleAssistAccept}
+            onDismiss={handleAssistDismiss}
+          />
+        </div>
       )}
     </div>
   );

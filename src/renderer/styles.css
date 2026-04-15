@@ -1193,3 +1193,208 @@ body {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+
+/* ── LLM Assist Panel ───────────────────────────────────────── */
+
+.llm-assist-panel {
+  position: absolute;
+  z-index: 100;
+  min-width: 280px;
+  max-width: 480px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.llm-assist-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.llm-assist-panel__action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.llm-assist-panel__action-btn:hover {
+  background: var(--color-sidebar-hover);
+}
+
+.llm-assist-panel__action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.llm-assist-panel__close-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.llm-assist-panel__close-btn:hover {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text);
+}
+
+.llm-assist-panel__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.llm-assist-panel__spinner {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.llm-assist-panel__result {
+  padding: 10px 14px;
+}
+
+.llm-assist-panel__diff {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.llm-assist-panel__diff-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+.llm-assist-panel__diff-label:first-child {
+  margin-top: 0;
+}
+
+.llm-assist-panel__diff-label--old {
+  color: #dc2626;
+}
+
+.llm-assist-panel__diff-label--new {
+  color: #16a34a;
+}
+
+.llm-assist-panel__diff-content {
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.llm-assist-panel__diff-content--old {
+  background: rgba(220, 38, 38, 0.06);
+  border: 1px solid rgba(220, 38, 38, 0.15);
+  color: var(--color-text-secondary);
+}
+
+.llm-assist-panel__diff-content--new {
+  background: rgba(22, 163, 74, 0.06);
+  border: 1px solid rgba(22, 163, 74, 0.15);
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .llm-assist-panel__diff-content--old {
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.2);
+}
+
+[data-theme="dark"] .llm-assist-panel__diff-content--new {
+  background: rgba(22, 163, 74, 0.1);
+  border-color: rgba(22, 163, 74, 0.2);
+}
+
+.llm-assist-panel__result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.llm-assist-panel__btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.llm-assist-panel__btn:hover {
+  background: var(--color-sidebar-hover);
+}
+
+.llm-assist-panel__btn--accept {
+  background: #16a34a;
+  color: #fff;
+  border-color: #16a34a;
+}
+
+.llm-assist-panel__btn--accept:hover {
+  background: #15803d;
+}
+
+.llm-assist-panel__btn--reject {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.llm-assist-panel__btn--reject:hover {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text);
+}
+
+.llm-assist-panel__error-state {
+  padding: 10px 14px;
+}
+
+.llm-assist-panel__error-msg {
+  font-size: 13px;
+  color: #dc2626;
+  margin-bottom: 8px;
+}
+
+/* ── Editor CM Wrapper (for assist panel positioning) ───────── */
+
+.article-editor__cm-wrapper {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+}

@@ -44,6 +44,7 @@ npm run dev
   - [x] SearchPanel with debounced full-text search, highlighted match snippets, and tag-based search (`#` prefix)
 - [-] LLM integration UI
   - [x] Generate Article dialog (AI-powered article generation with streaming preview, accept/cancel flow)
+  - [x] LLMAssistPanel (floating panel for summarize/expand/refine on selected text with diff view)
 - [x] First-run experience and offline handling
   - [x] First-run vault selection (welcome screen with folder picker)
   - [x] Offline mode handling (network status context, offline banner, LLM availability tracking)

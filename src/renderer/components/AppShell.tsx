@@ -209,8 +209,8 @@ const SidebarLayout: React.FC<{
         {/* Sidebar Panel */}
         {showSidebarPanel && (
           <Sidebar>
-            {/* Drag zone matching icon rail height — no visible content */}
-            <div style={{ height: '52px', flexShrink: 0, WebkitAppRegion: 'drag' } as React.CSSProperties} />
+            {/* Drag zone matching traffic lights height — no visible content */}
+            <div style={{ height: '76px', flexShrink: 0, WebkitAppRegion: 'drag' } as React.CSSProperties} />
             <SidebarContent>
               {activeView === 'files' && (
                 <FilesView

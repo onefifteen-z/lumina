@@ -269,6 +269,11 @@ const api: WikiAPI = {
   confirmClose() {
     return ipcRenderer.invoke("wiki:confirmClose");
   },
+
+  // Window controls
+  windowMinimize() { return ipcRenderer.invoke("window:minimize"); },
+  windowMaximize() { return ipcRenderer.invoke("window:maximize"); },
+  windowClose()   { return ipcRenderer.invoke("window:close"); },
 };
 
 contextBridge.exposeInMainWorld("api", api);

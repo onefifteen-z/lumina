@@ -17,6 +17,83 @@ export interface IconRailProps {
   onToggleTheme: () => void;
 }
 
+// ── Custom traffic light buttons ───────────────────────────────
+
+const TrafficLights: React.FC = () => {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "8px",
+        padding: "16px 0 8px",
+        width: "100%",
+        WebkitAppRegion: "no-drag",
+        flexShrink: 0,
+      } as React.CSSProperties}
+    >
+      {/* Close — red */}
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={() => window.api.windowClose()}
+        style={{
+          width: 12, height: 12, borderRadius: "50%",
+          background: "#ff5f57", border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 8, fontWeight: "bold", color: "transparent",
+          transition: "color 0.1s",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.color = "#4d0000")}
+        onMouseLeave={e => (e.currentTarget.style.color = "transparent")}
+      >
+        ✕
+      </button>
+      {/* Minimize — yellow */}
+      <button
+        type="button"
+        aria-label="Minimize"
+        onClick={() => window.api.windowMinimize()}
+        style={{
+          width: 12, height: 12, borderRadius: "50%",
+          background: "#febc2e", border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 8, fontWeight: "bold", color: "transparent",
+          transition: "color 0.1s",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.color = "#5a3700")}
+        onMouseLeave={e => (e.currentTarget.style.color = "transparent")}
+      >
+        −
+      </button>
+      {/* Maximize — green */}
+      <button
+        type="button"
+        aria-label="Maximize"
+        onClick={() => window.api.windowMaximize()}
+        style={{
+          width: 12, height: 12, borderRadius: "50%",
+          background: "#28c840", border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 8, fontWeight: "bold", color: "transparent",
+          transition: "color 0.1s",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.color = "#003300")}
+        onMouseLeave={e => (e.currentTarget.style.color = "transparent")}
+      >
+        +
+      </button>
+    </div>
+  );
+};
+
+// ── Nav items ──────────────────────────────────────────────────
+
 const topItems: { view: SidebarView; icon: React.ElementType; label: string }[] = [
   { view: "files", icon: Files, label: "Files" },
   { view: "search", icon: Search, label: "Search" },
@@ -93,13 +170,11 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
       style={{ paddingTop: "0px", paddingBottom: "48px" }}
       className="relative flex flex-col items-center w-11 bg-rail-bg border-r border-border gap-1 shrink-0"
     >
-      {/* Traffic light safe zone — draggable titlebar area */}
-      <div
-        style={{ height: "52px", width: "100%", flexShrink: 0, WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
+      {/* Custom traffic light buttons */}
+      <TrafficLights />
 
       {/* Top group: Files, Search, Bookmarks */}
-      <div className="flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <div className="flex flex-col items-center gap-1 mt-3" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {topItems.map((item, i) => renderButton(item, i))}
       </div>
 

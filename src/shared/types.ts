@@ -150,4 +150,9 @@ export interface WikiAPI {
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
   notifyUnsavedChanges(isDirty: boolean): void;
   confirmClose(): Promise<boolean>;
+
+  // Window controls (custom titlebar)
+  windowMinimize(): Promise<void>;
+  windowMaximize(): Promise<void>;
+  windowClose(): Promise<void>;
 }

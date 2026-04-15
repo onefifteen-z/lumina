@@ -105,6 +105,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] Property-based tests for ChatService (Properties 1–4)
 - [x] Unit tests for ChatService edge cases
 - [x] Chat IPC handlers (startChatSession, sendChatMessage, stopChatGeneration, getChatSession)
+- [x] ChatService initialization in main process
 
 ## License
 

@@ -6,6 +6,7 @@ import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
 import { LLMService } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
+import { ChatService } from "./services/chat-service";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -119,6 +120,9 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Initialize chat service
+  const chatService = new ChatService(llmService, fileSystemService);
+
   // Register all IPC handlers
   registerIpcHandlers({
     fileSystem: fileSystemService,
@@ -126,6 +130,7 @@ app.whenReady().then(async () => {
     llm: llmService,
     config: configService,
     mainWindow: mainWindow,
+    chat: chatService,
   });
 
   createWindow();

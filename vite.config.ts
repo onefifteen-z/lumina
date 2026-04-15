@@ -14,6 +14,7 @@ export default defineConfig({
     alias: {
       "@shared": path.resolve(__dirname, "src/shared"),
     },
+    conditions: ["development", "default"],
   },
   server: {
     port: 5173,

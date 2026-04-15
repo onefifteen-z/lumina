@@ -32,6 +32,7 @@ npm run dev
 - [x] IPC bridge and preload script
 - [-] React UI (browsing, editing, search, settings)
   - [x] AppShell layout with sidebar navigation and theme support
+  - [x] ArticleBrowser with article list, remark rendering, metadata header, and backlinks
 - [ ] LLM integration UI
 - [ ] First-run experience and offline handling
 

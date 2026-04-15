@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import type { WikiAPI } from '../../shared/types';
+import ArticleBrowser from './ArticleBrowser';
 
 // ── Declare window.api for TypeScript ──────────────────────────
 
@@ -32,13 +33,6 @@ const NavContext = createContext<NavigationContext>({
 export const useNavigation = () => useContext(NavContext);
 
 // ── Placeholder components ─────────────────────────────────────
-
-const ArticleBrowser: React.FC = () => (
-  <div className="placeholder-panel">
-    <h2>Articles</h2>
-    <p>Article browser will be implemented here.</p>
-  </div>
-);
 
 const SearchPanel: React.FC = () => (
   <div className="placeholder-panel">

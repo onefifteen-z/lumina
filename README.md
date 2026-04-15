@@ -81,6 +81,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 - [x] Create cn() utility function (clsx + tailwind-merge)
 - [x] Vendor shadcn/ui Button component
 - [x] Vendor shadcn/ui Tooltip component
+- [x] Vendor shadcn/ui Sidebar component (expand/collapse with 200ms transition)
 
 ## License
 

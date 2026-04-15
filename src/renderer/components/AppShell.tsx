@@ -219,7 +219,7 @@ const SidebarLayout: React.FC<{
         <main className="flex-1 overflow-auto bg-main-bg">
           <OfflineBanner />
           {activeView === 'settings' && editingTitle === null && <SettingsPanel />}
-          {activeView !== 'settings' && editingTitle === null && <ArticleBrowser />}
+          {activeView !== 'settings' && editingTitle === null && <ArticleBrowser selectedTitle={selectedTitle} />}
           {editingTitle !== null && <ArticleEditor />}
         </main>
       </div>

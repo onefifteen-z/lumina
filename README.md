@@ -87,6 +87,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 - [x] SearchView component (debounced search, tag search, results display)
 - [x] BookmarksView placeholder component
 - [x] Refactor AppShell with SidebarProvider, IconRail, and new navigation system
+- [x] Refactor ArticleBrowser to viewer-only component (article list extracted to FilesView)
 
 ## License
 

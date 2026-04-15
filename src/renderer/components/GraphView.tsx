@@ -9,7 +9,15 @@ import {
   type SimulationLinkDatum,
 } from "d3-force";
 import type { ArticleMeta } from "../../shared/types";
-import { titleToFilename } from "../../shared/markdown-parser";
+
+/** Show only the leaf name — strip folder prefix if title is path-derived. */
+function displayTitle(article: ArticleMeta): string {
+  if (article.title.includes("/")) {
+    const basename = article.filename.split("/").pop() ?? article.filename;
+    return basename.replace(/\.md$/i, "");
+  }
+  return article.title;
+}
 
 interface GraphNode extends SimulationNodeDatum {
   id: string;
@@ -48,7 +56,7 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     const nodes: GraphNode[] = articles.map((a) => {
       const node: GraphNode = {
         id: a.filename,
-        title: a.title,
+        title: displayTitle(a),
         filename: a.filename,
         linkCount: a.wikilinks.length,
       };

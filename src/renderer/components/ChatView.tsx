@@ -91,7 +91,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   network: 'Network error. Check your connection.',
 };
 
-function friendlyError(type: string): string {
+export function friendlyError(type: string): string {
   return ERROR_MESSAGES[type] ?? 'An unexpected error occurred.';
 }
 

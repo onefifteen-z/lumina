@@ -115,6 +115,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] CodeBlock component (syntax highlighting, copy-to-clipboard)
 - [x] ChatView main component (title bar, welcome placeholder, Markdown rendering, error display, Ctrl/Cmd+N, offline banner)
 - [x] Property-based test for timestamp formatting (Property 5)
+- [x] Unit tests for ChatView (welcome placeholder, error messages, display logic)
 
 ## License
 

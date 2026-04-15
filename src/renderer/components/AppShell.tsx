@@ -9,6 +9,7 @@ import { IconRail, type SidebarView } from './IconRail';
 import { FilesView } from './FilesView';
 import { SearchView } from './SearchView';
 import { BookmarksView } from './BookmarksView';
+import { TocPanel, type TocHeading } from './TocPanel';
 import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
@@ -146,6 +147,10 @@ const SidebarLayout: React.FC<{
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
   onGenerateArticle: () => void;
+  currentTheme: 'light' | 'dark' | 'system';
+  onToggleTheme: () => void;
+  headings: TocHeading[];
+  onHeadingsChange: (headings: TocHeading[]) => void;
 }> = ({
   activeView,
   onViewChange,
@@ -157,6 +162,10 @@ const SidebarLayout: React.FC<{
   onSelectArticle,
   onNewArticle,
   onGenerateArticle,
+  currentTheme,
+  onToggleTheme,
+  headings,
+  onHeadingsChange,
 }) => {
     const { open, setOpen } = useSidebar();
 
@@ -190,6 +199,8 @@ const SidebarLayout: React.FC<{
           activeView={activeView}
           onViewChange={handleViewChange}
           isSidebarOpen={open}
+          currentTheme={currentTheme}
+          onToggleTheme={onToggleTheme}
         />
 
         {/* Sidebar Panel */}
@@ -220,13 +231,23 @@ const SidebarLayout: React.FC<{
           </Sidebar>
         )}
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-auto bg-main-bg">
-          <OfflineBanner />
-          {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
-          {activeView !== 'settings' && editingFilename === null && <ArticleBrowser selectedFilename={selectedFilename} />}
-          {editingFilename !== null && <ArticleEditor />}
-        </main>
+        {/* Main Content Area + TOC */}
+        <div className="flex flex-1 overflow-hidden">
+          <main className="flex-1 overflow-auto bg-main-bg">
+            <OfflineBanner />
+            {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
+            {activeView !== 'settings' && editingFilename === null && (
+              <ArticleBrowser
+                selectedFilename={selectedFilename}
+                onHeadingsChange={onHeadingsChange}
+              />
+            )}
+            {editingFilename !== null && <ArticleEditor />}
+          </main>
+          {activeView !== 'settings' && editingFilename === null && (
+            <TocPanel headings={headings} />
+          )}
+        </div>
       </div>
     );
   };
@@ -239,6 +260,8 @@ const AppShell: React.FC = () => {
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
+  const [headings, setHeadings] = useState<TocHeading[]>([]);
 
   // Article list state (shared with FilesView)
   const [articles, setArticles] = useState<ArticleMeta[]>([]);
@@ -259,6 +282,7 @@ const AppShell: React.FC = () => {
       try {
         const config = await window.api.getConfig();
         if (!cancelled) {
+          setTheme(config.theme);
           applyTheme(resolveTheme(config.theme));
           setFirstRun(!config.vaultPath);
         }
@@ -370,6 +394,17 @@ const AppShell: React.FC = () => {
     setGeneratedContent(null);
   }, []);
 
+  const handleToggleTheme = useCallback(async () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    applyTheme(next);
+    try {
+      await window.api.saveConfig({ theme: next });
+    } catch {
+      // ignore persistence failure
+    }
+  }, [theme]);
+
   const navCtx: NavigationContext = {
     view: activeView,
     navigate,
@@ -394,7 +429,7 @@ const AppShell: React.FC = () => {
     <NetworkStatusProvider>
       <NavContext.Provider value={navCtx}>
         <TooltipProvider>
-          <SidebarProvider defaultOpen={true}>
+          <SidebarProvider defaultOpen={true} className="h-full w-full">
             <SidebarLayout
               activeView={activeView}
               onViewChange={navigate}
@@ -406,6 +441,10 @@ const AppShell: React.FC = () => {
               onSelectArticle={handleSelectArticle}
               onNewArticle={createNewArticle}
               onGenerateArticle={() => setGenerateOpen(true)}
+              currentTheme={theme}
+              onToggleTheme={handleToggleTheme}
+              headings={headings}
+              onHeadingsChange={setHeadings}
             />
           </SidebarProvider>
         </TooltipProvider>

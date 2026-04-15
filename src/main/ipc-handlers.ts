@@ -82,12 +82,12 @@ export function registerIpcHandlers(services: {
         return await fileSystem.readArticle(filename);
       } catch (err) {
         // Handle corrupted Markdown files: return raw content with warning
-        console.warn(`Corrupted or unreadable article "${title}":`, err);
+        console.warn(`Corrupted or unreadable article "${filename}":`, err);
         try {
           const raw = await fileSystem.readRawFile(filename);
           return {
             frontmatter: {
-              title,
+              title: filename,
               tags: [],
               created: "",
               modified: "",

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
 import remarkHtml from 'remark-html';
 import remarkWikilinks from '../plugins/remark-wikilinks';
 import remarkEmbeds from '../plugins/remark-embeds';
@@ -8,12 +9,14 @@ import remarkTags from '../plugins/remark-tags';
 import type { ArticleFile } from '../../shared/types';
 import { titleToFilename } from '../../shared/markdown-parser';
 import { useNavigation } from './AppShell';
+import { extractHeadings, addHeadingIds, type TocHeading } from './TocPanel';
 
 // ── Remark pipeline ────────────────────────────────────────────
 
 const markdownToHtml = (markdown: string): string => {
   const result = unified()
     .use(remarkParse)
+    .use(remarkGfm)
     .use(remarkWikilinks)
     .use(remarkEmbeds)
     .use(remarkTags)
@@ -41,9 +44,10 @@ const formatDate = (iso: string): string => {
 
 interface ArticleBrowserProps {
   selectedFilename: string | null;
+  onHeadingsChange?: (headings: TocHeading[]) => void;
 }
 
-const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename }) => {
+const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHeadingsChange }) => {
   const { editArticle } = useNavigation();
 
   // Selected article state
@@ -66,10 +70,13 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename }) => 
     try {
       const fetched = await window.api.getArticle(filename);
       const links = await window.api.getBacklinks(fetched.frontmatter.title);
+      const headings = extractHeadings(fetched.content);
+      const html = addHeadingIds(markdownToHtml(fetched.content), headings);
       setArticle(fetched);
       setCurrentFilename(filename);
-      setRenderedHtml(markdownToHtml(fetched.content));
+      setRenderedHtml(html);
       setBacklinks(links);
+      onHeadingsChange?.(headings);
     } catch (err) {
       setArticleError(err instanceof Error ? err.message : 'Failed to load article');
     } finally {
@@ -87,6 +94,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename }) => 
       setRenderedHtml('');
       setBacklinks([]);
       setArticleError(null);
+      onHeadingsChange?.([]);
     }
   }, [selectedFilename, selectArticle]);
 

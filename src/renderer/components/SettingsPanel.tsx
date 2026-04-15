@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { AppConfig, LLMProviderConfig } from '../../shared/types';
+import type { LLMProviderConfig } from '../../shared/types';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
@@ -9,9 +9,8 @@ const SettingsPanel: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
 
-  // Vault & theme
+  // Vault
   const [vaultPath, setVaultPath] = useState('');
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -31,7 +30,6 @@ const SettingsPanel: React.FC = () => {
         ]);
         if (cancelled) return;
         setVaultPath(config.vaultPath);
-        setTheme(config.theme);
         setEndpointUrl(config.llmProvider?.endpointUrl ?? '');
         setModel(config.llmProvider?.model ?? '');
         setApiKey(storedKey);
@@ -52,18 +50,8 @@ const SettingsPanel: React.FC = () => {
       const llmProvider: LLMProviderConfig | null =
         endpointUrl && model ? { endpointUrl, model } : null;
 
-      await window.api.saveConfig({ vaultPath, theme, llmProvider });
+      await window.api.saveConfig({ vaultPath, llmProvider });
       await window.api.saveApiKey(apiKey);
-
-      // Apply theme immediately
-      document.documentElement.setAttribute(
-        'data-theme',
-        theme === 'system'
-          ? window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark'
-            : 'light'
-          : theme,
-      );
 
       setSaveMsg('Settings saved');
       setTimeout(() => setSaveMsg(null), 3000);
@@ -72,7 +60,7 @@ const SettingsPanel: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [endpointUrl, apiKey, model, vaultPath, theme]);
+  }, [endpointUrl, apiKey, model, vaultPath]);
 
   // Test LLM connection
   const handleTestConnection = useCallback(async () => {
@@ -127,24 +115,6 @@ const SettingsPanel: React.FC = () => {
               Browse…
             </button>
           </div>
-        </label>
-      </section>
-
-      {/* ── Theme Section ─────────────────────────────── */}
-      <section className="settings-section">
-        <h3 className="settings-section__heading">Appearance</h3>
-
-        <label className="settings-field">
-          <span className="settings-field__label">Theme</span>
-          <select
-            className="settings-field__select"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as AppConfig['theme'])}
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
         </label>
       </section>
 

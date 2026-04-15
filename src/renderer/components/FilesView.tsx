@@ -1,7 +1,181 @@
 import * as React from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Plus, Sparkles, ChevronRight } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
+
+// ── Tree data model ────────────────────────────────────────────
+
+type FileNode = {
+  type: "file";
+  name: string;
+  article: ArticleMeta;
+};
+
+type FolderNode = {
+  type: "folder";
+  name: string;
+  path: string; // vault-relative folder path (no trailing slash)
+  children: TreeNode[];
+};
+
+type TreeNode = FileNode | FolderNode;
+
+/** Derive the display label for a file leaf. */
+function fileDisplayName(article: ArticleMeta): string {
+  // If the title contains "/" it was derived from the full path, not frontmatter.
+  // Show only the basename stem so it reads naturally inside the tree.
+  if (article.title.includes("/")) {
+    const basename = article.filename.split("/").pop() ?? article.filename;
+    return basename.replace(/\.md$/i, "").replace(/-/g, " ");
+  }
+  return article.title;
+}
+
+/** Build a nested tree from a flat list of ArticleMeta. */
+function buildTree(articles: ArticleMeta[]): TreeNode[] {
+  const root: FolderNode = { type: "folder", name: "", path: "", children: [] };
+
+  for (const article of articles) {
+    const parts = article.filename.split("/");
+    let current = root;
+
+    // Walk / create intermediate folder nodes
+    for (let i = 0; i < parts.length - 1; i++) {
+      const folderName = parts[i];
+      const folderPath = parts.slice(0, i + 1).join("/");
+      let folder = current.children.find(
+        (n): n is FolderNode => n.type === "folder" && n.name === folderName
+      );
+      if (!folder) {
+        folder = { type: "folder", name: folderName, path: folderPath, children: [] };
+        current.children.push(folder);
+      }
+      current = folder;
+    }
+
+    current.children.push({ type: "file", name: fileDisplayName(article), article });
+  }
+
+  return sortNodes(root.children);
+}
+
+/** Folders first (alpha), then files (most-recently-modified first). */
+function sortNodes(nodes: TreeNode[]): TreeNode[] {
+  return [...nodes].sort((a, b) => {
+    if (a.type === "folder" && b.type === "file") return -1;
+    if (a.type === "file" && b.type === "folder") return 1;
+    if (a.type === "folder" && b.type === "folder") {
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    }
+    // Both files — most recently modified first
+    const ta = new Date((a as FileNode).article.modified).getTime();
+    const tb = new Date((b as FileNode).article.modified).getTime();
+    return tb - ta;
+  });
+}
+
+/** Collect all folder paths in the tree (for default-expand). */
+function collectFolderPaths(nodes: TreeNode[], acc: Set<string> = new Set()): Set<string> {
+  for (const node of nodes) {
+    if (node.type === "folder") {
+      acc.add(node.path);
+      collectFolderPaths(node.children, acc);
+    }
+  }
+  return acc;
+}
+
+// ── Tree node renderer ─────────────────────────────────────────
+
+interface TreeNodeProps {
+  node: TreeNode;
+  depth: number;
+  selectedFilename: string | null;
+  expandedFolders: Set<string>;
+  onSelectArticle: (filename: string) => void;
+  onToggleFolder: (path: string) => void;
+}
+
+const TreeNodeRow: React.FC<TreeNodeProps> = ({
+  node,
+  depth,
+  selectedFilename,
+  expandedFolders,
+  onSelectArticle,
+  onToggleFolder,
+}) => {
+  const indent = 6 + depth * 16;
+
+  if (node.type === "file") {
+    const isSelected = node.article.filename === selectedFilename;
+    return (
+      <button
+        type="button"
+        title={node.article.title}
+        onClick={() => onSelectArticle(node.article.filename)}
+        style={{ paddingLeft: `${indent + 18}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
+        className={cn(
+          "block w-full text-left truncate transition-colors",
+          "focus-visible:outline-none",
+          isSelected
+            ? "bg-accent/20 text-text-primary"
+            : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+        )}
+      >
+        {node.name}
+      </button>
+    );
+  }
+
+  // Folder node
+  const isExpanded = expandedFolders.has(node.path);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onToggleFolder(node.path)}
+        style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
+        className={cn(
+          "flex items-center gap-1 w-full",
+          "text-text-primary hover:bg-surface-hover transition-colors cursor-pointer",
+          "focus-visible:outline-none"
+        )}
+      >
+        <ChevronRight
+          size={11}
+          className={cn(
+            "shrink-0 text-text-secondary transition-transform duration-150",
+            isExpanded && "rotate-90"
+          )}
+        />
+        <span className="truncate font-medium">{node.name}</span>
+      </button>
+      {isExpanded && (
+        <div className="relative">
+          {/* Vertical guide line */}
+          <div
+            className="absolute top-0 bottom-0 w-px bg-border/50"
+            style={{ left: `${indent + 5}px` }}
+          />
+          {sortNodes(node.children).map((child) => (
+            <TreeNodeRow
+              key={child.type === "file" ? child.article.filename : child.path}
+              node={child}
+              depth={depth + 1}
+              selectedFilename={selectedFilename}
+              expandedFolders={expandedFolders}
+              onSelectArticle={onSelectArticle}
+              onToggleFolder={onToggleFolder}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── FilesView ──────────────────────────────────────────────────
 
 export interface FilesViewProps {
   articles: ArticleMeta[];
@@ -22,13 +196,33 @@ export function FilesView({
   onNewArticle,
   onGenerateArticle,
 }: FilesViewProps) {
-  const sortedArticles = React.useMemo(
-    () =>
-      [...articles].sort(
-        (a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()
-      ),
-    [articles]
+  const tree = useMemo(() => buildTree(articles), [articles]);
+
+  // Start with all folders expanded
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    () => collectFolderPaths(tree)
   );
+
+  // Re-expand any newly-discovered folders when articles change
+  const prevTreeRef = React.useRef(tree);
+  if (prevTreeRef.current !== tree) {
+    prevTreeRef.current = tree;
+    const all = collectFolderPaths(tree);
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      all.forEach((p) => next.add(p));
+      return next;
+    });
+  }
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -67,41 +261,30 @@ export function FilesView({
         </button>
       </div>
 
-      {/* Article list */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Tree */}
+      <div className="flex-1 overflow-y-auto py-1">
         {loading && (
-          <p className="px-4 py-6 text-sm text-text-secondary">Loading articles…</p>
+          <p className="px-4 py-6 text-sm text-text-secondary">Loading…</p>
         )}
-
         {!loading && error && (
           <p className="px-4 py-6 text-sm text-red-400">{error}</p>
         )}
-
-        {!loading && !error && sortedArticles.length === 0 && (
+        {!loading && !error && tree.length === 0 && (
           <p className="px-4 py-6 text-sm text-text-secondary">No articles yet</p>
         )}
-
         {!loading &&
           !error &&
-          sortedArticles.map((article) => {
-            const isSelected = article.filename === selectedFilename;
-            return (
-              <button
-                key={article.filename}
-                type="button"
-                onClick={() => onSelectArticle(article.filename)}
-                className={cn(
-                  "block w-full text-left px-4 py-2.5 text-sm truncate transition-colors",
-                  "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
-                  isSelected
-                    ? "bg-surface-active text-text-primary"
-                    : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
-                )}
-              >
-                {article.title}
-              </button>
-            );
-          })}
+          tree.map((node) => (
+            <TreeNodeRow
+              key={node.type === "file" ? node.article.filename : node.path}
+              node={node}
+              depth={0}
+              selectedFilename={selectedFilename}
+              expandedFolders={expandedFolders}
+              onSelectArticle={onSelectArticle}
+              onToggleFolder={toggleFolder}
+            />
+          ))}
       </div>
     </div>
   );

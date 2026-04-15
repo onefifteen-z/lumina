@@ -34,14 +34,7 @@ function createWindow(): void {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      preload: path.join(
-        __dirname,
-        "..",
-        "..",
-        "preload",
-        "preload",
-        "preload.js",
-      ),
+      preload: path.join(__dirname, "..", "..", "preload", "preload.js"),
     },
   });
 

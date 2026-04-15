@@ -92,10 +92,10 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     linksRef.current = links;
 
     const sim = forceSimulation<GraphNode>(nodes)
-      .force("link", forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(80))
-      .force("charge", forceManyBody().strength(-200))
-      .force("center", forceCenter(0, 0))
-      .force("collide", forceCollide(25))
+      .force("link", forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(90).strength(0.5))
+      .force("charge", forceManyBody().strength(-250))
+      .force("center", forceCenter(0, 0).strength(0.05))
+      .force("collide", forceCollide(28))
       .on("tick", draw);
 
     simRef.current = sim;
@@ -113,19 +113,28 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     const links = linksRef.current;
     const hovId = hoveredRef.current?.id;
 
+    // Detect theme
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    const edgeColor        = isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)";
+    const edgeHoverColor   = "rgba(139,92,246,0.7)";
+    const nodeColor        = isDark ? "rgba(160,160,160,0.9)" : "rgba(100,100,100,0.85)";
+    const nodeHoverColor   = "#a78bfa";
+    const nodeBorderColor  = isDark ? "rgba(220,220,220,0.6)" : "rgba(80,80,80,0.6)";
+    const labelColor       = isDark ? "rgba(210,210,210,0.85)" : "rgba(40,40,40,0.85)";
+
     ctx.clearRect(0, 0, w, h);
     ctx.save();
     ctx.translate(w / 2 + tx, h / 2 + ty);
     ctx.scale(k, k);
 
     // Draw edges
-    ctx.lineWidth = 1;
     for (const l of links) {
       const s = l.source as GraphNode;
       const t = l.target as GraphNode;
       if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
       const highlight = hovId && (s.id === hovId || t.id === hovId);
-      ctx.strokeStyle = highlight ? "rgba(139,92,246,0.6)" : "rgba(148,163,184,0.25)";
+      ctx.strokeStyle = highlight ? edgeHoverColor : edgeColor;
+      ctx.lineWidth = highlight ? 1.5 : 1;
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
@@ -135,27 +144,29 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     // Draw nodes
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
-      const r = 4 + Math.min(n.linkCount, 10) * 1.5;
+      const r = 3 + Math.min(n.linkCount, 12) * 1.2;
       const isHov = n.id === hovId;
+
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isHov ? "#a78bfa" : "#8b5cf6";
+      ctx.fillStyle = isHov ? nodeHoverColor : nodeColor;
       ctx.fill();
-      if (isHov) {
-        ctx.strokeStyle = "#c4b5fd";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
+
+      // Border ring
+      ctx.strokeStyle = isHov ? "#c4b5fd" : nodeBorderColor;
+      ctx.lineWidth = isHov ? 2 : 0.5;
+      ctx.stroke();
     }
 
-    // Draw labels
-    ctx.fillStyle = "#cbd5e1";
-    ctx.font = "11px system-ui, sans-serif";
+    // Draw labels — always show title
+    ctx.font = `${Math.max(9, 10 / k)}px system-ui, sans-serif`;
     ctx.textAlign = "center";
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
-      const r = 4 + Math.min(n.linkCount, 10) * 1.5;
-      ctx.fillText(n.title, n.x, n.y + r + 13);
+      const r = 3 + Math.min(n.linkCount, 12) * 1.2;
+      const isHov = n.id === hovId;
+      ctx.fillStyle = isHov ? "#c4b5fd" : labelColor;
+      ctx.fillText(n.title, n.x, n.y + r + 12);
     }
 
     ctx.restore();

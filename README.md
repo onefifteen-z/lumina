@@ -22,7 +22,19 @@ npm install
 npm run dev
 ```
 
+## Implementation Progress
+
+- [x] Core data models and project scaffolding
+- [x] Markdown parser (frontmatter, wikilinks, embeds, tags, title/filename conversion)
+- [x] Main process services (FileSystemService, SearchIndexService, LLMService, ConfigService)
+- [ ] IPC bridge and preload script
+- [ ] React UI (browsing, editing, search, settings)
+- [ ] LLM integration UI
+- [ ] First-run experience and offline handling
+
 ## Testing
+
+All 66 tests passing across markdown parser, filesystem service, and search index service.
 
 ```bash
 npm test

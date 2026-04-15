@@ -6,6 +6,7 @@ import { basicSetup } from 'codemirror';
 import { useNavigation } from './AppShell';
 import { serializeArticleFile } from '../../shared/markdown-parser';
 import { obsidianSyntaxExtensions } from '../extensions/obsidian-syntax';
+import { wikilinkAutocomplete } from '../extensions/wikilink-autocomplete';
 import type { ArticleFile, FrontmatterData } from '../../shared/types';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -88,6 +89,7 @@ const ArticleEditor: React.FC = () => {
         saveKeymap,
         EditorView.lineWrapping,
         ...obsidianSyntaxExtensions(),
+        wikilinkAutocomplete(),
       ],
     });
 

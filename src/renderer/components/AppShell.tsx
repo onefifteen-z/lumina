@@ -197,12 +197,6 @@ const SidebarLayout: React.FC<{
 
     return (
       <div className="flex h-full w-full">
-        {/* Drag bar — fixed strip at top for window dragging, sits above all content */}
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, height: '10px',
-          WebkitAppRegion: 'drag', zIndex: 9999,
-        } as React.CSSProperties} />
-
         {/* Icon Rail — always visible */}
         <IconRail
           activeView={activeView}

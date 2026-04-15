@@ -4,6 +4,8 @@ import type { ChatMessage } from '../../../shared/types';
 export interface MessageListProps {
   messages: ChatMessage[];
   streamingContent?: string;
+  /** Optional custom renderer for assistant message content (e.g. Markdown). Falls back to plain text. */
+  renderAssistantContent?: (content: string) => React.ReactNode;
 }
 
 /**
@@ -16,7 +18,7 @@ export function formatTimestamp(iso: string): string {
   return `${hours}:${minutes}`;
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, renderAssistantContent }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when messages change or streaming content updates
@@ -31,7 +33,7 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
     <div className="flex-1 overflow-y-auto px-4 py-6" role="log" aria-label="Chat messages">
       <div className="mx-auto max-w-3xl flex flex-col gap-4">
         {visibleMessages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble key={message.id} message={message} renderAssistantContent={renderAssistantContent} />
         ))}
 
         {/* Streaming partial assistant response */}
@@ -51,18 +53,23 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
   );
 };
 
-const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
+const MessageBubble: React.FC<{ message: ChatMessage; renderAssistantContent?: (content: string) => React.ReactNode }> = ({ message, renderAssistantContent }) => {
   const isUser = message.role === 'user';
+  const isAssistant = message.role === 'assistant';
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isUser
-            ? 'rounded-br-sm bg-accent text-white'
-            : 'rounded-bl-sm bg-surface-hover text-text-primary'
+          ? 'rounded-br-sm bg-accent text-white'
+          : 'rounded-bl-sm bg-surface-hover text-text-primary'
           }`}
       >
-        <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+        {isAssistant && renderAssistantContent ? (
+          renderAssistantContent(message.content)
+        ) : (
+          <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+        )}
         <time
           className={`block mt-1 text-[10px] select-none ${isUser ? 'text-white/70 text-right' : 'text-text-secondary'
             }`}

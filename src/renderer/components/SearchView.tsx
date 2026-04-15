@@ -154,8 +154,9 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
             value={query}
             onChange={handleInputChange}
             aria-label="Search articles"
+            style={{ paddingLeft: "32px", paddingRight: "12px", paddingTop: "8px", paddingBottom: "8px", fontSize: "14px" }}
             className={cn(
-              "w-full pl-8 pr-3 py-2 text-sm rounded-md",
+              "w-full rounded-md",
               "bg-rail-bg border border-border text-text-primary placeholder:text-text-secondary",
               "focus:outline-none focus:ring-1 focus:ring-inset focus:ring-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors"
             )}

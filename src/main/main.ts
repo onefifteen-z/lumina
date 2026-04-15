@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import path from "path";
 import fs from "fs";
 import { registerIpcHandlers, hasUnsavedChanges } from "./ipc-handlers";
@@ -31,7 +31,6 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    titleBarStyle: 'hidden',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -135,14 +134,6 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
-
-  // ── Window control IPC (custom titlebar) ───────────────────
-  ipcMain.handle('window:minimize', () => mainWindow?.minimize());
-  ipcMain.handle('window:maximize', () => {
-    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-    else mainWindow?.maximize();
-  });
-  ipcMain.handle('window:close', () => mainWindow?.close());
 
   // Start vault file watcher — notify renderer of external changes
   if (vaultPath && fileSystemService) {

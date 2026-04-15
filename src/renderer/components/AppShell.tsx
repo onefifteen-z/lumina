@@ -3,6 +3,7 @@ import type { WikiAPI } from '../../shared/types';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
 import SearchPanel from './SearchPanel';
+import SettingsPanel from './SettingsPanel';
 import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
 import GenerateArticleDialog from './GenerateArticleDialog';
 
@@ -44,17 +45,6 @@ const NavContext = createContext<NavigationContext>({
 });
 
 export const useNavigation = () => useContext(NavContext);
-
-// ── Placeholder components ─────────────────────────────────────
-
-const SettingsPanel: React.FC = () => (
-  <div className="placeholder-panel">
-    <h2>Settings</h2>
-    <p>Settings panel will be implemented here.</p>
-  </div>
-);
-
-
 
 // ── Sidebar nav items ──────────────────────────────────────────
 

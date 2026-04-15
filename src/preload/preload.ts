@@ -162,6 +162,14 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:saveConfig", config);
   },
 
+  getApiKey() {
+    return ipcRenderer.invoke("wiki:getApiKey");
+  },
+
+  saveApiKey(key: string) {
+    return ipcRenderer.invoke("wiki:saveApiKey", key);
+  },
+
   testLLMConnection(config: LLMProviderConfig) {
     return ipcRenderer.invoke("wiki:testLLMConnection", config);
   },

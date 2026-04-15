@@ -106,6 +106,8 @@ export interface WikiAPI {
   // Config
   getConfig(): Promise<AppConfig>;
   saveConfig(config: Partial<AppConfig>): Promise<void>;
+  getApiKey(): Promise<string>;
+  saveApiKey(key: string): Promise<void>;
   testLLMConnection(config: LLMProviderConfig): Promise<boolean>;
   selectVaultFolder(): Promise<string | null>;
 

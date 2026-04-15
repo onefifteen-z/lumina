@@ -195,6 +195,17 @@ export function registerIpcHandlers(services: {
     },
   );
 
+  ipcMain.handle("wiki:getApiKey", async (): Promise<string> => {
+    return config.getApiKey();
+  });
+
+  ipcMain.handle(
+    "wiki:saveApiKey",
+    async (_event, key: string): Promise<void> => {
+      config.saveApiKey(key);
+    },
+  );
+
   ipcMain.handle(
     "wiki:testLLMConnection",
     async (_event, providerConfig: LLMProviderConfig): Promise<boolean> => {

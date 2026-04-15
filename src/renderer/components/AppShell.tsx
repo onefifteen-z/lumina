@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, createContext, useContext } fr
 import type { WikiAPI } from '../../shared/types';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
+import SearchPanel from './SearchPanel';
 import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
 
 // ── Declare window.api for TypeScript ──────────────────────────
@@ -38,13 +39,6 @@ const NavContext = createContext<NavigationContext>({
 export const useNavigation = () => useContext(NavContext);
 
 // ── Placeholder components ─────────────────────────────────────
-
-const SearchPanel: React.FC = () => (
-  <div className="placeholder-panel">
-    <h2>Search</h2>
-    <p>Search panel will be implemented here.</p>
-  </div>
-);
 
 const SettingsPanel: React.FC = () => (
   <div className="placeholder-panel">

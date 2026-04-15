@@ -19,6 +19,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 interface DisplayResult {
   title: string;
+  filename: string;
   excerpt: string;
   snippets: string[];
   isTagResult: boolean;
@@ -27,7 +28,7 @@ interface DisplayResult {
 // ── SearchView ─────────────────────────────────────────────────
 
 export interface SearchViewProps {
-  onSelectArticle: (title: string) => void;
+  onSelectArticle: (filename: string) => void;
 }
 
 export function SearchView({ onSelectArticle }: SearchViewProps) {
@@ -75,6 +76,7 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
             setResults(
               tagResults.map((meta) => ({
                 title: meta.title,
+                filename: meta.filename,
                 excerpt: meta.excerpt,
                 snippets: [],
                 isTagResult: true,
@@ -89,6 +91,7 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
             setResults(
               searchResults.map((sr) => ({
                 title: sr.title,
+                filename: sr.filename,
                 excerpt: sr.excerpt,
                 snippets: sr.matches.map((m) => m.snippet),
                 isTagResult: false,
@@ -115,8 +118,8 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
   }, [debouncedQuery]);
 
   const handleResultClick = useCallback(
-    (title: string) => {
-      onSelectArticle(title);
+    (filename: string) => {
+      onSelectArticle(filename);
     },
     [onSelectArticle]
   );
@@ -183,9 +186,9 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
 
         {results.map((result) => (
           <button
-            key={result.title}
+            key={result.filename}
             type="button"
-            onClick={() => handleResultClick(result.title)}
+            onClick={() => handleResultClick(result.filename)}
             className={cn(
               "block w-full text-left px-4 py-2.5 transition-colors cursor-pointer",
               "text-text-secondary hover:bg-surface-hover hover:text-text-primary"

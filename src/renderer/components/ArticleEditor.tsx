@@ -127,7 +127,7 @@ const ArticleEditor: React.FC = () => {
       console.error('Failed to save article:', err);
       setSaveStatus('error');
     }
-  }, [title, originalFrontmatter, editingTitle]);
+  }, [title, originalFrontmatter, editingFilename]);
 
   // Keep saveHandlerRef in sync so the keymap closure always calls the latest save
   useEffect(() => {
@@ -203,9 +203,9 @@ const ArticleEditor: React.FC = () => {
     };
   }, []);
 
-  // Load existing article when editingTitle changes
+  // Load existing article when editingFilename changes
   useEffect(() => {
-    if (!editingTitle) {
+    if (!editingFilename) {
       // New article — reset state
       setTitle('');
       setOriginalFrontmatter(null);
@@ -229,7 +229,7 @@ const ArticleEditor: React.FC = () => {
     const loadArticle = async () => {
       setLoading(true);
       try {
-        const article = await window.api.getArticle(editingTitle);
+        const article = await window.api.getArticle(editingFilename);
         if (cancelled) return;
 
         setTitle(article.frontmatter.title);
@@ -261,11 +261,11 @@ const ArticleEditor: React.FC = () => {
 
     loadArticle();
     return () => { cancelled = true; };
-  }, [editingTitle]);
+  }, [editingFilename]);
 
   // Load generated content from LLM into the editor (new article flow)
   useEffect(() => {
-    if (!generatedContent || editingTitle) return;
+    if (!generatedContent || editingFilename) return;
     if (viewRef.current) {
       viewRef.current.dispatch({
         changes: {
@@ -279,7 +279,7 @@ const ArticleEditor: React.FC = () => {
       setIsDirty(true);
     }
     clearGeneratedContent();
-  }, [generatedContent, editingTitle, clearGeneratedContent]);
+  }, [generatedContent, editingFilename, clearGeneratedContent]);
 
   // Clean up dirty notification on unmount
   useEffect(() => {
@@ -290,18 +290,16 @@ const ArticleEditor: React.FC = () => {
 
   // Listen for external vault changes affecting the current article
   useEffect(() => {
-    if (!editingTitle) return;
+    if (!editingFilename) return;
 
     const handler = (event: import('../../shared/types').VaultChangeEvent) => {
-      // Only care about the file we're editing
-      const expectedFilename = editingTitle.toLowerCase().replace(/\s+/g, '-') + '.md';
-      const changedFilename = event.filename.toLowerCase();
-      if (!changedFilename.endsWith(expectedFilename)) return;
+      // Only care about the file we're editing (compare vault-relative paths)
+      if (event.filename.toLowerCase() !== editingFilename.toLowerCase()) return;
 
       if (event.type === 'unlink') {
         // File deleted externally
         const resave = window.confirm(
-          `"${editingTitle}" was deleted externally. Save your current edits to recreate it, or close the editor?`
+          `"${title}" was deleted externally. Save your current edits to recreate it, or close the editor?`
         );
         if (resave) {
           handleSave();
@@ -312,12 +310,12 @@ const ArticleEditor: React.FC = () => {
         // File modified externally
         if (isDirty) {
           const reload = window.confirm(
-            `"${editingTitle}" was modified externally. Reload and lose your unsaved changes?`
+            `"${title}" was modified externally. Reload and lose your unsaved changes?`
           );
           if (!reload) return;
         }
         // Reload the article content
-        window.api.getArticle(editingTitle).then((article) => {
+        window.api.getArticle(editingFilename).then((article) => {
           setTitle(article.frontmatter.title);
           setOriginalFrontmatter(article.frontmatter);
           savedTitleRef.current = article.frontmatter.title;
@@ -342,7 +340,7 @@ const ArticleEditor: React.FC = () => {
     return () => {
       window.api.removeVaultChangeListener();
     };
-  }, [editingTitle, isDirty, handleSave, navigate]);
+  }, [editingFilename, isDirty, handleSave, navigate, title]);
 
   const handleAssistAccept = useCallback((replacement: string) => {
     if (!viewRef.current) return;

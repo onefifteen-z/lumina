@@ -78,6 +78,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 
 - [x] Install dependencies (tailwindcss, @tailwindcss/vite, lucide-react, shadcn/ui deps)
 - [x] Configure Vite plugin and Tailwind CSS v4 entry point with custom color tokens
+- [x] Create cn() utility function (clsx + tailwind-merge)
 
 ## License
 

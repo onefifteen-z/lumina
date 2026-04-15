@@ -3,16 +3,16 @@
 /* ── Lumina Design Tokens ───────────────────────────────────── */
 
 @theme {
-  --color-rail-bg: #1e1e2e;
-  --color-sidebar-bg: #252535;
-  --color-main-bg: #1a1a2e;
+  --color-rail-bg: var(--rail-bg-token);
+  --color-sidebar-bg: var(--sidebar-bg-token);
+  --color-main-bg: var(--main-bg);
   --color-accent: #7c3aed;
   --color-accent-hover: #6d28d9;
-  --color-text-primary: #e2e8f0;
-  --color-text-secondary: #94a3b8;
-  --color-border: #334155;
-  --color-surface-hover: #2d2d42;
-  --color-surface-active: #363650;
+  --color-text-primary: var(--text-primary-token);
+  --color-text-secondary: var(--text-secondary-token);
+  --color-border: var(--border-token);
+  --color-surface-hover: var(--surface-hover-token);
+  --color-surface-active: var(--surface-active-token);
 }
 
 /* ── Legacy Theme Variables (retained for non-refactored components) ── */
@@ -30,6 +30,16 @@
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --sidebar-width: 220px;
+
+  /* Theme-switchable tokens for @theme references */
+  --main-bg: #ffffff;
+  --sidebar-bg-token: #f5f5f5;
+  --rail-bg-token: #f0f0f0;
+  --surface-hover-token: #e0e0e0;
+  --surface-active-token: #d4d4d4;
+  --border-token: #e0e0e0;
+  --text-primary-token: #1a1a1a;
+  --text-secondary-token: #666666;
 }
 
 [data-theme="dark"] {
@@ -43,6 +53,16 @@
   --color-border: #333333;
   --color-accent: #3b82f6;
   --color-accent-hover: #60a5fa;
+
+  /* Theme-switchable tokens for @theme references */
+  --main-bg: #1e1e1e;
+  --sidebar-bg-token: #252525;
+  --rail-bg-token: #202020;
+  --surface-hover-token: #2a2a2a;
+  --surface-active-token: #333333;
+  --border-token: #333333;
+  --text-primary-token: #e2e8f0;
+  --text-secondary-token: #94a3b8;
 }
 
 /* ── Reset & Base ───────────────────────────────────────────── */
@@ -85,7 +105,7 @@ body {
 /* ── Dark-first defaults (applied when html.dark) ───────────── */
 
 html.dark body {
-  background: #1a1a2e;
+  background: #1e1e1e;
   color: #e2e8f0;
 }
 

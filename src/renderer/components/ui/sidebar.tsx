@@ -4,7 +4,7 @@ import { PanelLeft } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { Button } from "./button"
 
-const SIDEBAR_WIDTH = "260px"
+const SIDEBAR_WIDTH = "240px"
 const SIDEBAR_WIDTH_COLLAPSED = "0px"
 
 interface SidebarContext {

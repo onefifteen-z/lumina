@@ -64,7 +64,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen }: IconRailPr
             aria-selected={isActive}
             tabIndex={0}
             className={cn(
-              "flex items-center justify-center w-10 h-10 rounded-md transition-colors cursor-pointer",
+              "flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer",
               "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
               isActive
                 ? "bg-accent text-white"
@@ -73,7 +73,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen }: IconRailPr
             onClick={() => onViewChange(item.view)}
             onKeyDown={(e) => handleKeyDown(e, index)}
           >
-            <Icon size={20} />
+            <Icon size={18} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="right">{item.label}</TooltipContent>
@@ -86,7 +86,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen }: IconRailPr
       role="toolbar"
       aria-label="Navigation"
       aria-orientation="vertical"
-      className="flex flex-col items-center w-12 bg-rail-bg border-r border-border py-2 gap-1 shrink-0"
+      className="flex flex-col items-center w-11 bg-rail-bg border-r border-border py-2 gap-1 shrink-0"
     >
       {/* Top group: Files, Search, Bookmarks */}
       <div className="flex flex-col items-center gap-1">

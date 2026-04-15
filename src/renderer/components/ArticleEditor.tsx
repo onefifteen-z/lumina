@@ -72,6 +72,22 @@ const ArticleEditor: React.FC = () => {
       return;
     }
 
+    // Check for duplicate title when creating a new article (editingTitle is null)
+    const isNewArticle = editingTitle === null;
+    if (isNewArticle) {
+      try {
+        const exists = await window.api.articleExists(trimmedTitle);
+        if (exists) {
+          const overwrite = window.confirm(
+            `An article titled "${trimmedTitle}" already exists. Do you want to overwrite it?`
+          );
+          if (!overwrite) return;
+        }
+      } catch (err) {
+        console.error('Failed to check article existence:', err);
+      }
+    }
+
     setSaveStatus('saving');
 
     try {
@@ -105,7 +121,7 @@ const ArticleEditor: React.FC = () => {
       console.error('Failed to save article:', err);
       setSaveStatus('error');
     }
-  }, [title, originalFrontmatter]);
+  }, [title, originalFrontmatter, editingTitle]);
 
   // Keep saveHandlerRef in sync so the keymap closure always calls the latest save
   useEffect(() => {

@@ -23,6 +23,8 @@ export interface NavigationContext {
   editingTitle: string | null;
   /** Navigate to the editor for a specific article */
   editArticle: (title: string) => void;
+  /** Create a new article — opens blank editor */
+  createNewArticle: () => void;
 }
 
 const NavContext = createContext<NavigationContext>({
@@ -30,6 +32,7 @@ const NavContext = createContext<NavigationContext>({
   navigate: () => { },
   editingTitle: null,
   editArticle: () => { },
+  createNewArticle: () => { },
 });
 
 export const useNavigation = () => useContext(NavContext);
@@ -189,7 +192,12 @@ const AppShell: React.FC = () => {
     setView('edit');
   }, []);
 
-  const navCtx: NavigationContext = { view, navigate, editingTitle, editArticle };
+  const createNewArticle = useCallback(() => {
+    setEditingTitle(null);
+    setView('edit');
+  }, []);
+
+  const navCtx: NavigationContext = { view, navigate, editingTitle, editArticle, createNewArticle };
 
   // Still loading config
   if (firstRun === null) {
@@ -221,6 +229,12 @@ const AppShell: React.FC = () => {
                 </button>
               ))}
             </nav>
+            <button
+              className="app-sidebar__new-btn"
+              onClick={createNewArticle}
+            >
+              + New Article
+            </button>
           </aside>
 
           {/* Main content */}

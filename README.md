@@ -80,6 +80,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 - [x] Configure Vite plugin and Tailwind CSS v4 entry point with custom color tokens
 - [x] Create cn() utility function (clsx + tailwind-merge)
 - [x] Vendor shadcn/ui Button component
+- [x] Vendor shadcn/ui Tooltip component
 
 ## License
 

@@ -35,6 +35,7 @@ npm run dev
   - [x] ArticleBrowser with article list, remark rendering, metadata header, and backlinks
   - [x] Remark plugins for wikilinks, embeds, and inline tags
   - [x] Wikilink navigation, link resolution, and tag filtering
+  - [x] Browsing and navigation checkpoint passed (86 tests passing)
 - [ ] LLM integration UI
 - [ ] First-run experience and offline handling
 

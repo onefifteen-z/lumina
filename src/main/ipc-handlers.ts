@@ -11,6 +11,7 @@ import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
 import { LLMService } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
+import { ChatService } from "./services/chat-service";
 
 // Track whether the renderer has unsaved changes
 let rendererHasUnsavedChanges = false;
@@ -30,11 +31,13 @@ export function registerIpcHandlers(services: {
   llm: LLMService | null;
   config: ConfigService;
   mainWindow: BrowserWindow | null;
+  chat?: ChatService | null;
 }): void {
   let fileSystem = services.fileSystem;
   let searchIndex = services.searchIndex;
   const { config } = services;
   let llm = services.llm;
+  const chat = services.chat ?? null;
 
   // Keep a cached article list for backlink computation
   let cachedArticles: ArticleMeta[] = [];
@@ -157,7 +160,10 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:getBacklinks",
-    async (_event, title: string): Promise<{ title: string; filename: string }[]> => {
+    async (
+      _event,
+      title: string,
+    ): Promise<{ title: string; filename: string }[]> => {
       if (!fileSystem) return [];
       // Scan cached articles: if article A has a wikilink to `title`, A is a backlink
       const backlinks: { title: string; filename: string }[] = [];
@@ -240,6 +246,45 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("wiki:isLLMAvailable", async (): Promise<boolean> => {
     return llm?.isAvailable() ?? false;
+  });
+
+  // ── Chat ──────────────────────────────────────────────────────
+
+  ipcMain.handle("wiki:startChatSession", async (event) => {
+    if (!chat) throw new Error("Chat service is not available.");
+    const { session, warning } = await chat.startSession();
+    if (warning) {
+      event.sender.send("wiki:chatWarning", { message: warning });
+    }
+    return session;
+  });
+
+  ipcMain.handle(
+    "wiki:sendChatMessage",
+    async (event, payload: { requestId: string; content: string }) => {
+      if (!chat) throw new Error("Chat service is not available.");
+      const { requestId, content } = payload;
+      const sender = event.sender;
+      try {
+        for await (const chunk of chat.sendMessage(content)) {
+          sender.send("wiki:chatChunk", { requestId, chunk });
+        }
+        sender.send("wiki:chatEnd", { requestId });
+      } catch (err) {
+        const errorMessage = (err as Error).message || "Chat generation failed";
+        sender.send("wiki:chatEnd", { requestId, error: errorMessage });
+      }
+    },
+  );
+
+  ipcMain.handle("wiki:stopChatGeneration", async () => {
+    if (!chat) throw new Error("Chat service is not available.");
+    chat.stopGeneration();
+  });
+
+  ipcMain.handle("wiki:getChatSession", async () => {
+    if (!chat) return null;
+    return chat.getSession();
   });
 
   // ── Config ───────────────────────────────────────────────────────

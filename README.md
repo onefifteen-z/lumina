@@ -99,6 +99,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 
 - [x] ChatMessage and ChatSession shared type interfaces
 - [x] WikiAPI chat method signatures (startChatSession, sendChatMessage, stopChatGeneration, etc.)
+- [x] Property-based tests for ChatMessage/ChatSession JSON round-trip
 
 ## License
 

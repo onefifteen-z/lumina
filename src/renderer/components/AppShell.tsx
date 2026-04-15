@@ -246,7 +246,7 @@ const SidebarLayout: React.FC<{
             {editingFilename !== null && <ArticleEditor />}
           </main>
           {activeView !== 'settings' && editingFilename === null && (
-            <TocPanel headings={headings} />
+            <TocPanel headings={headings} collapsed={rightCollapsed} onToggleCollapse={() => setRightCollapsed(c => !c)} />
           )}
         </div>
       </div>

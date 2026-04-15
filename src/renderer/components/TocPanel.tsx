@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { cn } from "../lib/utils";
 
 export type TocHeading = {
@@ -169,6 +169,8 @@ const TocNodeRow: React.FC<TocNodeRowProps> = ({
 
 interface TocPanelProps {
   headings: TocHeading[];
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 function collectAllIds(nodes: TocNode[], acc: Set<string> = new Set()): Set<string> {
@@ -181,7 +183,7 @@ function collectAllIds(nodes: TocNode[], acc: Set<string> = new Set()): Set<stri
   return acc;
 }
 
-export function TocPanel({ headings }: TocPanelProps) {
+export function TocPanel({ headings, collapsed, onToggleCollapse }: TocPanelProps) {
   const tree = React.useMemo(() => buildTocTree(headings), [headings]);
 
   // Start fully expanded
@@ -233,30 +235,53 @@ export function TocPanel({ headings }: TocPanelProps) {
     });
   };
 
-  if (tree.length === 0) return null;
+  if (tree.length === 0) {
+    // Show a thin strip with expand button when collapsed and no headings
+    if (collapsed) return null;
+    return null;
+  }
+
+  const ToggleIcon = collapsed ? PanelRightOpen : PanelRightClose;
 
   return (
     <aside
-      className="h-full flex flex-col border-l border-border bg-sidebar-bg shrink-0 overflow-hidden"
-      style={{ width: "200px" }}
+      className={cn(
+        "h-full flex flex-col border-l border-border bg-sidebar-bg shrink-0 overflow-hidden transition-[width] duration-200",
+        collapsed ? "w-10" : "w-[200px]"
+      )}
     >
-      <div className="px-4 py-3 border-b border-border shrink-0">
-        <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
-          On this page
-        </span>
+      <div className={cn(
+        "flex items-center border-b border-border shrink-0",
+        collapsed ? "justify-center py-3" : "justify-between px-4 py-3"
+      )}>
+        {!collapsed && (
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+            On this page
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          aria-label={collapsed ? "Expand table of contents" : "Collapse table of contents"}
+        >
+          <ToggleIcon size={16} />
+        </button>
       </div>
-      <div className="flex-1 overflow-y-auto py-1">
-        {tree.map((node) => (
-          <TocNodeRow
-            key={node.heading.id}
-            node={node}
-            depth={0}
-            activeId={activeId}
-            expandedIds={expandedIds}
-            onToggle={toggleNode}
-          />
-        ))}
-      </div>
+      {!collapsed && (
+        <div className="flex-1 overflow-y-auto py-1">
+          {tree.map((node) => (
+            <TocNodeRow
+              key={node.heading.id}
+              node={node}
+              depth={0}
+              activeId={activeId}
+              expandedIds={expandedIds}
+              onToggle={toggleNode}
+            />
+          ))}
+        </div>
+      )}
     </aside>
   );
 }

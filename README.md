@@ -37,12 +37,13 @@ npm run dev
   - [x] Wikilink navigation, link resolution, and tag filtering
   - [x] Browsing and navigation checkpoint passed (86 tests passing)
 - [ ] LLM integration UI
-- [-] First-run experience and offline handling
+- [x] First-run experience and offline handling
   - [x] First-run vault selection (welcome screen with folder picker)
+  - [x] Offline mode handling (network status context, offline banner, LLM availability tracking)
 
 ## Testing
 
-All 86 tests passing across markdown parser, filesystem service, search index service, and remark plugins.
+All 91 tests passing across markdown parser, filesystem service, search index service, remark plugins, and network status handling.
 
 ```bash
 npm test

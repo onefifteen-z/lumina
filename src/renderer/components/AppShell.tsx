@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, createContext, useContext } fr
 import type { WikiAPI } from '../../shared/types';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
+import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
 
 // ── Declare window.api for TypeScript ──────────────────────────
 
@@ -117,6 +118,19 @@ const WelcomeScreen: React.FC<{ onVaultSelected: () => void }> = ({ onVaultSelec
   );
 };
 
+// ── Offline Banner ──────────────────────────────────────────
+
+const OfflineBanner: React.FC = () => {
+  const { isOffline } = useNetworkStatus();
+  if (!isOffline) return null;
+  return (
+    <div className="offline-banner" role="status">
+      <span className="offline-banner__icon" aria-hidden="true">⚠️</span>
+      Offline — LLM features unavailable
+    </div>
+  );
+};
+
 // ── AppShell ───────────────────────────────────────────────────
 
 const AppShell: React.FC = () => {
@@ -188,35 +202,38 @@ const AppShell: React.FC = () => {
   }
 
   return (
-    <NavContext.Provider value={navCtx}>
-      <div className="app-shell">
-        {/* Sidebar */}
-        <aside className="app-sidebar">
-          <div className="app-sidebar__header">LLM Wiki</div>
-          <nav className="app-sidebar__nav">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.view}
-                className={`app-sidebar__item${view === item.view ? ' app-sidebar__item--active' : ''}`}
-                onClick={() => navigate(item.view)}
-                aria-current={view === item.view ? 'page' : undefined}
-              >
-                <span aria-hidden="true">{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
+    <NetworkStatusProvider>
+      <NavContext.Provider value={navCtx}>
+        <div className="app-shell">
+          {/* Sidebar */}
+          <aside className="app-sidebar">
+            <div className="app-sidebar__header">LLM Wiki</div>
+            <nav className="app-sidebar__nav">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.view}
+                  className={`app-sidebar__item${view === item.view ? ' app-sidebar__item--active' : ''}`}
+                  onClick={() => navigate(item.view)}
+                  aria-current={view === item.view ? 'page' : undefined}
+                >
+                  <span aria-hidden="true">{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </aside>
 
-        {/* Main content */}
-        <main className="app-main">
-          {view === 'browse' && <ArticleBrowser />}
-          {view === 'search' && <SearchPanel />}
-          {view === 'settings' && <SettingsPanel />}
-          {view === 'edit' && <ArticleEditor />}
-        </main>
-      </div>
-    </NavContext.Provider>
+          {/* Main content */}
+          <main className="app-main">
+            <OfflineBanner />
+            {view === 'browse' && <ArticleBrowser />}
+            {view === 'search' && <SearchPanel />}
+            {view === 'settings' && <SettingsPanel />}
+            {view === 'edit' && <ArticleEditor />}
+          </main>
+        </div>
+      </NavContext.Provider>
+    </NetworkStatusProvider>
   );
 };
 

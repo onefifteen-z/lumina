@@ -101,6 +101,62 @@ export class LLMService {
     }
   }
 
+  /**
+   * Generate a chat response from a full messages array via streaming.
+   * Yields content chunks as they arrive from the LLM endpoint.
+   * Accepts an optional AbortSignal for external cancellation support.
+   */
+  async *generateChat(
+    messages: Array<{ role: string; content: string }>,
+    signal?: AbortSignal,
+  ): AsyncGenerator<string> {
+    const body = JSON.stringify({
+      model: this.config.model,
+      messages,
+      stream: true,
+    });
+
+    const response = await this.fetchWithSignal(body, signal);
+    this.setAvailable(true);
+
+    if (!response.body) {
+      throw new LLMError("Response body is empty", "malformed_response");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") return;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch {
+            // Skip malformed SSE chunks — non-fatal for streaming
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
   /** Return a concise summary of the provided text. */
   async summarize(text: string): Promise<string> {
     return this.singleResponse(
@@ -222,6 +278,70 @@ export class LLMService {
     // streaming responses need the body to keep reading.
     if (!stream) clearTimeout(timer);
     else clearTimeout(timer); // timeout only covers the initial connection
+
+    if (!response.ok) {
+      this.handleHttpError(response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch wrapper that supports an external AbortSignal combined with a timeout.
+   * Used by generateChat to allow external cancellation (e.g. user stop button).
+   */
+  private async fetchWithSignal(
+    body: string,
+    externalSignal?: AbortSignal,
+  ): Promise<Response> {
+    const timeoutController = new AbortController();
+    const timer = setTimeout(
+      () => timeoutController.abort(),
+      DEFAULT_TIMEOUT_MS,
+    );
+
+    // Abort if either the timeout or the external signal fires
+    const onExternalAbort = () => timeoutController.abort();
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        clearTimeout(timer);
+        throw new LLMError("Request was aborted", "network");
+      }
+      externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(this.buildUrl(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body,
+        signal: timeoutController.signal,
+      });
+    } catch (err: unknown) {
+      clearTimeout(timer);
+      if (externalSignal) {
+        externalSignal.removeEventListener("abort", onExternalAbort);
+      }
+      this.setAvailable(false);
+
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Distinguish between external abort and timeout
+        if (externalSignal?.aborted) {
+          throw new LLMError("Request was aborted", "network");
+        }
+        throw new LLMError("LLM request timed out after 30 seconds", "timeout");
+      }
+      throw new LLMError(`Network error: ${(err as Error).message}`, "network");
+    }
+
+    clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
 
     if (!response.ok) {
       this.handleHttpError(response);

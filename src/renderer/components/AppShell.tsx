@@ -68,6 +68,11 @@ function resolveTheme(theme: 'light' | 'dark' | 'system'): 'light' | 'dark' {
 
 function applyTheme(theme: 'light' | 'dark') {
   document.documentElement.setAttribute('data-theme', theme);
+  if (theme === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
 }
 
 // ── WelcomeScreen ──────────────────────────────────────────────
@@ -259,7 +264,7 @@ const AppShell: React.FC = () => {
         }
       } catch {
         if (!cancelled) {
-          applyTheme('light');
+          applyTheme('dark');
           setFirstRun(true);
         }
       }

@@ -82,6 +82,13 @@ body {
   line-height: 1.5;
 }
 
+/* ── Dark-first defaults (applied when html.dark) ───────────── */
+
+html.dark body {
+  background: #1a1a2e;
+  color: #e2e8f0;
+}
+
 /* ── App Shell Layout ───────────────────────────────────────── */
 
 .app-shell {

@@ -70,7 +70,7 @@ Fixing a duplicate `"preload"` directory segment in the BrowserWindow preload pa
 - [x] Bug condition exploration test — confirmed duplicate segment via property-based tests
 - [x] Preservation property tests — baseline confirmed (3 properties pass on unfixed code)
 - [x] Fix implementation — duplicate preload segment removed, all property tests pass
-- [ ] Final checkpoint
+- [x] Final checkpoint — 96 tests passing, 0 failures
 
 ## License
 

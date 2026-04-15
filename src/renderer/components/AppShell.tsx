@@ -1,11 +1,22 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import type { WikiAPI } from '../../shared/types';
+import type { WikiAPI, ArticleMeta } from '../../shared/types';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
-import SearchPanel from './SearchPanel';
 import SettingsPanel from './SettingsPanel';
 import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
 import GenerateArticleDialog from './GenerateArticleDialog';
+import { IconRail, type SidebarView } from './IconRail';
+import { FilesView } from './FilesView';
+import { SearchView } from './SearchView';
+import { BookmarksView } from './BookmarksView';
+import { TooltipProvider } from './ui/tooltip';
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarHeader,
+  SidebarContent,
+  useSidebar,
+} from './ui/sidebar';
 
 // ── Declare window.api for TypeScript ──────────────────────────
 
@@ -17,12 +28,14 @@ declare global {
 
 // ── Navigation types ───────────────────────────────────────────
 
-export type NavView = 'browse' | 'search' | 'settings' | 'edit';
+/** @deprecated Use SidebarView instead. Kept for backward compatibility. */
+export type NavView = SidebarView;
 
 export interface NavigationContext {
-  view: NavView;
-  navigate: (view: NavView) => void;
-  /** Title of the article being edited (when view === 'edit') */
+  view: SidebarView;
+  /** Navigate to a sidebar view. Also accepts legacy 'browse' (→ 'files') and 'edit' values. */
+  navigate: (view: string) => void;
+  /** Title of the article being edited (when in editor mode) */
   editingTitle: string | null;
   /** Navigate to the editor for a specific article */
   editArticle: (title: string) => void;
@@ -35,7 +48,7 @@ export interface NavigationContext {
 }
 
 const NavContext = createContext<NavigationContext>({
-  view: 'browse',
+  view: 'files',
   navigate: () => { },
   editingTitle: null,
   editArticle: () => { },
@@ -45,14 +58,6 @@ const NavContext = createContext<NavigationContext>({
 });
 
 export const useNavigation = () => useContext(NavContext);
-
-// ── Sidebar nav items ──────────────────────────────────────────
-
-const NAV_ITEMS: { view: NavView; label: string; icon: string }[] = [
-  { view: 'browse', label: 'Articles', icon: '📄' },
-  { view: 'search', label: 'Search', icon: '🔍' },
-  { view: 'settings', label: 'Settings', icon: '⚙️' },
-];
 
 // ── Theme helpers ──────────────────────────────────────────────
 
@@ -77,12 +82,10 @@ const WelcomeScreen: React.FC<{ onVaultSelected: () => void }> = ({ onVaultSelec
     try {
       const selectedPath = await window.api.selectVaultFolder();
       if (!selectedPath) {
-        // User cancelled the dialog
         setSelecting(false);
         return;
       }
       await window.api.saveConfig({ vaultPath: selectedPath });
-      // Trigger initial vault scan and index build
       await window.api.listArticles();
       onVaultSelected();
     } catch (err) {
@@ -95,7 +98,7 @@ const WelcomeScreen: React.FC<{ onVaultSelected: () => void }> = ({ onVaultSelec
     <div className="welcome-screen">
       <div className="welcome-screen__card">
         <div className="welcome-screen__icon" aria-hidden="true">📚</div>
-        <h1 className="welcome-screen__title">Welcome to LLM Wiki</h1>
+        <h1 className="welcome-screen__title">Welcome to Lumina</h1>
         <p className="welcome-screen__description">
           Your local, AI-powered personal wiki. To get started, select or create a folder to store your wiki articles.
         </p>
@@ -125,31 +128,118 @@ const OfflineBanner: React.FC = () => {
   );
 };
 
-// ── Generate Button (LLM-aware) ────────────────────────────
+// ── SidebarLayout (inner component that uses useSidebar) ───────
 
-const GenerateButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
-  const { isOffline, isLLMAvailable } = useNetworkStatus();
-  const disabled = isOffline || !isLLMAvailable;
-  return (
-    <button
-      className="app-sidebar__generate-btn"
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? 'LLM unavailable' : 'Generate an article with AI'}
-    >
-      ✨ Generate with AI
-    </button>
-  );
-};
+const SidebarLayout: React.FC<{
+  activeView: SidebarView;
+  onViewChange: (view: string) => void;
+  editingTitle: string | null;
+  articles: ArticleMeta[];
+  selectedTitle: string | null;
+  articlesLoading: boolean;
+  articlesError: string | null;
+  onSelectArticle: (title: string) => void;
+  onNewArticle: () => void;
+  onGenerateArticle: () => void;
+}> = ({
+  activeView,
+  onViewChange,
+  editingTitle,
+  articles,
+  selectedTitle,
+  articlesLoading,
+  articlesError,
+  onSelectArticle,
+  onNewArticle,
+  onGenerateArticle,
+}) => {
+    const { open, setOpen } = useSidebar();
+
+    const handleViewChange = useCallback(
+      (view: SidebarView) => {
+        if (view === activeView) {
+          // Clicking the active icon toggles sidebar open/closed
+          setOpen(!open);
+        } else {
+          // Switching to a different view
+          onViewChange(view);
+          // Settings doesn't use the sidebar panel, so collapse it
+          if (view === 'settings') {
+            setOpen(false);
+          } else if (!open) {
+            // Open sidebar if switching to a panel view while collapsed
+            setOpen(true);
+          }
+        }
+      },
+      [activeView, open, setOpen, onViewChange]
+    );
+
+    // Determine if sidebar panel should show content (not for settings)
+    const showSidebarPanel = activeView !== 'settings';
+
+    return (
+      <div className="flex h-full w-full">
+        {/* Icon Rail — always visible */}
+        <IconRail
+          activeView={activeView}
+          onViewChange={handleViewChange}
+          isSidebarOpen={open}
+        />
+
+        {/* Sidebar Panel */}
+        {showSidebarPanel && (
+          <Sidebar>
+            <SidebarHeader>
+              <span className="text-sm font-semibold text-text-primary tracking-wide">
+                Lumina
+              </span>
+            </SidebarHeader>
+            <SidebarContent>
+              {activeView === 'files' && (
+                <FilesView
+                  articles={articles}
+                  selectedTitle={selectedTitle}
+                  loading={articlesLoading}
+                  error={articlesError}
+                  onSelectArticle={onSelectArticle}
+                  onNewArticle={onNewArticle}
+                  onGenerateArticle={onGenerateArticle}
+                />
+              )}
+              {activeView === 'search' && (
+                <SearchView onSelectArticle={onSelectArticle} />
+              )}
+              {activeView === 'bookmarks' && <BookmarksView />}
+            </SidebarContent>
+          </Sidebar>
+        )}
+
+        {/* Main Content Area */}
+        <main className="flex-1 overflow-auto bg-main-bg">
+          <OfflineBanner />
+          {activeView === 'settings' && editingTitle === null && <SettingsPanel />}
+          {activeView !== 'settings' && editingTitle === null && <ArticleBrowser />}
+          {editingTitle !== null && <ArticleEditor />}
+        </main>
+      </div>
+    );
+  };
 
 // ── AppShell ───────────────────────────────────────────────────
 
 const AppShell: React.FC = () => {
-  const [view, setView] = useState<NavView>('browse');
+  const [activeView, setActiveView] = useState<SidebarView>('files');
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
+
+  // Article list state (shared with FilesView)
+  const [articles, setArticles] = useState<ArticleMeta[]>([]);
+  const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
+  const [articlesLoading, setArticlesLoading] = useState(true);
+  const [articlesError, setArticlesError] = useState<string | null>(null);
 
   // Load config on mount: check vault path and apply theme
   useEffect(() => {
@@ -192,34 +282,93 @@ const AppShell: React.FC = () => {
     };
   }, []);
 
-  const navigate = useCallback((v: NavView) => {
-    setView(v);
-    if (v !== 'edit') setEditingTitle(null);
+  // Fetch articles on mount + listen for vault changes
+  useEffect(() => {
+    if (firstRun === null || firstRun) return;
+
+    let cancelled = false;
+
+    const fetchArticles = async () => {
+      try {
+        setArticlesLoading(true);
+        setArticlesError(null);
+        const list = await window.api.listArticles();
+        if (!cancelled) {
+          setArticles(list);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setArticlesError(err instanceof Error ? err.message : 'Failed to load articles');
+        }
+      } finally {
+        if (!cancelled) setArticlesLoading(false);
+      }
+    };
+
+    fetchArticles();
+
+    window.api.onVaultChange(() => {
+      if (!cancelled) fetchArticles();
+    });
+
+    return () => {
+      cancelled = true;
+      window.api.removeVaultChangeListener();
+    };
+  }, [firstRun]);
+
+  const navigate = useCallback((v: string) => {
+    // Handle legacy NavView values for backward compatibility
+    if (v === 'browse') {
+      setActiveView('files');
+      setEditingTitle(null);
+      return;
+    }
+    if (v === 'edit') {
+      // 'edit' is no longer a sidebar view; ignore (use editArticle/createNewArticle instead)
+      return;
+    }
+    setActiveView(v as SidebarView);
+    // Clear editing state when switching views via navigate
+    setEditingTitle(null);
   }, []);
 
   const editArticle = useCallback((title: string) => {
     setEditingTitle(title);
-    setView('edit');
   }, []);
 
   const createNewArticle = useCallback(() => {
     setEditingTitle(null);
     setGeneratedContent(null);
-    setView('edit');
+    // Set editingTitle to empty string to signal "new article" mode
+    // (null means "not editing", so we use a sentinel)
+    setEditingTitle('');
+  }, []);
+
+  const handleSelectArticle = useCallback((title: string) => {
+    setSelectedTitle(title);
+    setEditingTitle(null);
   }, []);
 
   const handleAcceptGenerated = useCallback((content: string) => {
     setGenerateOpen(false);
-    setEditingTitle(null);
+    setEditingTitle('');
     setGeneratedContent(content);
-    setView('edit');
   }, []);
 
   const clearGeneratedContent = useCallback(() => {
     setGeneratedContent(null);
   }, []);
 
-  const navCtx: NavigationContext = { view, navigate, editingTitle, editArticle, createNewArticle, generatedContent, clearGeneratedContent };
+  const navCtx: NavigationContext = {
+    view: activeView,
+    navigate,
+    editingTitle: editingTitle === '' ? null : editingTitle,
+    editArticle,
+    createNewArticle,
+    generatedContent,
+    clearGeneratedContent,
+  };
 
   // Still loading config
   if (firstRun === null) {
@@ -234,48 +383,29 @@ const AppShell: React.FC = () => {
   return (
     <NetworkStatusProvider>
       <NavContext.Provider value={navCtx}>
-        <div className="app-shell">
-          {/* Sidebar */}
-          <aside className="app-sidebar">
-            <div className="app-sidebar__header">LLM Wiki</div>
-            <nav className="app-sidebar__nav">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.view}
-                  className={`app-sidebar__item${view === item.view ? ' app-sidebar__item--active' : ''}`}
-                  onClick={() => navigate(item.view)}
-                  aria-current={view === item.view ? 'page' : undefined}
-                >
-                  <span aria-hidden="true">{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-            <button
-              className="app-sidebar__new-btn"
-              onClick={createNewArticle}
-            >
-              + New Article
-            </button>
-            <GenerateButton onClick={() => setGenerateOpen(true)} />
-          </aside>
+        <TooltipProvider>
+          <SidebarProvider defaultOpen={true}>
+            <SidebarLayout
+              activeView={activeView}
+              onViewChange={navigate}
+              editingTitle={editingTitle}
+              articles={articles}
+              selectedTitle={selectedTitle}
+              articlesLoading={articlesLoading}
+              articlesError={articlesError}
+              onSelectArticle={handleSelectArticle}
+              onNewArticle={createNewArticle}
+              onGenerateArticle={() => setGenerateOpen(true)}
+            />
+          </SidebarProvider>
+        </TooltipProvider>
 
-          {/* Main content */}
-          <main className="app-main">
-            <OfflineBanner />
-            {view === 'browse' && <ArticleBrowser />}
-            {view === 'search' && <SearchPanel />}
-            {view === 'settings' && <SettingsPanel />}
-            {view === 'edit' && <ArticleEditor />}
-          </main>
-
-          {/* Generate Article Dialog */}
-          <GenerateArticleDialog
-            open={generateOpen}
-            onClose={() => setGenerateOpen(false)}
-            onAccept={handleAcceptGenerated}
-          />
-        </div>
+        {/* Generate Article Dialog */}
+        <GenerateArticleDialog
+          open={generateOpen}
+          onClose={() => setGenerateOpen(false)}
+          onAccept={handleAcceptGenerated}
+        />
       </NavContext.Provider>
     </NetworkStatusProvider>
   );

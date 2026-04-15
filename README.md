@@ -33,12 +33,13 @@ npm run dev
 - [-] React UI (browsing, editing, search, settings)
   - [x] AppShell layout with sidebar navigation and theme support
   - [x] ArticleBrowser with article list, remark rendering, metadata header, and backlinks
+  - [x] Remark plugins for wikilinks, embeds, and inline tags
 - [ ] LLM integration UI
 - [ ] First-run experience and offline handling
 
 ## Testing
 
-All 66 tests passing across markdown parser, filesystem service, and search index service.
+All 86 tests passing across markdown parser, filesystem service, search index service, and remark plugins.
 
 ```bash
 npm test

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkHtml from 'remark-html';
+import remarkWikilinks from '../plugins/remark-wikilinks';
+import remarkEmbeds from '../plugins/remark-embeds';
+import remarkTags from '../plugins/remark-tags';
 import type { ArticleMeta, ArticleFile } from '../../shared/types';
 import { useNavigation } from './AppShell';
 
@@ -10,7 +13,10 @@ import { useNavigation } from './AppShell';
 const markdownToHtml = (markdown: string): string => {
   const result = unified()
     .use(remarkParse)
-    .use(remarkHtml)
+    .use(remarkWikilinks)
+    .use(remarkEmbeds)
+    .use(remarkTags)
+    .use(remarkHtml, { sanitize: false })
     .processSync(markdown);
   return String(result);
 };

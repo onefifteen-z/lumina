@@ -21,15 +21,10 @@ type FolderNode = {
 
 type TreeNode = FileNode | FolderNode;
 
-/** Derive the display label for a file leaf. */
+/** Derive the display label for a file leaf — always show the filename stem. */
 function fileDisplayName(article: ArticleMeta): string {
-  // If the title contains "/" it was derived from the full path, not frontmatter.
-  // Show only the basename stem so it reads naturally inside the tree.
-  if (article.title.includes("/")) {
-    const basename = article.filename.split("/").pop() ?? article.filename;
-    return basename.replace(/\.md$/i, "").replace(/-/g, " ");
-  }
-  return article.title;
+  const basename = article.filename.split("/").pop() ?? article.filename;
+  return basename.replace(/\.md$/i, "");
 }
 
 /** Build a nested tree from a flat list of ArticleMeta. */

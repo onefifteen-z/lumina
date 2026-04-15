@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Files, Search, Bookmark, Settings, Sun, Moon, Network } from "lucide-react";
+import { Files, Search, Bookmark, MessageSquare, Settings, Sun, Moon, Network } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -7,7 +7,7 @@ import {
 } from "./ui/tooltip";
 import { cn } from "../lib/utils";
 
-export type SidebarView = "files" | "search" | "bookmarks" | "graph" | "settings";
+export type SidebarView = "files" | "search" | "bookmarks" | "chat" | "graph" | "settings";
 
 export interface IconRailProps {
   activeView: SidebarView;
@@ -21,6 +21,7 @@ const topItems: { view: SidebarView; icon: React.ElementType; label: string }[] 
   { view: "files", icon: Files, label: "Files" },
   { view: "search", icon: Search, label: "Search" },
   { view: "bookmarks", icon: Bookmark, label: "Bookmarks" },
+  { view: "chat", icon: MessageSquare, label: "Chat" },
   { view: "graph", icon: Network, label: "Graph" },
 ];
 

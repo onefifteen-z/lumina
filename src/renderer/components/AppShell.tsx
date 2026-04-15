@@ -11,6 +11,7 @@ import { SearchView } from './SearchView';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
 import { GraphView } from './GraphView';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
@@ -234,7 +235,20 @@ const SidebarLayout: React.FC<{
         )}
 
         {/* Main Content Area + TOC */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex flex-1 overflow-hidden">
+          {/* TOC toggle — top-right, aligned with traffic lights */}
+          {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
+            <button
+              type="button"
+              onClick={() => setRightCollapsed(c => !c)}
+              className="absolute top-4 right-3 z-10 flex items-center justify-center w-7 h-7 rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer"
+              aria-label={rightCollapsed ? "Expand table of contents" : "Collapse table of contents"}
+            >
+              {rightCollapsed
+                ? <PanelRightOpen size={16} />
+                : <PanelRightClose size={16} />}
+            </button>
+          )}
           <main className="flex-1 overflow-auto bg-main-bg">
             <OfflineBanner />
             {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
@@ -250,7 +264,7 @@ const SidebarLayout: React.FC<{
             {editingFilename !== null && <ArticleEditor />}
           </main>
           {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
-            <TocPanel headings={headings} collapsed={rightCollapsed} onToggleCollapse={() => setRightCollapsed(c => !c)} />
+            <TocPanel headings={headings} collapsed={rightCollapsed} />
           )}
         </div>
       </div>

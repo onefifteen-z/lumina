@@ -135,6 +135,23 @@ const OfflineBanner: React.FC = () => {
   );
 };
 
+// ── Generate Button (LLM-aware) ────────────────────────────
+
+const GenerateButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const { isOffline, isLLMAvailable } = useNetworkStatus();
+  const disabled = isOffline || !isLLMAvailable;
+  return (
+    <button
+      className="app-sidebar__generate-btn"
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? 'LLM unavailable' : 'Generate an article with AI'}
+    >
+      ✨ Generate with AI
+    </button>
+  );
+};
+
 // ── AppShell ───────────────────────────────────────────────────
 
 const AppShell: React.FC = () => {
@@ -250,12 +267,7 @@ const AppShell: React.FC = () => {
             >
               + New Article
             </button>
-            <button
-              className="app-sidebar__generate-btn"
-              onClick={() => setGenerateOpen(true)}
-            >
-              ✨ Generate with AI
-            </button>
+            <GenerateButton onClick={() => setGenerateOpen(true)} />
           </aside>
 
           {/* Main content */}

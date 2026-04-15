@@ -10,12 +10,13 @@ export interface GenerateArticleDialogProps {
 type GenerateState = 'idle' | 'generating' | 'done' | 'error';
 
 const GenerateArticleDialog: React.FC<GenerateArticleDialogProps> = ({ open, onClose, onAccept }) => {
-  const { isOffline } = useNetworkStatus();
+  const { isOffline, isLLMAvailable } = useNetworkStatus();
   const [prompt, setPrompt] = useState('');
   const [preview, setPreview] = useState('');
   const [state, setState] = useState<GenerateState>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const abortRef = useRef(false);
+  const llmDisabled = isOffline || !isLLMAvailable;
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -37,7 +38,19 @@ const GenerateArticleDialog: React.FC<GenerateArticleDialogProps> = ({ open, onC
       }
     } catch (err) {
       if (!abortRef.current) {
-        setErrorMsg(err instanceof Error ? err.message : 'Generation failed');
+        const msg = err instanceof Error ? err.message : 'Generation failed';
+        // Classify error messages for user-friendly display
+        if (msg.includes('Authentication') || msg.includes('401') || msg.includes('403')) {
+          setErrorMsg('Authentication failed. Check your API key in Settings.');
+        } else if (msg.includes('Rate limit') || msg.includes('429')) {
+          setErrorMsg('Rate limit exceeded. Please wait a moment and try again.');
+        } else if (msg.includes('timed out') || msg.includes('timeout')) {
+          setErrorMsg('Request timed out. The LLM service may be slow or unreachable.');
+        } else if (msg.includes('not configured')) {
+          setErrorMsg('LLM service is not configured. Set up your provider in Settings.');
+        } else {
+          setErrorMsg(msg);
+        }
         setState('error');
       }
     }
@@ -94,6 +107,9 @@ const GenerateArticleDialog: React.FC<GenerateArticleDialogProps> = ({ open, onC
           {isOffline && (
             <p className="generate-dialog__warning">You are offline. LLM features are unavailable.</p>
           )}
+          {!isOffline && !isLLMAvailable && (
+            <p className="generate-dialog__warning">LLM service is unavailable. Check your provider settings.</p>
+          )}
 
           {/* Action buttons */}
           <div className="generate-dialog__actions">
@@ -101,7 +117,7 @@ const GenerateArticleDialog: React.FC<GenerateArticleDialogProps> = ({ open, onC
               <button
                 className="generate-dialog__btn generate-dialog__btn--primary"
                 onClick={handleGenerate}
-                disabled={!prompt.trim() || isOffline}
+                disabled={!prompt.trim() || llmDisabled}
               >
                 Generate
               </button>
@@ -122,7 +138,7 @@ const GenerateArticleDialog: React.FC<GenerateArticleDialogProps> = ({ open, onC
               </>
             )}
             {state === 'error' && (
-              <button className="generate-dialog__btn" onClick={handleGenerate} disabled={isOffline}>
+              <button className="generate-dialog__btn" onClick={handleGenerate} disabled={llmDisabled}>
                 Retry
               </button>
             )}

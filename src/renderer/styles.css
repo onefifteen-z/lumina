@@ -991,6 +991,18 @@ body {
   color: #fff;
 }
 
+.app-sidebar__generate-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.app-sidebar__generate-btn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
 /* ── Generate Article Dialog ────────────────────────────────── */
 
 .generate-dialog__overlay {

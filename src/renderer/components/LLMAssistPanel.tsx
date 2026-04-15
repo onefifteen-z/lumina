@@ -28,11 +28,12 @@ const LLMAssistPanel: React.FC<LLMAssistPanelProps> = ({
   onAccept,
   onDismiss,
 }) => {
-  const { isOffline } = useNetworkStatus();
+  const { isOffline, isLLMAvailable } = useNetworkStatus();
   const [state, setState] = useState<AssistState>('idle');
   const [result, setResult] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [activeAction, setActiveAction] = useState<AssistAction | null>(null);
+  const llmDisabled = isOffline || !isLLMAvailable;
 
   const handleAction = useCallback(async (action: AssistAction) => {
     setActiveAction(action);
@@ -45,7 +46,18 @@ const LLMAssistPanel: React.FC<LLMAssistPanelProps> = ({
       setResult(response);
       setState('done');
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Assist request failed');
+      const msg = err instanceof Error ? err.message : 'Assist request failed';
+      if (msg.includes('Authentication') || msg.includes('401') || msg.includes('403')) {
+        setErrorMsg('Authentication failed. Check your API key in Settings.');
+      } else if (msg.includes('Rate limit') || msg.includes('429')) {
+        setErrorMsg('Rate limit exceeded. Please wait and try again.');
+      } else if (msg.includes('timed out') || msg.includes('timeout')) {
+        setErrorMsg('Request timed out. Try again.');
+      } else if (msg.includes('not configured')) {
+        setErrorMsg('LLM service is not configured.');
+      } else {
+        setErrorMsg(msg);
+      }
       setState('error');
     }
   }, [selectedText]);
@@ -82,8 +94,8 @@ const LLMAssistPanel: React.FC<LLMAssistPanelProps> = ({
               key={action}
               className="llm-assist-panel__action-btn"
               onClick={() => handleAction(action)}
-              disabled={isOffline}
-              title={isOffline ? 'Unavailable offline' : label}
+              disabled={llmDisabled}
+              title={llmDisabled ? 'LLM unavailable' : label}
             >
               <span aria-hidden="true">{icon}</span> {label}
             </button>

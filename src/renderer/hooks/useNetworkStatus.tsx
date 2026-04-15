@@ -5,11 +5,14 @@ export interface NetworkStatus {
   isOffline: boolean;
   /** True when the LLM service is available (online + configured) */
   isLLMAvailable: boolean;
+  /** Manually trigger an LLM availability re-check */
+  recheckLLM: () => void;
 }
 
 const NetworkStatusContext = createContext<NetworkStatus>({
   isOffline: false,
   isLLMAvailable: false,
+  recheckLLM: () => { },
 });
 
 export const useNetworkStatus = () => useContext(NetworkStatusContext);
@@ -46,14 +49,22 @@ export const NetworkStatusProvider: React.FC<{ children: React.ReactNode }> = ({
       checkLLM();
     }
 
+    // Periodic LLM availability polling (every 30s)
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        checkLLM();
+      }
+    }, 30_000);
+
     return () => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
+      clearInterval(interval);
     };
   }, [checkLLM]);
 
   return (
-    <NetworkStatusContext.Provider value={{ isOffline, isLLMAvailable }}>
+    <NetworkStatusContext.Provider value={{ isOffline, isLLMAvailable, recheckLLM: checkLLM }}>
       {children}
     </NetworkStatusContext.Provider>
   );

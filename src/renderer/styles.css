@@ -661,6 +661,15 @@ body {
   background: var(--color-bg-secondary);
 }
 
+.article-editor__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
 /* ── Welcome Screen (First-Run) ─────────────────────────────── */
 
 .welcome-screen {

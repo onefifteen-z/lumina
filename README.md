@@ -36,6 +36,7 @@ npm run dev
   - [x] Remark plugins for wikilinks, embeds, and inline tags
   - [x] Wikilink navigation, link resolution, and tag filtering
   - [x] Browsing and navigation checkpoint passed (86 tests passing)
+  - [x] ArticleEditor with CodeMirror 6 (markdown editing, save with Ctrl/Cmd+S, title input, frontmatter serialization)
 - [ ] LLM integration UI
 - [x] First-run experience and offline handling
   - [x] First-run vault selection (welcome screen with folder picker)

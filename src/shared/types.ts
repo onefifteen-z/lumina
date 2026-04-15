@@ -136,6 +136,16 @@ export interface WikiAPI {
   onVaultChange(callback: (event: VaultChangeEvent) => void): void;
   removeVaultChangeListener(): void;
 
+  // Chat
+  startChatSession(): Promise<ChatSession>;
+  sendChatMessage(content: string): Promise<void>; // streaming via events
+  stopChatGeneration(): Promise<void>;
+  getChatSession(): Promise<ChatSession | null>;
+  onChatChunk(callback: (chunk: string) => void): void;
+  onChatEnd(callback: (error?: string) => void): void;
+  onChatWarning(callback: (message: string) => void): void;
+  removeChatListeners(): void;
+
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
   notifyUnsavedChanges(isDirty: boolean): void;

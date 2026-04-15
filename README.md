@@ -98,6 +98,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 Adding a full-featured LLM chat page to Lumina with multi-turn conversation support, streaming responses, and Markdown rendering. See `.kiro/specs/llm-chat/` for the full spec.
 
 - [x] ChatMessage and ChatSession shared type interfaces
+- [x] WikiAPI chat method signatures (startChatSession, sendChatMessage, stopChatGeneration, etc.)
 
 ## License
 

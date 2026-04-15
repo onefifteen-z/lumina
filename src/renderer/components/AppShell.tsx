@@ -168,6 +168,7 @@ const SidebarLayout: React.FC<{
   onHeadingsChange,
 }) => {
     const { open, setOpen } = useSidebar();
+    const [rightCollapsed, setRightCollapsed] = useState(false);
 
     const handleViewChange = useCallback(
       (view: SidebarView) => {

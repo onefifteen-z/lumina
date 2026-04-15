@@ -12,7 +12,7 @@ import type { ArticleFile, FrontmatterData } from '../../shared/types';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const ArticleEditor: React.FC = () => {
-  const { editingTitle, navigate } = useNavigation();
+  const { editingTitle, navigate, generatedContent, clearGeneratedContent } = useNavigation();
 
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -236,6 +236,24 @@ const ArticleEditor: React.FC = () => {
     loadArticle();
     return () => { cancelled = true; };
   }, [editingTitle]);
+
+  // Load generated content from LLM into the editor (new article flow)
+  useEffect(() => {
+    if (!generatedContent || editingTitle) return;
+    if (viewRef.current) {
+      viewRef.current.dispatch({
+        changes: {
+          from: 0,
+          to: viewRef.current.state.doc.length,
+          insert: generatedContent,
+        },
+      });
+      // Mark dirty since we have unsaved generated content
+      savedContentRef.current = '';
+      setIsDirty(true);
+    }
+    clearGeneratedContent();
+  }, [generatedContent, editingTitle, clearGeneratedContent]);
 
   // Clean up dirty notification on unmount
   useEffect(() => {

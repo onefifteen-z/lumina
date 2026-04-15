@@ -4,6 +4,7 @@ import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
 import SearchPanel from './SearchPanel';
 import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
+import GenerateArticleDialog from './GenerateArticleDialog';
 
 // ── Declare window.api for TypeScript ──────────────────────────
 
@@ -26,6 +27,10 @@ export interface NavigationContext {
   editArticle: (title: string) => void;
   /** Create a new article — opens blank editor */
   createNewArticle: () => void;
+  /** Pre-populated content from LLM generation (when opening editor after generate) */
+  generatedContent: string | null;
+  /** Clear the generated content after it's been consumed */
+  clearGeneratedContent: () => void;
 }
 
 const NavContext = createContext<NavigationContext>({
@@ -34,6 +39,8 @@ const NavContext = createContext<NavigationContext>({
   editingTitle: null,
   editArticle: () => { },
   createNewArticle: () => { },
+  generatedContent: null,
+  clearGeneratedContent: () => { },
 });
 
 export const useNavigation = () => useContext(NavContext);
@@ -134,6 +141,8 @@ const AppShell: React.FC = () => {
   const [view, setView] = useState<NavView>('browse');
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [generatedContent, setGeneratedContent] = useState<string | null>(null);
 
   // Load config on mount: check vault path and apply theme
   useEffect(() => {
@@ -188,10 +197,22 @@ const AppShell: React.FC = () => {
 
   const createNewArticle = useCallback(() => {
     setEditingTitle(null);
+    setGeneratedContent(null);
     setView('edit');
   }, []);
 
-  const navCtx: NavigationContext = { view, navigate, editingTitle, editArticle, createNewArticle };
+  const handleAcceptGenerated = useCallback((content: string) => {
+    setGenerateOpen(false);
+    setEditingTitle(null);
+    setGeneratedContent(content);
+    setView('edit');
+  }, []);
+
+  const clearGeneratedContent = useCallback(() => {
+    setGeneratedContent(null);
+  }, []);
+
+  const navCtx: NavigationContext = { view, navigate, editingTitle, editArticle, createNewArticle, generatedContent, clearGeneratedContent };
 
   // Still loading config
   if (firstRun === null) {
@@ -229,6 +250,12 @@ const AppShell: React.FC = () => {
             >
               + New Article
             </button>
+            <button
+              className="app-sidebar__generate-btn"
+              onClick={() => setGenerateOpen(true)}
+            >
+              ✨ Generate with AI
+            </button>
           </aside>
 
           {/* Main content */}
@@ -239,6 +266,13 @@ const AppShell: React.FC = () => {
             {view === 'settings' && <SettingsPanel />}
             {view === 'edit' && <ArticleEditor />}
           </main>
+
+          {/* Generate Article Dialog */}
+          <GenerateArticleDialog
+            open={generateOpen}
+            onClose={() => setGenerateOpen(false)}
+            onAccept={handleAcceptGenerated}
+          />
         </div>
       </NavContext.Provider>
     </NetworkStatusProvider>

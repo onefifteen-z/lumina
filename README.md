@@ -11,6 +11,7 @@ LLM Wiki — a local-first Electron desktop app providing an AI-powered personal
   - `src/main/services/llm-service.ts` — LLM provider integration (streaming generation, summarize, expand, refine)
   - `src/main/services/config-service.ts` — App configuration persistence (electron-store) and secure API key storage (safeStorage)
 - `src/renderer/` — React-based renderer UI
+  - `src/renderer/components/AppShell.tsx` — Main layout shell with sidebar navigation, theme support, and navigation context
 - `src/main/ipc-handlers.ts` — IPC handler registration wiring services to renderer API
 - `src/preload/` — Typed preload script exposing WikiAPI via contextBridge
 
@@ -29,7 +30,8 @@ npm run dev
 - [x] Markdown parser (frontmatter, wikilinks, embeds, tags, title/filename conversion)
 - [x] Main process services (FileSystemService, SearchIndexService, LLMService, ConfigService)
 - [x] IPC bridge and preload script
-- [ ] React UI (browsing, editing, search, settings)
+- [-] React UI (browsing, editing, search, settings)
+  - [x] AppShell layout with sidebar navigation and theme support
 - [ ] LLM integration UI
 - [ ] First-run experience and offline handling
 

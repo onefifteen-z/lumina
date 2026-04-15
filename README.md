@@ -42,7 +42,7 @@ npm run dev
   - [x] Unsaved changes handling (dirty tracking, navigation prompt, before-quit dialog)
   - [x] New article creation flow (sidebar button, duplicate title check, title validation)
   - [x] SearchPanel with debounced full-text search, highlighted match snippets, and tag-based search (`#` prefix)
-- [-] LLM integration UI
+- [x] LLM integration UI
   - [x] Generate Article dialog (AI-powered article generation with streaming preview, accept/cancel flow)
   - [x] LLMAssistPanel (floating panel for summarize/expand/refine on selected text with diff view)
   - [x] LLM availability handling (periodic polling, disabled controls when unavailable, classified error messages)

@@ -19,8 +19,8 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:listArticles");
   },
 
-  getArticle(title: string) {
-    return ipcRenderer.invoke("wiki:getArticle", title);
+  getArticle(filename: string) {
+    return ipcRenderer.invoke("wiki:getArticle", filename);
   },
 
   saveArticle(article: ArticleFile) {

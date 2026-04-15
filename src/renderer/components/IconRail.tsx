@@ -62,7 +62,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen }: IconRailPr
             role="tab"
             aria-label={item.label}
             aria-selected={isActive}
-            tabIndex={index === 0 ? 0 : -1}
+            tabIndex={0}
             className={cn(
               "flex items-center justify-center w-10 h-10 rounded-md transition-colors cursor-pointer",
               "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",

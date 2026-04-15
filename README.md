@@ -90,6 +90,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 - [x] Refactor ArticleBrowser to viewer-only component (article list extracted to FilesView)
 - [x] Rebrand all UI references from "LLM Wiki" to "Lumina"
 - [x] Apply Obsidian-inspired dark theme as default (dark class, contrast-compliant colors)
+- [x] Keyboard accessibility (focus rings, Tab navigation, Enter/Space activation)
 
 ## License
 

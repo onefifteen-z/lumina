@@ -90,7 +90,7 @@ export interface VaultChangeEvent {
 export interface WikiAPI {
   // Article CRUD
   listArticles(): Promise<ArticleMeta[]>;
-  getArticle(title: string): Promise<ArticleFile>;
+  getArticle(filename: string): Promise<ArticleFile>;
   saveArticle(article: ArticleFile): Promise<void>;
   deleteArticle(title: string): Promise<void>;
   articleExists(title: string): Promise<boolean>;
@@ -100,7 +100,7 @@ export interface WikiAPI {
   searchByTag(tag: string): Promise<ArticleMeta[]>;
 
   // Link resolution
-  getBacklinks(title: string): Promise<string[]>;
+  getBacklinks(title: string): Promise<{ title: string; filename: string }[]>;
   resolveWikilink(target: string): Promise<{ exists: boolean; title: string }>;
 
   // LLM

@@ -6,6 +6,7 @@ import remarkWikilinks from '../plugins/remark-wikilinks';
 import remarkEmbeds from '../plugins/remark-embeds';
 import remarkTags from '../plugins/remark-tags';
 import type { ArticleFile } from '../../shared/types';
+import { titleToFilename } from '../../shared/markdown-parser';
 import { useNavigation } from './AppShell';
 
 // ── Remark pipeline ────────────────────────────────────────────
@@ -39,33 +40,34 @@ const formatDate = (iso: string): string => {
 // ── ArticleBrowser (viewer-only) ───────────────────────────────
 
 interface ArticleBrowserProps {
-  selectedTitle: string | null;
+  selectedFilename: string | null;
 }
 
-const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
+const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename }) => {
   const { editArticle } = useNavigation();
 
   // Selected article state
   const [article, setArticle] = useState<ArticleFile | null>(null);
+  const [currentFilename, setCurrentFilename] = useState<string | null>(null);
   const [renderedHtml, setRenderedHtml] = useState('');
-  const [backlinks, setBacklinks] = useState<string[]>([]);
+  const [backlinks, setBacklinks] = useState<{ title: string; filename: string }[]>([]);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
 
-  // Fetch article content + backlinks
-  const selectArticle = useCallback(async (title: string) => {
+  // Fetch article content + backlinks by vault-relative filename
+  const selectArticle = useCallback(async (filename: string) => {
     setArticleLoading(true);
     setArticleError(null);
     setArticle(null);
+    setCurrentFilename(null);
     setRenderedHtml('');
     setBacklinks([]);
 
     try {
-      const [fetched, links] = await Promise.all([
-        window.api.getArticle(title),
-        window.api.getBacklinks(title),
-      ]);
+      const fetched = await window.api.getArticle(filename);
+      const links = await window.api.getBacklinks(fetched.frontmatter.title);
       setArticle(fetched);
+      setCurrentFilename(filename);
       setRenderedHtml(markdownToHtml(fetched.content));
       setBacklinks(links);
     } catch (err) {
@@ -75,21 +77,22 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
     }
   }, []);
 
-  // Fetch article when selectedTitle prop changes
+  // Fetch article when selectedFilename prop changes
   useEffect(() => {
-    if (selectedTitle) {
-      selectArticle(selectedTitle);
+    if (selectedFilename) {
+      selectArticle(selectedFilename);
     } else {
       setArticle(null);
+      setCurrentFilename(null);
       setRenderedHtml('');
       setBacklinks([]);
       setArticleError(null);
     }
-  }, [selectedTitle, selectArticle]);
+  }, [selectedFilename, selectArticle]);
 
-  // Navigate to a backlinked article
-  const handleBacklinkClick = useCallback((title: string) => {
-    selectArticle(title);
+  // Navigate to a backlinked article by its filename
+  const handleBacklinkClick = useCallback((filename: string) => {
+    selectArticle(filename);
   }, [selectArticle]);
 
   // Click handler for rendered content (wikilinks, tags, embeds)
@@ -104,11 +107,12 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
       if (articleTarget) {
         const resolved = await window.api.resolveWikilink(articleTarget);
         if (resolved.exists) {
-          selectArticle(resolved.title);
+          // Wikilinks reference flat-vault files by title; derive filename the same way
+          selectArticle(titleToFilename(resolved.title) + '.md');
         } else {
           const create = window.confirm(`Article '${articleTarget}' doesn't exist. Create it?`);
           if (create) {
-            editArticle(articleTarget);
+            editArticle(titleToFilename(articleTarget) + '.md');
           }
         }
       }
@@ -128,11 +132,11 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
       if (embedTarget) {
         const resolved = await window.api.resolveWikilink(embedTarget);
         if (resolved.exists) {
-          selectArticle(resolved.title);
+          selectArticle(titleToFilename(resolved.title) + '.md');
         } else {
           const create = window.confirm(`Article '${embedTarget}' doesn't exist. Create it?`);
           if (create) {
-            editArticle(embedTarget);
+            editArticle(titleToFilename(embedTarget) + '.md');
           }
         }
       }
@@ -144,21 +148,21 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
 
   return (
     <section className="article-browser__view">
-      {!selectedTitle && (
+      {!selectedFilename && (
         <div className="article-browser__empty">Select an article to view</div>
       )}
 
-      {selectedTitle && articleLoading && (
+      {selectedFilename && articleLoading && (
         <div className="article-browser__status">Loading article…</div>
       )}
 
-      {selectedTitle && articleError && (
+      {selectedFilename && articleError && (
         <div className="article-browser__status article-browser__status--error">
           {articleError}
         </div>
       )}
 
-      {selectedTitle && article && !articleLoading && !articleError && (
+      {selectedFilename && article && !articleLoading && !articleError && (
         <>
           {/* Corrupted file warning */}
           {article.frontmatter._corrupted && (
@@ -195,7 +199,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
 
             <button
               className="article-view__edit-btn"
-              onClick={() => editArticle(article.frontmatter.title)}
+              onClick={() => currentFilename && editArticle(currentFilename)}
             >
               ✏️ Edit
             </button>
@@ -214,12 +218,12 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedTitle }) => {
               <h3 className="article-view__backlinks-title">Backlinks</h3>
               <ul className="article-view__backlinks-list">
                 {backlinks.map((link) => (
-                  <li key={link}>
+                  <li key={link.filename}>
                     <button
                       className="article-view__backlink"
-                      onClick={() => handleBacklinkClick(link)}
+                      onClick={() => handleBacklinkClick(link.filename)}
                     >
-                      {link}
+                      {link.title}
                     </button>
                   </li>
                 ))}

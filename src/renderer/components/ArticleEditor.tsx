@@ -13,7 +13,7 @@ import LLMAssistPanel from './LLMAssistPanel';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const ArticleEditor: React.FC = () => {
-  const { editingTitle, navigate, generatedContent, clearGeneratedContent } = useNavigation();
+  const { editingFilename, navigate, generatedContent, clearGeneratedContent } = useNavigation();
 
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -78,8 +78,8 @@ const ArticleEditor: React.FC = () => {
       return;
     }
 
-    // Check for duplicate title when creating a new article (editingTitle is null)
-    const isNewArticle = editingTitle === null;
+    // Check for duplicate title when creating a new article (editingFilename is null)
+    const isNewArticle = editingFilename === null;
     if (isNewArticle) {
       try {
         const exists = await window.api.articleExists(trimmedTitle);

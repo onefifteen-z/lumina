@@ -35,10 +35,10 @@ export interface NavigationContext {
   view: SidebarView;
   /** Navigate to a sidebar view. Also accepts legacy 'browse' (→ 'files') and 'edit' values. */
   navigate: (view: string) => void;
-  /** Title of the article being edited (when in editor mode) */
-  editingTitle: string | null;
-  /** Navigate to the editor for a specific article */
-  editArticle: (title: string) => void;
+  /** Vault-relative filename of the article being edited, or null when not editing */
+  editingFilename: string | null;
+  /** Navigate to the editor for a specific article by its vault-relative filename */
+  editArticle: (filename: string) => void;
   /** Create a new article — opens blank editor */
   createNewArticle: () => void;
   /** Pre-populated content from LLM generation (when opening editor after generate) */
@@ -50,7 +50,7 @@ export interface NavigationContext {
 const NavContext = createContext<NavigationContext>({
   view: 'files',
   navigate: () => { },
-  editingTitle: null,
+  editingFilename: null,
   editArticle: () => { },
   createNewArticle: () => { },
   generatedContent: null,
@@ -138,20 +138,20 @@ const OfflineBanner: React.FC = () => {
 const SidebarLayout: React.FC<{
   activeView: SidebarView;
   onViewChange: (view: string) => void;
-  editingTitle: string | null;
+  editingFilename: string | null;
   articles: ArticleMeta[];
-  selectedTitle: string | null;
+  selectedFilename: string | null;
   articlesLoading: boolean;
   articlesError: string | null;
-  onSelectArticle: (title: string) => void;
+  onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
   onGenerateArticle: () => void;
 }> = ({
   activeView,
   onViewChange,
-  editingTitle,
+  editingFilename,
   articles,
-  selectedTitle,
+  selectedFilename,
   articlesLoading,
   articlesError,
   onSelectArticle,
@@ -204,7 +204,7 @@ const SidebarLayout: React.FC<{
               {activeView === 'files' && (
                 <FilesView
                   articles={articles}
-                  selectedTitle={selectedTitle}
+                  selectedFilename={selectedFilename}
                   loading={articlesLoading}
                   error={articlesError}
                   onSelectArticle={onSelectArticle}
@@ -223,9 +223,9 @@ const SidebarLayout: React.FC<{
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto bg-main-bg">
           <OfflineBanner />
-          {activeView === 'settings' && editingTitle === null && <SettingsPanel />}
-          {activeView !== 'settings' && editingTitle === null && <ArticleBrowser selectedTitle={selectedTitle} />}
-          {editingTitle !== null && <ArticleEditor />}
+          {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
+          {activeView !== 'settings' && editingFilename === null && <ArticleBrowser selectedFilename={selectedFilename} />}
+          {editingFilename !== null && <ArticleEditor />}
         </main>
       </div>
     );
@@ -235,14 +235,14 @@ const SidebarLayout: React.FC<{
 
 const AppShell: React.FC = () => {
   const [activeView, setActiveView] = useState<SidebarView>('files');
-  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editingFilename, setEditingFilename] = useState<string | null>(null);
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
 
   // Article list state (shared with FilesView)
   const [articles, setArticles] = useState<ArticleMeta[]>([]);
-  const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
+  const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [articlesError, setArticlesError] = useState<string | null>(null);
 
@@ -331,7 +331,7 @@ const AppShell: React.FC = () => {
     // Handle legacy NavView values for backward compatibility
     if (v === 'browse') {
       setActiveView('files');
-      setEditingTitle(null);
+      setEditingFilename(null);
       return;
     }
     if (v === 'edit') {
@@ -340,29 +340,29 @@ const AppShell: React.FC = () => {
     }
     setActiveView(v as SidebarView);
     // Clear editing state when switching views via navigate
-    setEditingTitle(null);
+    setEditingFilename(null);
   }, []);
 
-  const editArticle = useCallback((title: string) => {
-    setEditingTitle(title);
+  const editArticle = useCallback((filename: string) => {
+    setEditingFilename(filename);
   }, []);
 
   const createNewArticle = useCallback(() => {
-    setEditingTitle(null);
+    setEditingFilename(null);
     setGeneratedContent(null);
-    // Set editingTitle to empty string to signal "new article" mode
+    // Set editingFilename to empty string to signal "new article" mode
     // (null means "not editing", so we use a sentinel)
-    setEditingTitle('');
+    setEditingFilename('');
   }, []);
 
-  const handleSelectArticle = useCallback((title: string) => {
-    setSelectedTitle(title);
-    setEditingTitle(null);
+  const handleSelectArticle = useCallback((filename: string) => {
+    setSelectedFilename(filename);
+    setEditingFilename(null);
   }, []);
 
   const handleAcceptGenerated = useCallback((content: string) => {
     setGenerateOpen(false);
-    setEditingTitle('');
+    setEditingFilename('');
     setGeneratedContent(content);
   }, []);
 
@@ -373,7 +373,7 @@ const AppShell: React.FC = () => {
   const navCtx: NavigationContext = {
     view: activeView,
     navigate,
-    editingTitle: editingTitle === '' ? null : editingTitle,
+    editingFilename: editingFilename === '' ? null : editingFilename,
     editArticle,
     createNewArticle,
     generatedContent,
@@ -398,9 +398,9 @@ const AppShell: React.FC = () => {
             <SidebarLayout
               activeView={activeView}
               onViewChange={navigate}
-              editingTitle={editingTitle}
+              editingFilename={editingFilename}
               articles={articles}
-              selectedTitle={selectedTitle}
+              selectedFilename={selectedFilename}
               articlesLoading={articlesLoading}
               articlesError={articlesError}
               onSelectArticle={handleSelectArticle}

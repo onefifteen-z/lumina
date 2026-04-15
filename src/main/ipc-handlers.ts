@@ -73,12 +73,11 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:getArticle",
-    async (_event, title: string): Promise<ArticleFile> => {
+    async (_event, filename: string): Promise<ArticleFile> => {
       if (!fileSystem)
         throw new Error(
           "No vault is open. Please select a vault folder first.",
         );
-      const filename = titleToFilename(title) + ".md";
       try {
         return await fileSystem.readArticle(filename);
       } catch (err) {
@@ -158,17 +157,17 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:getBacklinks",
-    async (_event, title: string): Promise<string[]> => {
+    async (_event, title: string): Promise<{ title: string; filename: string }[]> => {
       if (!fileSystem) return [];
       // Scan cached articles: if article A has a wikilink to `title`, A is a backlink
-      const backlinks: string[] = [];
+      const backlinks: { title: string; filename: string }[] = [];
       for (const article of cachedArticles) {
         if (
           article.wikilinks.some(
             (link) => link.toLowerCase() === title.toLowerCase(),
           )
         ) {
-          backlinks.push(article.title);
+          backlinks.push({ title: article.title, filename: article.filename });
         }
       }
       return backlinks;

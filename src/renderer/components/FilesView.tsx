@@ -5,17 +5,17 @@ import { cn } from "../lib/utils";
 
 export interface FilesViewProps {
   articles: ArticleMeta[];
-  selectedTitle: string | null;
+  selectedFilename: string | null;
   loading: boolean;
   error: string | null;
-  onSelectArticle: (title: string) => void;
+  onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
   onGenerateArticle: () => void;
 }
 
 export function FilesView({
   articles,
-  selectedTitle,
+  selectedFilename,
   loading,
   error,
   onSelectArticle,
@@ -46,7 +46,8 @@ export function FilesView({
           onClick={onNewArticle}
           className={cn(
             "flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-md cursor-pointer",
-            "bg-accent text-white hover:bg-accent-hover transition-colors"
+            "bg-accent text-white hover:bg-accent-hover transition-colors",
+            "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           )}
         >
           <Plus size={16} />
@@ -57,7 +58,8 @@ export function FilesView({
           onClick={onGenerateArticle}
           className={cn(
             "flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-md cursor-pointer",
-            "border border-accent text-accent hover:bg-accent hover:text-white transition-colors"
+            "border border-accent text-accent hover:bg-accent hover:text-white transition-colors",
+            "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           )}
         >
           <Sparkles size={16} />
@@ -82,14 +84,15 @@ export function FilesView({
         {!loading &&
           !error &&
           sortedArticles.map((article) => {
-            const isSelected = article.title === selectedTitle;
+            const isSelected = article.filename === selectedFilename;
             return (
               <button
                 key={article.filename}
                 type="button"
-                onClick={() => onSelectArticle(article.title)}
+                onClick={() => onSelectArticle(article.filename)}
                 className={cn(
                   "block w-full text-left px-4 py-2.5 text-sm truncate transition-colors",
+                  "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
                   isSelected
                     ? "bg-surface-active text-text-primary"
                     : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"

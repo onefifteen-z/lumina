@@ -111,5 +111,6 @@ export interface WikiAPI {
 
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
+  notifyUnsavedChanges(isDirty: boolean): void;
   confirmClose(): Promise<boolean>;
 }

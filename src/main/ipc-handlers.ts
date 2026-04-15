@@ -12,6 +12,14 @@ import { SearchIndexService } from "./services/search-index-service";
 import { LLMService } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 
+// Track whether the renderer has unsaved changes
+let rendererHasUnsavedChanges = false;
+
+/** Returns whether the renderer currently reports unsaved changes. */
+export function hasUnsavedChanges(): boolean {
+  return rendererHasUnsavedChanges;
+}
+
 /**
  * Register all IPC handlers, wiring each WikiAPI channel to the
  * appropriate main-process service.
@@ -201,6 +209,10 @@ export function registerIpcHandlers(services: {
   });
 
   // ── Lifecycle ────────────────────────────────────────────────────
+
+  ipcMain.on("wiki:notifyUnsavedChanges", (_event, isDirty: boolean) => {
+    rendererHasUnsavedChanges = isDirty;
+  });
 
   ipcMain.handle("wiki:confirmClose", async (): Promise<boolean> => {
     // The renderer calls this to confirm it's safe to close.

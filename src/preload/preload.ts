@@ -178,6 +178,10 @@ const api: WikiAPI = {
     });
   },
 
+  notifyUnsavedChanges(isDirty: boolean) {
+    ipcRenderer.send("wiki:notifyUnsavedChanges", isDirty);
+  },
+
   confirmClose() {
     return ipcRenderer.invoke("wiki:confirmClose");
   },

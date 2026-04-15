@@ -39,6 +39,7 @@ npm run dev
   - [x] ArticleEditor with CodeMirror 6 (markdown editing, save with Ctrl/Cmd+S, title input, frontmatter serialization)
   - [x] CodeMirror extensions for Obsidian syntax highlighting (wikilinks, embeds, tags, frontmatter)
   - [x] Wikilink autocomplete (triggers on `[[`, fetches article titles, inserts with closing `]]`)
+  - [x] Unsaved changes handling (dirty tracking, navigation prompt, before-quit dialog)
 - [ ] LLM integration UI
 - [x] First-run experience and offline handling
   - [x] First-run vault selection (welcome screen with folder picker)

@@ -23,6 +23,45 @@ const ArticleEditor: React.FC = () => {
   const [originalFrontmatter, setOriginalFrontmatter] = useState<FrontmatterData | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Track last-saved state for dirty detection
+  const savedTitleRef = useRef('');
+  const savedContentRef = useRef('');
+  const titleRef = useRef('');
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Keep titleRef in sync with title state
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+
+  // Recompute dirty state whenever title changes
+  const checkDirty = useCallback(() => {
+    const currentContent = viewRef.current?.state.doc.toString() ?? '';
+    const dirty = title !== savedTitleRef.current || currentContent !== savedContentRef.current;
+    setIsDirty(dirty);
+  }, [title]);
+
+  useEffect(() => {
+    checkDirty();
+  }, [checkDirty]);
+
+  // Notify main process whenever dirty state changes
+  useEffect(() => {
+    window.api.notifyUnsavedChanges(isDirty);
+  }, [isDirty]);
+
+  // beforeunload handler — prevent window close when dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
   // Save handler
   const handleSave = useCallback(async () => {
     const editorContent = viewRef.current?.state.doc.toString() ?? '';
@@ -54,6 +93,12 @@ const ArticleEditor: React.FC = () => {
       article.rawContent = serializeArticleFile(article);
 
       await window.api.saveArticle(article);
+
+      // Update saved state so isDirty resets to false
+      savedTitleRef.current = trimmedTitle;
+      savedContentRef.current = editorContent;
+      setIsDirty(false);
+
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
@@ -81,6 +126,15 @@ const ArticleEditor: React.FC = () => {
       },
     ]);
 
+    // Update listener to detect document changes for dirty tracking
+    const changeListener = EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        const currentContent = update.state.doc.toString();
+        const dirty = titleRef.current !== savedTitleRef.current || currentContent !== savedContentRef.current;
+        setIsDirty(dirty);
+      }
+    });
+
     const state = EditorState.create({
       doc: '',
       extensions: [
@@ -90,6 +144,7 @@ const ArticleEditor: React.FC = () => {
         EditorView.lineWrapping,
         ...obsidianSyntaxExtensions(),
         wikilinkAutocomplete(),
+        changeListener,
       ],
     });
 
@@ -112,6 +167,9 @@ const ArticleEditor: React.FC = () => {
       // New article — reset state
       setTitle('');
       setOriginalFrontmatter(null);
+      savedTitleRef.current = '';
+      savedContentRef.current = '';
+      setIsDirty(false);
       if (viewRef.current) {
         viewRef.current.dispatch({
           changes: {
@@ -134,6 +192,11 @@ const ArticleEditor: React.FC = () => {
 
         setTitle(article.frontmatter.title);
         setOriginalFrontmatter(article.frontmatter);
+
+        // Set saved state baselines
+        savedTitleRef.current = article.frontmatter.title;
+        savedContentRef.current = article.content;
+        setIsDirty(false);
 
         if (viewRef.current) {
           viewRef.current.dispatch({
@@ -158,9 +221,20 @@ const ArticleEditor: React.FC = () => {
     return () => { cancelled = true; };
   }, [editingTitle]);
 
+  // Clean up dirty notification on unmount
+  useEffect(() => {
+    return () => {
+      window.api.notifyUnsavedChanges(false);
+    };
+  }, []);
+
   const handleBack = useCallback(() => {
+    if (isDirty) {
+      const discard = window.confirm('You have unsaved changes. Discard them and go back?');
+      if (!discard) return;
+    }
     navigate('browse');
-  }, [navigate]);
+  }, [navigate, isDirty]);
 
   const statusLabel =
     saveStatus === 'saving' ? 'Saving…' :

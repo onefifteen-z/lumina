@@ -1,6 +1,6 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import path from "path";
-import { registerIpcHandlers } from "./ipc-handlers";
+import { registerIpcHandlers, hasUnsavedChanges } from "./ipc-handlers";
 import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
 import { LLMService } from "./services/llm-service";
@@ -75,6 +75,25 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  // Intercept quit when there are unsaved changes
+  app.on("before-quit", (event) => {
+    if (hasUnsavedChanges() && mainWindow && !mainWindow.isDestroyed()) {
+      event.preventDefault();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: "question",
+        buttons: ["Discard & Quit", "Cancel"],
+        defaultId: 1,
+        title: "Unsaved Changes",
+        message: "You have unsaved changes. Discard them and quit?",
+      });
+      if (choice === 0) {
+        // User chose to discard — force quit
+        mainWindow.destroy();
+        app.quit();
+      }
+    }
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

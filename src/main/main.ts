@@ -32,9 +32,6 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     titleBarStyle: 'hidden',
-    vibrancy: 'sidebar',
-    visualEffectState: 'active',
-    backgroundColor: '#00000000',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

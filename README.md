@@ -112,6 +112,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] IconRail chat icon unit tests (position, active state, keyboard nav)
 - [x] MessageList component (bubble layout, timestamps, auto-scroll)
 - [x] ChatInput component (auto-expand, Enter/Shift+Enter, stop button, offline state)
+- [x] CodeBlock component (syntax highlighting, copy-to-clipboard)
 
 ## License
 

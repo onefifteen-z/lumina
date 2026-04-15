@@ -226,3 +226,83 @@ describe("ChatService property-based tests", () => {
     );
   });
 });
+
+// ── Edge Case Unit Tests ─────────────────────────────────────────
+
+describe("ChatService edge case unit tests", () => {
+  describe("default system prompt fallback", () => {
+    it("uses default prompt when claude.md is missing (ENOENT)", async () => {
+      const fs = {
+        readRawFile: vi.fn().mockRejectedValue(
+          Object.assign(new Error("ENOENT: no such file or directory"), {
+            code: "ENOENT",
+          }),
+        ),
+      } as unknown as FileSystemService;
+
+      const service = new ChatService(null, fs);
+      const { session, warning } = await service.startSession();
+
+      expect(session.systemPrompt).toBe("You are a helpful assistant.");
+      expect(warning).toBeUndefined();
+    });
+
+    it("uses default prompt when claude.md is empty string", async () => {
+      const fs = mockFileSystem("");
+      const service = new ChatService(null, fs);
+      const { session, warning } = await service.startSession();
+
+      expect(session.systemPrompt).toBe("You are a helpful assistant.");
+      expect(warning).toBeUndefined();
+    });
+
+    it("uses default prompt when claude.md is whitespace only", async () => {
+      const fs = mockFileSystem("   \n\t  \n  ");
+      const service = new ChatService(null, fs);
+      const { session, warning } = await service.startSession();
+
+      expect(session.systemPrompt).toBe("You are a helpful assistant.");
+      expect(warning).toBeUndefined();
+    });
+  });
+
+  describe("I/O error fallback with warning", () => {
+    it("uses default prompt and returns warning on non-ENOENT error", async () => {
+      const fs = {
+        readRawFile: vi.fn().mockRejectedValue(
+          Object.assign(new Error("Permission denied"), {
+            code: "EACCES",
+          }),
+        ),
+      } as unknown as FileSystemService;
+
+      const service = new ChatService(null, fs);
+      const { session, warning } = await service.startSession();
+
+      expect(session.systemPrompt).toBe("You are a helpful assistant.");
+      expect(warning).toBeDefined();
+      expect(warning).toContain("Permission denied");
+    });
+  });
+
+  describe("new session clears history", () => {
+    it("clears message history when starting a new session", async () => {
+      const fs = mockFileSystem("system prompt");
+      const llm = mockLLMService(["response"]);
+      const service = new ChatService(llm, fs);
+
+      // Start first session and send a message
+      await service.startSession();
+      await drainGenerator(service.sendMessage("hello"));
+
+      const firstSession = service.getSession()!;
+      expect(firstSession.messages.length).toBeGreaterThan(0);
+
+      // Start a new session — history should be cleared
+      const { session: newSession } = await service.startSession();
+
+      expect(newSession.messages).toEqual([]);
+      expect(service.getSession()!.messages).toEqual([]);
+    });
+  });
+});

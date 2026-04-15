@@ -178,6 +178,24 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:selectVaultFolder");
   },
 
+  // ── Vault file watcher ─────────────────────────────────────────
+
+  onVaultChange(
+    callback: (event: import("../shared/types").VaultChangeEvent) => void,
+  ) {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      change: import("../shared/types").VaultChangeEvent,
+    ) => {
+      callback(change);
+    };
+    ipcRenderer.on("wiki:vaultChange", handler);
+  },
+
+  removeVaultChangeListener() {
+    ipcRenderer.removeAllListeners("wiki:vaultChange");
+  },
+
   // ── Lifecycle ────────────────────────────────────────────────────
 
   onUnsavedChanges(callback: (hasChanges: boolean) => void) {

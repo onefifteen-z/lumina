@@ -58,7 +58,7 @@ const ArticleBrowser: React.FC = () => {
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
 
-  // Fetch article list on mount
+  // Fetch article list on mount + listen for vault changes
   useEffect(() => {
     let cancelled = false;
 
@@ -80,7 +80,17 @@ const ArticleBrowser: React.FC = () => {
     };
 
     fetchArticles();
-    return () => { cancelled = true; };
+
+    // Refresh article list when vault files change externally
+    window.api.onVaultChange((event) => {
+      if (cancelled) return;
+      fetchArticles();
+    });
+
+    return () => {
+      cancelled = true;
+      window.api.removeVaultChangeListener();
+    };
   }, []);
 
   // Filter articles by tag
@@ -255,6 +265,13 @@ const ArticleBrowser: React.FC = () => {
 
         {selectedTitle && article && !articleLoading && !articleError && (
           <>
+            {/* Corrupted file warning */}
+            {article.frontmatter._corrupted && (
+              <div className="article-view__warning" role="alert">
+                ⚠ This file has corrupted frontmatter and is displayed as raw content.
+              </div>
+            )}
+
             {/* Metadata header */}
             <header className="article-view__header">
               <h1 className="article-view__title">{article.frontmatter.title}</h1>

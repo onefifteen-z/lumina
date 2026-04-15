@@ -111,6 +111,10 @@ export interface WikiAPI {
   testLLMConnection(config: LLMProviderConfig): Promise<boolean>;
   selectVaultFolder(): Promise<string | null>;
 
+  // Vault file watcher
+  onVaultChange(callback: (event: VaultChangeEvent) => void): void;
+  removeVaultChangeListener(): void;
+
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
   notifyUnsavedChanges(isDirty: boolean): void;

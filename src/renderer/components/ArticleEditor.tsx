@@ -288,6 +288,62 @@ const ArticleEditor: React.FC = () => {
     };
   }, []);
 
+  // Listen for external vault changes affecting the current article
+  useEffect(() => {
+    if (!editingTitle) return;
+
+    const handler = (event: import('../../shared/types').VaultChangeEvent) => {
+      // Only care about the file we're editing
+      const expectedFilename = editingTitle.toLowerCase().replace(/\s+/g, '-') + '.md';
+      const changedFilename = event.filename.toLowerCase();
+      if (!changedFilename.endsWith(expectedFilename)) return;
+
+      if (event.type === 'unlink') {
+        // File deleted externally
+        const resave = window.confirm(
+          `"${editingTitle}" was deleted externally. Save your current edits to recreate it, or close the editor?`
+        );
+        if (resave) {
+          handleSave();
+        } else {
+          navigate('browse');
+        }
+      } else if (event.type === 'change') {
+        // File modified externally
+        if (isDirty) {
+          const reload = window.confirm(
+            `"${editingTitle}" was modified externally. Reload and lose your unsaved changes?`
+          );
+          if (!reload) return;
+        }
+        // Reload the article content
+        window.api.getArticle(editingTitle).then((article) => {
+          setTitle(article.frontmatter.title);
+          setOriginalFrontmatter(article.frontmatter);
+          savedTitleRef.current = article.frontmatter.title;
+          savedContentRef.current = article.content;
+          setIsDirty(false);
+          if (viewRef.current) {
+            viewRef.current.dispatch({
+              changes: {
+                from: 0,
+                to: viewRef.current.state.doc.length,
+                insert: article.content,
+              },
+            });
+          }
+        }).catch((err) => {
+          console.error('Failed to reload externally modified article:', err);
+        });
+      }
+    };
+
+    window.api.onVaultChange(handler);
+    return () => {
+      window.api.removeVaultChangeListener();
+    };
+  }, [editingTitle, isDirty, handleSave, navigate]);
+
   const handleAssistAccept = useCallback((replacement: string) => {
     if (!viewRef.current) return;
     const sel = viewRef.current.state.selection.main;

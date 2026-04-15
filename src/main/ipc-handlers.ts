@@ -6,7 +6,7 @@ import type {
   LLMProviderConfig,
   LLMAssistParams,
 } from "../shared/types";
-import { titleToFilename } from "../shared/markdown-parser";
+import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
 import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
 import { LLMService } from "./services/llm-service";
@@ -52,7 +52,28 @@ export function registerIpcHandlers(services: {
     "wiki:getArticle",
     async (_event, title: string): Promise<ArticleFile> => {
       const filename = titleToFilename(title) + ".md";
-      return fileSystem.readArticle(filename);
+      try {
+        return await fileSystem.readArticle(filename);
+      } catch (err) {
+        // Handle corrupted Markdown files: return raw content with warning
+        console.warn(`Corrupted or unreadable article "${title}":`, err);
+        try {
+          const raw = await fileSystem.readRawFile(filename);
+          return {
+            frontmatter: {
+              title,
+              tags: [],
+              created: "",
+              modified: "",
+              _corrupted: true,
+            },
+            content: raw,
+            rawContent: raw,
+          };
+        } catch {
+          throw err; // File truly unreadable
+        }
+      }
     },
   );
 

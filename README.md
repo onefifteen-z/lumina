@@ -50,6 +50,9 @@ npm run dev
 - [x] First-run experience and offline handling
   - [x] First-run vault selection (welcome screen with folder picker)
   - [x] Offline mode handling (network status context, offline banner, LLM availability tracking)
+- [x] Application lifecycle and error handling
+  - [x] Electron app lifecycle (fatal error dialogs, error logging to file, corrupted file fallback, graceful quit with unsaved changes)
+  - [x] File watcher integration (vault change events via IPC, external delete/modify notifications in editor and browser)
 
 ## Testing
 

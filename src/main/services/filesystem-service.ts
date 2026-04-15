@@ -73,6 +73,14 @@ export class FileSystemService {
   }
 
   /**
+   * Read raw file content without parsing. Used as fallback for corrupted files.
+   */
+  async readRawFile(filename: string): Promise<string> {
+    const filePath = path.join(this.vaultPath, filename);
+    return fs.readFile(filePath, "utf-8");
+  }
+
+  /**
    * Write an article to disk. Updates the `modified` timestamp before saving.
    */
   async writeArticle(article: ArticleFile): Promise<void> {

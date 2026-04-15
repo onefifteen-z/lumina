@@ -196,6 +196,64 @@ const api: WikiAPI = {
     ipcRenderer.removeAllListeners("wiki:vaultChange");
   },
 
+  // ── Chat ──────────────────────────────────────────────────────────
+
+  startChatSession() {
+    return ipcRenderer.invoke("wiki:startChatSession");
+  },
+
+  sendChatMessage(content: string) {
+    const requestId = Date.now().toString();
+    return ipcRenderer.invoke("wiki:sendChatMessage", { requestId, content });
+  },
+
+  stopChatGeneration() {
+    return ipcRenderer.invoke("wiki:stopChatGeneration");
+  },
+
+  getChatSession() {
+    return ipcRenderer.invoke("wiki:getChatSession");
+  },
+
+  onChatChunk(callback: (chunk: string) => void) {
+    ipcRenderer.on(
+      "wiki:chatChunk",
+      (
+        _event: Electron.IpcRendererEvent,
+        { chunk }: { requestId: string; chunk: string },
+      ) => {
+        callback(chunk);
+      },
+    );
+  },
+
+  onChatEnd(callback: (error?: string) => void) {
+    ipcRenderer.on(
+      "wiki:chatEnd",
+      (
+        _event: Electron.IpcRendererEvent,
+        { error }: { requestId: string; error?: string },
+      ) => {
+        callback(error);
+      },
+    );
+  },
+
+  onChatWarning(callback: (message: string) => void) {
+    ipcRenderer.on(
+      "wiki:chatWarning",
+      (_event: Electron.IpcRendererEvent, { message }: { message: string }) => {
+        callback(message);
+      },
+    );
+  },
+
+  removeChatListeners() {
+    ipcRenderer.removeAllListeners("wiki:chatChunk");
+    ipcRenderer.removeAllListeners("wiki:chatEnd");
+    ipcRenderer.removeAllListeners("wiki:chatWarning");
+  },
+
   // ── Lifecycle ────────────────────────────────────────────────────
 
   onUnsavedChanges(callback: (hasChanges: boolean) => void) {

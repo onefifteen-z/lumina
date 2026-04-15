@@ -764,3 +764,36 @@ body {
   font-size: 14px;
   line-height: 1;
 }
+
+/* ── CodeMirror Obsidian Syntax Highlighting ─────────────────── */
+
+.cm-wikilink {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.cm-embed {
+  color: #8b5cf6;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .cm-embed {
+  color: #a78bfa;
+}
+
+.cm-wiki-tag {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.1);
+  border-radius: 4px;
+  padding: 1px 3px;
+}
+
+[data-theme="dark"] .cm-wiki-tag {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.cm-frontmatter {
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+}

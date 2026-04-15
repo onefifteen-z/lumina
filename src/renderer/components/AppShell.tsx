@@ -241,6 +241,11 @@ const AppShell: React.FC = () => {
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [articlesError, setArticlesError] = useState<string | null>(null);
 
+  // Set document title on mount
+  useEffect(() => {
+    document.title = 'Lumina';
+  }, []);
+
   // Load config on mount: check vault path and apply theme
   useEffect(() => {
     let cancelled = false;

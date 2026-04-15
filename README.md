@@ -82,6 +82,7 @@ Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation
 - [x] Vendor shadcn/ui Button component
 - [x] Vendor shadcn/ui Tooltip component
 - [x] Vendor shadcn/ui Sidebar component (expand/collapse with 200ms transition)
+- [x] IconRail component with Lucide icons, tooltips, keyboard navigation
 
 ## License
 

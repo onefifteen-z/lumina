@@ -34,6 +34,7 @@ npm run dev
   - [x] AppShell layout with sidebar navigation and theme support
   - [x] ArticleBrowser with article list, remark rendering, metadata header, and backlinks
   - [x] Remark plugins for wikilinks, embeds, and inline tags
+  - [x] Wikilink navigation, link resolution, and tag filtering
 - [ ] LLM integration UI
 - [ ] First-run experience and offline handling
 

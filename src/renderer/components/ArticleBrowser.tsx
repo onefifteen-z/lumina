@@ -46,6 +46,10 @@ const ArticleBrowser: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Tag filter state
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [filteredArticles, setFilteredArticles] = useState<ArticleMeta[]>([]);
+
   // Selected article state
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
   const [article, setArticle] = useState<ArticleFile | null>(null);
@@ -79,6 +83,25 @@ const ArticleBrowser: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
+  // Filter articles by tag
+  const filterByTag = useCallback(async (tag: string) => {
+    setTagFilter(tag);
+    try {
+      const results = await window.api.searchByTag(tag);
+      setFilteredArticles(results);
+    } catch {
+      setFilteredArticles([]);
+    }
+  }, []);
+
+  const clearTagFilter = useCallback(() => {
+    setTagFilter(null);
+    setFilteredArticles([]);
+  }, []);
+
+  // The list to display: filtered or full
+  const displayedArticles = tagFilter ? filteredArticles : articles;
+
   // Fetch selected article content + backlinks
   const selectArticle = useCallback(async (title: string) => {
     setSelectedTitle(title);
@@ -108,6 +131,58 @@ const ArticleBrowser: React.FC = () => {
     selectArticle(title);
   }, [selectArticle]);
 
+  // Click handler for rendered content (wikilinks, tags, embeds)
+  const handleContentClick = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+
+    // Handle wikilink clicks
+    const wikilink = target.closest('.wikilink');
+    if (wikilink) {
+      e.preventDefault();
+      const articleTarget = wikilink.getAttribute('data-target');
+      if (articleTarget) {
+        const resolved = await window.api.resolveWikilink(articleTarget);
+        if (resolved.exists) {
+          selectArticle(resolved.title);
+        } else {
+          const create = window.confirm(`Article '${articleTarget}' doesn't exist. Create it?`);
+          if (create) {
+            editArticle(articleTarget);
+          }
+        }
+      }
+      return;
+    }
+
+    // Handle inline tag clicks
+    const tag = target.closest('.inline-tag');
+    if (tag) {
+      const tagValue = tag.getAttribute('data-tag');
+      if (tagValue) {
+        filterByTag(tagValue);
+      }
+      return;
+    }
+
+    // Handle embed clicks
+    const embed = target.closest('.embed');
+    if (embed) {
+      const embedTarget = embed.getAttribute('data-target');
+      if (embedTarget) {
+        const resolved = await window.api.resolveWikilink(embedTarget);
+        if (resolved.exists) {
+          selectArticle(resolved.title);
+        } else {
+          const create = window.confirm(`Article '${embedTarget}' doesn't exist. Create it?`);
+          if (create) {
+            editArticle(embedTarget);
+          }
+        }
+      }
+      return;
+    }
+  }, [selectArticle, editArticle, filterByTag]);
+
   // ── Render ─────────────────────────────────────────────────────
 
   return (
@@ -115,6 +190,21 @@ const ArticleBrowser: React.FC = () => {
       {/* LEFT: Article list */}
       <aside className="article-browser__list">
         <div className="article-browser__list-header">Articles</div>
+
+        {tagFilter && (
+          <div className="article-browser__tag-filter">
+            <span className="article-browser__tag-filter-label">
+              Tag: #{tagFilter}
+            </span>
+            <button
+              className="article-browser__tag-filter-clear"
+              onClick={clearTagFilter}
+              aria-label="Clear tag filter"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {loading && (
           <div className="article-browser__status">Loading articles…</div>
@@ -126,11 +216,13 @@ const ArticleBrowser: React.FC = () => {
           </div>
         )}
 
-        {!loading && !error && articles.length === 0 && (
-          <div className="article-browser__status">No articles yet</div>
+        {!loading && !error && displayedArticles.length === 0 && (
+          <div className="article-browser__status">
+            {tagFilter ? `No articles with tag #${tagFilter}` : 'No articles yet'}
+          </div>
         )}
 
-        {!loading && !error && articles.map((meta) => (
+        {!loading && !error && displayedArticles.map((meta) => (
           <button
             key={meta.filename}
             className={`article-browser__list-item${selectedTitle === meta.title ? ' article-browser__list-item--active' : ''}`}
@@ -184,10 +276,10 @@ const ArticleBrowser: React.FC = () => {
                       className="article-view__tag"
                       role="button"
                       tabIndex={0}
-                      onClick={() => console.log('Tag clicked:', tag)}
+                      onClick={() => filterByTag(tag)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
-                          console.log('Tag clicked:', tag);
+                          filterByTag(tag);
                         }
                       }}
                     >
@@ -208,6 +300,7 @@ const ArticleBrowser: React.FC = () => {
             {/* Rendered markdown body */}
             <div
               className="article-view__content"
+              onClick={handleContentClick}
               dangerouslySetInnerHTML={{ __html: renderedHtml }}
             />
 

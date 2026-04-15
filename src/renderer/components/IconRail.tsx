@@ -21,6 +21,7 @@ const topItems: { view: SidebarView; icon: React.ElementType; label: string }[] 
   { view: "files", icon: Files, label: "Files" },
   { view: "search", icon: Search, label: "Search" },
   { view: "bookmarks", icon: Bookmark, label: "Bookmarks" },
+  { view: "graph", icon: Network, label: "Graph" },
 ];
 
 const bottomItems: { view: SidebarView; icon: React.ElementType; label: string }[] = [

@@ -101,6 +101,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] WikiAPI chat method signatures (startChatSession, sendChatMessage, stopChatGeneration, etc.)
 - [x] Property-based tests for ChatMessage/ChatSession JSON round-trip
 - [x] LLMService.generateChat async generator with SSE streaming and AbortSignal
+- [x] ChatService (startSession, sendMessage, stopGeneration, system prompt loading)
 
 ## License
 

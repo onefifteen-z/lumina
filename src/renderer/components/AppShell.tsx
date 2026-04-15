@@ -10,6 +10,7 @@ import { FilesView } from './FilesView';
 import { SearchView } from './SearchView';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
+import { GraphView } from './GraphView';
 import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
@@ -179,7 +180,7 @@ const SidebarLayout: React.FC<{
           // Switching to a different view
           onViewChange(view);
           // Settings doesn't use the sidebar panel, so collapse it
-          if (view === 'settings') {
+          if (view === 'settings' || view === 'graph') {
             setOpen(false);
           } else if (!open) {
             // Open sidebar if switching to a panel view while collapsed
@@ -191,7 +192,7 @@ const SidebarLayout: React.FC<{
     );
 
     // Determine if sidebar panel should show content (not for settings)
-    const showSidebarPanel = activeView !== 'settings';
+    const showSidebarPanel = activeView !== 'settings' && activeView !== 'graph';
 
     return (
       <div className="flex h-full w-full">
@@ -237,7 +238,10 @@ const SidebarLayout: React.FC<{
           <main className="flex-1 overflow-auto bg-main-bg">
             <OfflineBanner />
             {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
-            {activeView !== 'settings' && editingFilename === null && (
+            {activeView === 'graph' && editingFilename === null && (
+              <GraphView articles={articles} onSelectArticle={(f) => { onSelectArticle(f); onViewChange('files'); }} />
+            )}
+            {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
               <ArticleBrowser
                 selectedFilename={selectedFilename}
                 onHeadingsChange={onHeadingsChange}
@@ -245,7 +249,7 @@ const SidebarLayout: React.FC<{
             )}
             {editingFilename !== null && <ArticleEditor />}
           </main>
-          {activeView !== 'settings' && editingFilename === null && (
+          {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
             <TocPanel headings={headings} collapsed={rightCollapsed} onToggleCollapse={() => setRightCollapsed(c => !c)} />
           )}
         </div>

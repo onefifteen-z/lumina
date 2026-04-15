@@ -55,6 +55,11 @@ export interface EmbedRef {
   position: { start: number; end: number }; // Character offsets in content
 }
 
+/** Content of the .lumina-vault marker file. */
+export interface VaultMarker {
+  createdAt: string; // ISO 8601
+}
+
 /** Configuration for an LLM provider endpoint. */
 export interface LLMProviderConfig {
   endpointUrl: string;

@@ -25,20 +25,43 @@ export function hasUnsavedChanges(): boolean {
  * appropriate main-process service.
  */
 export function registerIpcHandlers(services: {
-  fileSystem: FileSystemService;
-  searchIndex: SearchIndexService;
+  fileSystem: FileSystemService | null;
+  searchIndex: SearchIndexService | null;
   llm: LLMService | null;
   config: ConfigService;
+  mainWindow: BrowserWindow | null;
 }): void {
-  const { fileSystem, searchIndex, config } = services;
+  let fileSystem = services.fileSystem;
+  let searchIndex = services.searchIndex;
+  const { config } = services;
   let llm = services.llm;
 
   // Keep a cached article list for backlink computation
   let cachedArticles: ArticleMeta[] = [];
 
+  /**
+   * Initialize vault services for a given path. Creates the marker file,
+   * sets up FileSystemService + SearchIndexService, and starts the watcher.
+   */
+  async function initializeVaultServices(vaultPath: string): Promise<void> {
+    await config.createMarkerFile(vaultPath);
+
+    fileSystem = new FileSystemService(vaultPath);
+
+    const newSearchIndex = new SearchIndexService();
+    const articles = await fileSystem.scanVault();
+    await newSearchIndex.buildIndex(articles);
+    searchIndex = newSearchIndex;
+
+    fileSystem.watchVault((event) => {
+      services.mainWindow?.webContents.send("wiki:vaultChange", event);
+    });
+  }
+
   // ── Article CRUD ─────────────────────────────────────────────────
 
   ipcMain.handle("wiki:listArticles", async (): Promise<ArticleMeta[]> => {
+    if (!fileSystem) return [];
     const articles = await fileSystem.scanVault();
     // Sort descending by modified timestamp (Requirement 4.1)
     articles.sort(
@@ -51,6 +74,10 @@ export function registerIpcHandlers(services: {
   ipcMain.handle(
     "wiki:getArticle",
     async (_event, title: string): Promise<ArticleFile> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
       const filename = titleToFilename(title) + ".md";
       try {
         return await fileSystem.readArticle(filename);
@@ -80,10 +107,14 @@ export function registerIpcHandlers(services: {
   ipcMain.handle(
     "wiki:saveArticle",
     async (_event, article: ArticleFile): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
       await fileSystem.writeArticle(article);
       // Refresh the search index with updated article metadata
       const articles = await fileSystem.scanVault();
-      await searchIndex.buildIndex(articles);
+      if (searchIndex) await searchIndex.buildIndex(articles);
       cachedArticles = articles;
     },
   );
@@ -91,9 +122,13 @@ export function registerIpcHandlers(services: {
   ipcMain.handle(
     "wiki:deleteArticle",
     async (_event, title: string): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
       const filename = titleToFilename(title) + ".md";
       await fileSystem.deleteArticle(filename);
-      searchIndex.removeDocument(title);
+      searchIndex?.removeDocument(title);
       cachedArticles = cachedArticles.filter((a) => a.title !== title);
     },
   );
@@ -101,6 +136,7 @@ export function registerIpcHandlers(services: {
   ipcMain.handle(
     "wiki:articleExists",
     async (_event, title: string): Promise<boolean> => {
+      if (!fileSystem) return false;
       const filename = titleToFilename(title) + ".md";
       return fileSystem.fileExists(filename);
     },
@@ -109,10 +145,12 @@ export function registerIpcHandlers(services: {
   // ── Search ───────────────────────────────────────────────────────
 
   ipcMain.handle("wiki:search", async (_event, query: string) => {
+    if (!searchIndex) return [];
     return searchIndex.search(query);
   });
 
   ipcMain.handle("wiki:searchByTag", async (_event, tag: string) => {
+    if (!searchIndex) return [];
     return searchIndex.searchByTag(tag);
   });
 
@@ -121,6 +159,7 @@ export function registerIpcHandlers(services: {
   ipcMain.handle(
     "wiki:getBacklinks",
     async (_event, title: string): Promise<string[]> => {
+      if (!fileSystem) return [];
       // Scan cached articles: if article A has a wikilink to `title`, A is a backlink
       const backlinks: string[] = [];
       for (const article of cachedArticles) {
@@ -142,6 +181,7 @@ export function registerIpcHandlers(services: {
       _event,
       target: string,
     ): Promise<{ exists: boolean; title: string }> => {
+      if (!fileSystem) return { exists: false, title: target };
       const filename = titleToFilename(target) + ".md";
       const exists = await fileSystem.fileExists(filename);
       return { exists, title: target };
@@ -212,6 +252,21 @@ export function registerIpcHandlers(services: {
   ipcMain.handle(
     "wiki:saveConfig",
     async (_event, partial: Partial<AppConfig>): Promise<void> => {
+      // Detect transition from no-vault to vault-selected
+      const isNewVault =
+        typeof partial.vaultPath === "string" &&
+        partial.vaultPath.length > 0 &&
+        fileSystem === null;
+
+      if (isNewVault) {
+        try {
+          await initializeVaultServices(partial.vaultPath!);
+        } catch (err) {
+          // Do not persist vaultPath on failure — re-throw so renderer receives the error
+          throw err;
+        }
+      }
+
       config.saveConfig(partial);
     },
   );

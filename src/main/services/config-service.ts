@@ -125,4 +125,21 @@ export class ConfigService {
     const vaultPath = this.store.get("vaultPath");
     return !vaultPath;
   }
+
+  /**
+   * Create a .lumina-vault marker file at the root of the given vault path.
+   * If the file already exists, it is left untouched.
+   * Throws on permission errors so the caller can abort vault selection.
+   */
+  async createMarkerFile(vaultPath: string): Promise<void> {
+    const markerPath = path.join(vaultPath, ".lumina-vault");
+    if (fs.existsSync(markerPath)) return;
+
+    const content = JSON.stringify(
+      { createdAt: new Date().toISOString() },
+      null,
+      2,
+    );
+    fs.writeFileSync(markerPath, content, "utf-8");
+  }
 }

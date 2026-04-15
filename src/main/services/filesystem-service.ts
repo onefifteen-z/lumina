@@ -132,7 +132,13 @@ export class FileSystemService {
       this.vaultPath,
       { recursive: true },
       (eventType, rawFilename) => {
-        if (!rawFilename || !rawFilename.endsWith(".md")) return;
+        if (
+          !rawFilename ||
+          rawFilename === ".lumina-vault" ||
+          rawFilename.endsWith("/.lumina-vault")
+        )
+          return;
+        if (!rawFilename.endsWith(".md")) return;
 
         const filename = rawFilename.replace(/\\/g, "/");
 
@@ -167,6 +173,7 @@ export class FileSystemService {
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
+      if (entry.name === ".lumina-vault") continue;
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         const nested = await this.findMarkdownFiles(fullPath);

@@ -87,18 +87,23 @@ app.whenReady().then(async () => {
     handleFatalError(err, "Failed to read application configuration");
   }
 
-  const vaultPath = appConfig.vaultPath || app.getPath("documents");
-  const fileSystemService = new FileSystemService(vaultPath);
-  const searchIndexService = new SearchIndexService();
+  const vaultPath = appConfig.vaultPath;
+  let fileSystemService: FileSystemService | null = null;
+  let searchIndexService: SearchIndexService | null = null;
 
-  // Build initial search index — non-fatal if it fails
-  try {
-    const articles = await fileSystemService.scanVault();
-    await searchIndexService.buildIndex(articles);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logToFile(`WARNING: Failed to build initial search index: ${msg}`);
-    console.warn("Failed to build initial search index:", err);
+  if (vaultPath) {
+    fileSystemService = new FileSystemService(vaultPath);
+    searchIndexService = new SearchIndexService();
+
+    // Build initial search index — non-fatal if it fails
+    try {
+      const articles = await fileSystemService.scanVault();
+      await searchIndexService.buildIndex(articles);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logToFile(`WARNING: Failed to build initial search index: ${msg}`);
+      console.warn("Failed to build initial search index:", err);
+    }
   }
 
   // Initialize LLM service if configured
@@ -120,12 +125,13 @@ app.whenReady().then(async () => {
     searchIndex: searchIndexService,
     llm: llmService,
     config: configService,
+    mainWindow: mainWindow,
   });
 
   createWindow();
 
   // Start vault file watcher — notify renderer of external changes
-  if (appConfig.vaultPath) {
+  if (vaultPath && fileSystemService) {
     fileSystemService.watchVault((event) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("wiki:vaultChange", event);
@@ -151,12 +157,12 @@ app.whenReady().then(async () => {
       });
       if (choice === 0) {
         forceQuit = true;
-        fileSystemService.stopWatching();
+        fileSystemService?.stopWatching();
         mainWindow.destroy();
         app.quit();
       }
     } else {
-      fileSystemService.stopWatching();
+      fileSystemService?.stopWatching();
     }
   });
 

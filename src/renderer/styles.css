@@ -1,4 +1,21 @@
-/* ── Theme Variables ─────────────────────────────────────────── */
+@import "tailwindcss";
+
+/* ── Lumina Design Tokens ───────────────────────────────────── */
+
+@theme {
+  --color-rail-bg: #1e1e2e;
+  --color-sidebar-bg: #252535;
+  --color-main-bg: #1a1a2e;
+  --color-accent: #7c3aed;
+  --color-accent-hover: #6d28d9;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-border: #334155;
+  --color-surface-hover: #2d2d42;
+  --color-surface-active: #363650;
+}
+
+/* ── Legacy Theme Variables (retained for non-refactored components) ── */
 
 :root,
 [data-theme="light"] {
@@ -48,8 +65,18 @@ body,
 
 body {
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-    Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    "Fira Sans",
+    "Droid Sans",
+    "Helvetica Neue",
+    sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
@@ -488,6 +515,11 @@ body {
   border-radius: 0 6px 6px 0;
   color: var(--color-text-secondary);
   font-size: 14px;
+  cursor: pointer;
+}
+
+.article-view__content .embed:hover {
+  border-left-color: var(--color-accent-hover);
 }
 
 /* ── Inline Tags ────────────────────────────────────────────── */
@@ -538,16 +570,6 @@ body {
 
 .article-browser__tag-filter-clear:hover {
   background: rgba(255, 255, 255, 0.2);
-}
-
-/* ── Embed clickable ────────────────────────────────────────── */
-
-.article-view__content .embed {
-  cursor: pointer;
-}
-
-.article-view__content .embed:hover {
-  border-left-color: var(--color-accent-hover);
 }
 
 /* ── Article Editor ─────────────────────────────────────────── */
@@ -689,6 +711,14 @@ body {
   flex: 1;
   color: var(--color-text-secondary);
   font-size: 14px;
+}
+
+/* ── Editor CM Wrapper (for assist panel positioning) ───────── */
+
+.article-editor__cm-wrapper {
+  position: relative;
+  flex: 1;
+  overflow: auto;
 }
 
 /* ── Welcome Screen (First-Run) ─────────────────────────────── */
@@ -1401,14 +1431,6 @@ body {
   font-size: 13px;
   color: #dc2626;
   margin-bottom: 8px;
-}
-
-/* ── Editor CM Wrapper (for assist panel positioning) ───────── */
-
-.article-editor__cm-wrapper {
-  position: relative;
-  flex: 1;
-  overflow: auto;
 }
 
 /* ── Settings Panel ─────────────────────────────────────────── */

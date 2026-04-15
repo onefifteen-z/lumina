@@ -77,6 +77,7 @@ Fixing a duplicate `"preload"` directory segment in the BrowserWindow preload pa
 Transforming the app into "Lumina" with an Obsidian-inspired two-part navigation: a narrow Icon Rail for view switching and an expandable/collapsible Sidebar Panel. Uses Tailwind CSS v4, shadcn/ui vendored components, and Lucide React icons. See `.kiro/specs/lumina-sidebar-ui/` for the full spec.
 
 - [x] Install dependencies (tailwindcss, @tailwindcss/vite, lucide-react, shadcn/ui deps)
+- [x] Configure Vite plugin and Tailwind CSS v4 entry point with custom color tokens
 
 ## License
 

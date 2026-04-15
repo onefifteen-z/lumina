@@ -63,6 +63,15 @@ npm run dev
 npm test
 ```
 
+## Bugfix: Select Vault Folder (Preload Path)
+
+Fixing a duplicate `"preload"` directory segment in the BrowserWindow preload path that prevents `window.api` from being defined. See `.kiro/specs/select-vault-folder-fix/` for the full spec.
+
+- [x] Bug condition exploration test — confirmed duplicate segment via property-based tests
+- [ ] Preservation property tests
+- [ ] Fix implementation
+- [ ] Final checkpoint
+
 ## License
 
 MIT

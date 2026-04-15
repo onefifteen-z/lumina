@@ -37,7 +37,8 @@ npm run dev
   - [x] Wikilink navigation, link resolution, and tag filtering
   - [x] Browsing and navigation checkpoint passed (86 tests passing)
 - [ ] LLM integration UI
-- [ ] First-run experience and offline handling
+- [-] First-run experience and offline handling
+  - [x] First-run vault selection (welcome screen with folder picker)
 
 ## Testing
 

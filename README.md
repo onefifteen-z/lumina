@@ -9,6 +9,7 @@ LLM Wiki — a local-first Electron desktop app providing an AI-powered personal
   - `src/main/services/filesystem-service.ts` — Vault filesystem operations (scan, read, write, delete, watch)
   - `src/main/services/search-index-service.ts` — Full-text search and tag-based filtering via FlexSearch
   - `src/main/services/llm-service.ts` — LLM provider integration (streaming generation, summarize, expand, refine)
+  - `src/main/services/config-service.ts` — App configuration persistence (electron-store) and secure API key storage (safeStorage)
 - `src/renderer/` — React-based renderer UI
 - `src/preload/` — Preload script for IPC bridge
 

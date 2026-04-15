@@ -90,23 +90,28 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
       role="toolbar"
       aria-label="Navigation"
       aria-orientation="vertical"
-      style={{ paddingTop: "16px", paddingBottom: "48px" }}
+      style={{ paddingTop: "0px", paddingBottom: "48px" }}
       className="relative flex flex-col items-center w-11 bg-rail-bg border-r border-border gap-1 shrink-0"
     >
+      {/* Traffic light safe zone — draggable titlebar area */}
+      <div
+        style={{ height: "52px", width: "100%", flexShrink: 0, WebkitAppRegion: "drag" } as React.CSSProperties}
+      />
+
       {/* Top group: Files, Search, Bookmarks */}
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {topItems.map((item, i) => renderButton(item, i))}
       </div>
 
       {/* Settings pushed to bottom */}
-      <div className="flex flex-col items-center gap-1 mt-auto">
+      <div className="flex flex-col items-center gap-1 mt-auto" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {bottomItems.map((item, i) =>
           renderButton(item, topItems.length + i)
         )}
       </div>
 
       {/* Theme toggle — absolutely pinned to bottom-left corner */}
-      <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+      <div className="absolute bottom-2 left-0 right-0 flex justify-center" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
             <button

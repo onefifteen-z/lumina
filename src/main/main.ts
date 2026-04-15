@@ -31,6 +31,11 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 12, y: 20 },
+    vibrancy: 'sidebar',
+    visualEffectState: 'active',
+    backgroundColor: '#00000000',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

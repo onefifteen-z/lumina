@@ -3,6 +3,7 @@ import type { WikiAPI, ArticleMeta } from '../../shared/types';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
 import SettingsPanel from './SettingsPanel';
+import ChatView from './ChatView';
 import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
 import GenerateArticleDialog from './GenerateArticleDialog';
 import { IconRail, type SidebarView } from './IconRail';
@@ -180,8 +181,8 @@ const SidebarLayout: React.FC<{
         } else {
           // Switching to a different view
           onViewChange(view);
-          // Settings doesn't use the sidebar panel, so collapse it
-          if (view === 'settings' || view === 'graph') {
+          // Settings/chat/graph don't use the sidebar panel, so collapse it
+          if (view === 'settings' || view === 'chat' || view === 'graph') {
             setOpen(false);
           } else if (!open) {
             // Open sidebar if switching to a panel view while collapsed
@@ -192,8 +193,8 @@ const SidebarLayout: React.FC<{
       [activeView, open, setOpen, onViewChange]
     );
 
-    // Determine if sidebar panel should show content (not for settings)
-    const showSidebarPanel = activeView !== 'settings' && activeView !== 'graph';
+    // Determine if sidebar panel should show content (not for settings, chat, or graph)
+    const showSidebarPanel = activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph';
 
     return (
       <div className="flex h-full w-full">
@@ -209,8 +210,8 @@ const SidebarLayout: React.FC<{
         {/* Sidebar Panel */}
         {showSidebarPanel && (
           <Sidebar>
-            <SidebarHeader>
-              <span className="text-sm font-semibold text-text-primary tracking-wide">
+            <SidebarHeader style={{ WebkitAppRegion: 'drag', height: '52px' } as React.CSSProperties}>
+              <span className="text-sm font-semibold text-text-primary tracking-wide" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                 Lumina
               </span>
             </SidebarHeader>
@@ -237,7 +238,7 @@ const SidebarLayout: React.FC<{
         {/* Main Content Area + TOC */}
         <div className="relative flex flex-1 overflow-hidden">
           {/* TOC toggle — top-right, aligned with traffic lights */}
-          {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
+          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
             <button
               type="button"
               onClick={() => setRightCollapsed(c => !c)}
@@ -252,10 +253,11 @@ const SidebarLayout: React.FC<{
           <main className="flex-1 overflow-auto bg-main-bg">
             <OfflineBanner />
             {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
+            {activeView === 'chat' && editingFilename === null && <ChatView />}
             {activeView === 'graph' && editingFilename === null && (
               <GraphView articles={articles} onSelectArticle={(f) => { onSelectArticle(f); onViewChange('files'); }} />
             )}
-            {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
+            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
               <ArticleBrowser
                 selectedFilename={selectedFilename}
                 onHeadingsChange={onHeadingsChange}
@@ -263,11 +265,11 @@ const SidebarLayout: React.FC<{
             )}
             {editingFilename !== null && <ArticleEditor />}
           </main>
-          {activeView !== 'settings' && activeView !== 'graph' && editingFilename === null && (
+          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
             <TocPanel headings={headings} collapsed={rightCollapsed} />
           )}
         </div>
-      </div>
+      </div >
     );
   };
 

@@ -22,8 +22,8 @@
 
 :root {
   /* Runtime tokens — override per theme below */
-  --rail-bg: #ebebeb;
-  --sidebar-bg: #f0f0f0;
+  --rail-bg: rgba(235, 235, 235, 0.75);
+  --sidebar-bg: rgba(240, 240, 240, 0.75);
   --main-bg: #ffffff;
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
@@ -46,8 +46,8 @@
 
 [data-theme="dark"] {
   /* Runtime tokens */
-  --rail-bg: #1a1a1a;
-  --sidebar-bg: #252525;
+  --rail-bg: rgba(26, 26, 26, 0.75);
+  --sidebar-bg: rgba(37, 37, 37, 0.75);
   --main-bg: #202020;
   --accent: #7c3aed;
   --accent-hover: #8b5cf6;

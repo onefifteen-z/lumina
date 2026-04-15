@@ -108,6 +108,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] ChatService initialization in main process
 - [x] Preload bridge chat API methods
 - [x] IconRail chat icon (MessageSquare, after bookmarks)
+- [x] AppShell routing for ChatView (sidebar collapse, TocPanel hidden)
 
 ## License
 

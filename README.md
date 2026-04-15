@@ -116,6 +116,8 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] ChatView main component (title bar, welcome placeholder, Markdown rendering, error display, Ctrl/Cmd+N, offline banner)
 - [x] Property-based test for timestamp formatting (Property 5)
 - [x] Unit tests for ChatView (welcome placeholder, error messages, display logic)
+- [x] TypeScript compilation clean across all targets
+- [x] Full test suite passing — 183 tests across 14 suites
 
 ## License
 

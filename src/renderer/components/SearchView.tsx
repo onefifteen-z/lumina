@@ -157,7 +157,7 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
             className={cn(
               "w-full pl-8 pr-3 py-2 text-sm rounded-md",
               "bg-rail-bg border border-border text-text-primary placeholder:text-text-secondary",
-              "focus:outline-none focus:ring-1 focus:ring-accent focus-visible:ring-2 focus-visible:ring-accent transition-colors"
+              "focus:outline-none focus:ring-1 focus:ring-inset focus:ring-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors"
             )}
           />
           {loading && (

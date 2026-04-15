@@ -110,6 +110,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 - [x] IconRail chat icon (MessageSquare, after bookmarks)
 - [x] AppShell routing for ChatView (sidebar collapse, TocPanel hidden)
 - [x] IconRail chat icon unit tests (position, active state, keyboard nav)
+- [x] MessageList component (bubble layout, timestamps, auto-scroll)
 
 ## License
 

@@ -17,7 +17,6 @@ import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
   Sidebar,
-  SidebarHeader,
   SidebarContent,
   useSidebar,
 } from './ui/sidebar';
@@ -210,11 +209,8 @@ const SidebarLayout: React.FC<{
         {/* Sidebar Panel */}
         {showSidebarPanel && (
           <Sidebar>
-            <SidebarHeader style={{ WebkitAppRegion: 'drag', height: '52px' } as React.CSSProperties}>
-              <span className="text-sm font-semibold text-text-primary tracking-wide" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                Lumina
-              </span>
-            </SidebarHeader>
+            {/* Drag zone matching icon rail height — no visible content */}
+            <div style={{ height: '52px', flexShrink: 0, WebkitAppRegion: 'drag' } as React.CSSProperties} />
             <SidebarContent>
               {activeView === 'files' && (
                 <FilesView

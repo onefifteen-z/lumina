@@ -9,8 +9,13 @@
   --color-rail-bg: var(--rail-bg);
   --color-sidebar-bg: var(--sidebar-bg);
   --color-main-bg: var(--main-bg);
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-active: var(--color-primary-active);
+  --color-primary-bg: var(--color-primary-bg);
+  --color-primary-border: var(--color-primary-border);
+  --color-primary-text: var(--color-primary-text);
+  --color-primary-icon: var(--color-primary-icon);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-border: var(--border);
@@ -25,8 +30,13 @@
   --rail-bg: #ebebeb;
   --sidebar-bg: #f0f0f0;
   --main-bg: #ffffff;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
+  --color-primary: #b85e10;
+  --color-primary-hover: #a35210;
+  --color-primary-active: #7a3d0a;
+  --color-primary-bg: #fbe8d4;
+  --color-primary-border: rgba(212, 115, 26, 0.35);
+  --color-primary-text: #a35210;
+  --color-primary-icon: #d4731a;
   --text-primary: #1a1a1a;
   --text-secondary: #666666;
   --border: #e0e0e0;
@@ -49,8 +59,13 @@
   --rail-bg: #1a1a1a;
   --sidebar-bg: #252525;
   --main-bg: #202020;
-  --accent: #7c3aed;
-  --accent-hover: #8b5cf6;
+  --color-primary: #d4731a;
+  --color-primary-hover: #efa03c;
+  --color-primary-active: #b85e10;
+  --color-primary-bg: #3a1e08;
+  --color-primary-border: rgba(212, 115, 26, 0.4);
+  --color-primary-text: #f8ca52;
+  --color-primary-icon: #d4731a;
   --text-primary: #dcddde;
   --text-secondary: #888888;
   --border: #3a3a3a;
@@ -83,7 +98,7 @@
 }
 
 .lumina-resize-handle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;

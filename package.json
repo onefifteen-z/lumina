@@ -16,7 +16,8 @@
       "output": "release"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "assets/icons/mac/icon.icns"
     },
     "win": {
       "target": "nsis"

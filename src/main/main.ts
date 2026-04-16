@@ -25,21 +25,13 @@ function logToFile(message: string): void {
   }
 }
 
-const iconPath = path.join(app.getAppPath(), "assets/icons/png/512x512.png");
-
 // ── Window creation ────────────────────────────────────────────
 
 function createWindow(): void {
-  // macOS Dock
-  if (process.platform === "darwin") {
-    app.dock.setIcon(iconPath);
-  }
-
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     titleBarStyle: "hiddenInset",
-    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

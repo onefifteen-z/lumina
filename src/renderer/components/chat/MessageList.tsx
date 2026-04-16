@@ -1,10 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Sparkles, Copy, RefreshCw, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
 import type { ChatMessage } from '../../../shared/types';
+import { FoxThinkingIndicator } from './FoxThinkingIndicator';
 
 export interface MessageListProps {
   messages: ChatMessage[];
   streamingContent?: string;
+  isGenerating?: boolean;
   /** Optional custom renderer for assistant message content (e.g. Markdown). Falls back to plain text. */
   renderAssistantContent?: (content: string) => React.ReactNode;
   /** Called when the user clicks the Regenerate button on an assistant message action bar. */
@@ -46,7 +48,7 @@ const ScrollToBottomButton: React.FC<ScrollToBottomButtonProps> = ({ visible, on
   </button>
 );
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, renderAssistantContent, onRegenerate }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, isGenerating, renderAssistantContent, onRegenerate }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -90,6 +92,13 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
         {visibleMessages.map((message) => (
           <MessageBubble key={message.id} message={message} renderAssistantContent={renderAssistantContent} onRegenerate={onRegenerate} />
         ))}
+
+        {/* Fox thinking indicator — shown when generating but no streaming content yet */}
+        {isGenerating && (!streamingContent || streamingContent.length === 0) && (
+          <div className="flex justify-start" data-testid="fox-thinking-container">
+            <FoxThinkingIndicator size="large" />
+          </div>
+        )}
 
         {/* Streaming partial assistant response */}
         {streamingContent != null && streamingContent.length > 0 && (

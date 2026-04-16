@@ -155,6 +155,7 @@ Adding an animated geometric fox SVG loading indicator to the chat interface, re
 - [x] MessageList integration with fox indicator conditional rendering
 - [x] ChatView passes isGenerating prop to MessageList
 - [x] Unit tests for FoxThinkingIndicator component (14 tests, 237 total passing)
+- [x] Integration tests for MessageList fox indicator rendering (5 tests, 242 total passing)
 
 ## License
 

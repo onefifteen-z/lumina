@@ -126,6 +126,7 @@ Migrating the color palette from purple (#7c3aed family) to amber (#D4731A famil
 - [x] Define amber palette CSS custom properties and update @theme block
 - [x] Migrate CSS class accent references in styles.css
 - [x] Migrate component Tailwind class references (12 components)
+- [x] Replace hardcoded purple hex values in GraphView.tsx
 
 ## License
 

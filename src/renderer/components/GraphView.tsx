@@ -161,12 +161,12 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
 
     // Detect theme
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const edgeColor        = isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)";
-    const edgeHoverColor   = "rgba(139,92,246,0.7)";
-    const nodeColor        = isDark ? "#a0a0a0" : "#646464";
-    const nodeHoverColor   = "#a78bfa";
-    const nodeBorderColor  = isDark ? "#dcdcdc" : "#505050";
-    const labelColor       = isDark ? "#d2d2d2" : "#282828";
+    const edgeColor = isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)";
+    const edgeHoverColor = isDark ? "rgba(212,115,26,0.7)" : "rgba(184,94,16,0.7)";
+    const nodeColor = isDark ? "#a0a0a0" : "#646464";
+    const nodeHoverColor = isDark ? "#D4731A" : "#B85E10";
+    const nodeBorderColor = isDark ? "#dcdcdc" : "#505050";
+    const labelColor = isDark ? "#d2d2d2" : "#282828";
 
     ctx.clearRect(0, 0, w, h);
     ctx.save();
@@ -199,7 +199,7 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
       ctx.fill();
 
       // Border ring
-      ctx.strokeStyle = isHov ? "#c4b5fd" : nodeBorderColor;
+      ctx.strokeStyle = isHov ? (isDark ? "#EFA03C" : "#D4731A") : nodeBorderColor;
       ctx.lineWidth = isHov ? 2 : 0.5;
       ctx.stroke();
     }
@@ -211,7 +211,7 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
       if (n.x == null || n.y == null) continue;
       const r = 3 + Math.min(n.linkCount, 12) * 1.2;
       const isHov = n.id === hovId;
-      ctx.fillStyle = isHov ? "#c4b5fd" : labelColor;
+      ctx.fillStyle = isHov ? (isDark ? "#EFA03C" : "#D4731A") : labelColor;
       ctx.fillText(n.title, n.x, n.y + r + 12);
     }
 

@@ -71,7 +71,7 @@ export function ContentToolbar({
       className={cn(
         'flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer',
         active
-          ? 'text-accent hover:bg-surface-hover'
+          ? 'text-primary hover:bg-surface-hover'
           : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
       )}
     >

@@ -158,7 +158,7 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
             className={cn(
               "w-full rounded-md",
               "bg-rail-bg border border-border text-text-primary placeholder:text-text-secondary",
-              "focus:outline-none focus:ring-1 focus:ring-inset focus:ring-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors"
+              "focus:outline-none focus:ring-1 focus:ring-inset focus:ring-primary-border focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-border transition-colors"
             )}
           />
           {loading && (
@@ -200,7 +200,7 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
                 {result.title}
               </span>
               {result.isTagResult && (
-                <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent">
+                <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-primary-bg text-primary-text">
                   tag
                 </span>
               )}

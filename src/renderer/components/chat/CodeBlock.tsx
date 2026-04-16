@@ -30,7 +30,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language }) => {
           type="button"
           onClick={handleCopy}
           aria-label={copied ? 'Copied' : 'Copy code'}
-          className="flex items-center gap-1.5 px-2 py-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
         >
           {copied ? (
             <>

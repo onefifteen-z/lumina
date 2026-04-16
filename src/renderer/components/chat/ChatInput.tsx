@@ -76,7 +76,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }
           rows={1}
           aria-label="Chat message input"
-          className="flex-1 resize-none rounded-lg border border-border bg-sidebar-bg px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 resize-none rounded-lg border border-border bg-sidebar-bg px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-border disabled:cursor-not-allowed disabled:opacity-50"
           style={{ maxHeight: '30vh' }}
         />
 
@@ -85,7 +85,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             type="button"
             onClick={onStop}
             aria-label="Stop generation"
-            className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
           >
             <Square size={16} fill="currentColor" />
           </button>
@@ -95,7 +95,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onClick={send}
             disabled={!value.trim() || isOffline}
             aria-label="Send message"
-            className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
           >
             <Send size={16} />
           </button>

@@ -125,7 +125,7 @@ const TocNodeRow: React.FC<TocNodeRowProps> = ({
           "flex items-center gap-1 w-full text-left truncate transition-colors cursor-pointer",
           "focus-visible:outline-none",
           isActive
-            ? "text-accent font-medium"
+            ? "text-primary font-medium"
             : "text-text-secondary hover:text-text-primary"
         )}
       >

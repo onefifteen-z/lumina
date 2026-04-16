@@ -49,7 +49,7 @@ export function BookmarksView({
                 key={filename}
                 className={cn(
                   "group flex items-stretch gap-0 border-b border-border/40 last:border-b-0",
-                  isSelected && "bg-accent/10",
+                  isSelected && "bg-primary-bg",
                 )}
               >
                 <button
@@ -58,7 +58,7 @@ export function BookmarksView({
                   onClick={() => onOpenBookmark(filename)}
                   className={cn(
                     "flex-1 min-w-0 text-left px-4 py-2.5 text-[12.5px] transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:ring-inset",
                     isSelected
                       ? "text-text-primary"
                       : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer",
@@ -85,7 +85,7 @@ export function BookmarksView({
                   className={cn(
                     "shrink-0 px-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-hover",
                     "opacity-70 group-hover:opacity-100 transition-opacity cursor-pointer",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-border",
                   )}
                 >
                   <X size={14} className="mx-auto" />

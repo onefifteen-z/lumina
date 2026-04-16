@@ -275,7 +275,7 @@ const ChatView: React.FC = () => {
           type="button"
           onClick={handleNewSession}
           aria-label="New session"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-white hover:bg-primary-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
         >
           <SquarePen size={14} />
           <span>New Chat</span>
@@ -308,8 +308,8 @@ const ChatView: React.FC = () => {
         {displayWelcome ? (
           <div className="flex-1 min-h-0 flex items-center justify-center px-4">
             <div className="text-center max-w-md translate-y-[min(6vh,3rem)]">
-              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-accent/10 flex items-center justify-center">
-                <SquarePen size={24} className="text-accent shrink-0" />
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-primary-bg flex items-center justify-center">
+                <SquarePen size={24} className="text-primary shrink-0" />
               </div>
               <h2 className="text-lg font-semibold text-text-primary mb-2">Start a conversation</h2>
               <p className="text-sm text-text-secondary">
@@ -340,7 +340,7 @@ const ChatView: React.FC = () => {
             <button
               type="button"
               onClick={handleRetry}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
             >
               <RefreshCw size={12} />
               Retry

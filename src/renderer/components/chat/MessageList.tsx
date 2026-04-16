@@ -61,7 +61,7 @@ const MessageBubble: React.FC<{ message: ChatMessage; renderAssistantContent?: (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isUser
-          ? 'rounded-br-sm bg-accent text-white'
+          ? 'rounded-br-sm bg-primary text-white'
           : 'rounded-bl-sm bg-surface-hover text-text-primary'
           }`}
       >

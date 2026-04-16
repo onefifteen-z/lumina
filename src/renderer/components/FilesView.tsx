@@ -114,7 +114,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
           "block w-full text-left truncate transition-colors",
           "focus-visible:outline-none",
           isSelected
-            ? "bg-accent/20 text-text-primary"
+            ? "bg-primary-bg text-text-primary"
             : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
         )}
       >
@@ -233,8 +233,8 @@ export function FilesView({
           onClick={onNewArticle}
           className={cn(
             "flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-md cursor-pointer",
-            "bg-accent text-white hover:bg-accent-hover transition-colors",
-            "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            "bg-primary text-white hover:bg-primary-hover transition-colors",
+            "focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
           )}
         >
           <Plus size={16} />

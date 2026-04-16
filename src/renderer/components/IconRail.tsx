@@ -70,9 +70,9 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
             tabIndex={0}
             className={cn(
               "flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer",
-              "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
+              "focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none",
               isActive
-                ? "bg-accent text-white"
+                ? "bg-primary text-white"
                 : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
             )}
             onClick={() => onViewChange(item.view)}
@@ -113,7 +113,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
             <button
               type="button"
               aria-label={currentTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              className="flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
               onClick={onToggleTheme}
             >
               {currentTheme === "dark" ? <Moon size={18} /> : <Sun size={18} />}

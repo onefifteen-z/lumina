@@ -100,7 +100,7 @@ describe("IconRail chat active state logic", () => {
     }
   });
 
-  it("active state class logic: active view gets bg-accent, others do not", () => {
+  it("active state class logic: active view gets bg-primary, others do not", () => {
     const activeView = "chat";
     for (const item of allItems) {
       const isActive = item.view === activeView;

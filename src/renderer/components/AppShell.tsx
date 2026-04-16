@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
 import type { WikiAPI, ArticleMeta } from '../../shared/types';
+import { getConfigFiles } from '../lib/file-classification';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
 import SettingsPanel from './SettingsPanel';
@@ -177,6 +178,9 @@ const SidebarLayout: React.FC<{
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate } = useNavigation();
 
+    // Derive config files from articles for the ConfigMenu
+    const configFiles = useMemo(() => getConfigFiles(articles), [articles]);
+
     const [rightCollapsed, setRightCollapsed] = useState(false);
     const [leftWidth, setLeftWidth] = useState(240);
     const [rightWidth, setRightWidth] = useState(200);
@@ -341,6 +345,8 @@ const SidebarLayout: React.FC<{
             isSidebarOpen={open}
             currentTheme={currentTheme}
             onToggleTheme={onToggleTheme}
+            configFiles={configFiles}
+            onSelectConfigFile={selectArticleWithHistory}
           />
 
           {/* Sidebar Panel */}

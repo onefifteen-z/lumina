@@ -141,6 +141,7 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 - [x] Checkpoint — 223 tests passing, tabs, filtering, and state isolation verified
 - [x] ConfigMenu dropdown component
 - [x] Config Menu trigger in IconRail
+- [x] Config Menu wired in AppShell/SidebarLayout
 
 ## License
 

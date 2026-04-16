@@ -124,6 +124,7 @@ Adding a full-featured LLM chat page to Lumina with multi-turn conversation supp
 Migrating the color palette from purple (#7c3aed family) to amber (#D4731A family) across the entire app. Replaces CSS custom properties, Tailwind utility classes, and hardcoded hex values in all components. See `.kiro/specs/2026041704-lumina-amber-theme/` for the full spec.
 
 - [x] Define amber palette CSS custom properties and update @theme block
+- [x] Migrate CSS class accent references in styles.css
 
 ## License
 

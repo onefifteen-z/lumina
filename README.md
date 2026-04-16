@@ -151,6 +151,7 @@ Adding an animated geometric fox SVG loading indicator to the chat interface, re
 
 - [x] CSS keyframe animations (breathing, ear wiggle, eye blink, eye shine, facet shimmer, glow pulse, dot bounce, label fade, reduced-motion support)
 - [x] FoxThinkingIndicator SVG fox head geometry component
+- [x] Glow ring, thinking dots, and thinking label (large/small variants)
 
 ## License
 

@@ -269,33 +269,46 @@ export function FilesView({
   // Filter articles by active tab (excludes config files automatically)
   const wikiArticles = useMemo(() => filterArticlesForTab(articles, "wiki"), [articles]);
   const rawArticles = useMemo(() => filterArticlesForTab(articles, "raw"), [articles]);
-  const filteredArticles = activeTab === "wiki" ? wikiArticles : rawArticles;
+  const wikiTree = useMemo(() => buildTree(wikiArticles), [wikiArticles]);
+  const rawTree = useMemo(() => buildTree(rawArticles), [rawArticles]);
+  const tree = activeTab === "wiki" ? wikiTree : rawTree;
 
-  const tree = useMemo(() => buildTree(filteredArticles), [filteredArticles]);
+  // Per-tab folder expansion state — each tab remembers its own expanded folders
+  const [perTabExpanded, setPerTabExpanded] = useState<{
+    wiki: Set<string>;
+    raw: Set<string>;
+  }>(() => ({
+    wiki: collectFolderPaths(wikiTree),
+    raw: collectFolderPaths(rawTree),
+  }));
 
-  // Start with all folders expanded
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    () => collectFolderPaths(tree)
-  );
-
-  // Re-expand any newly-discovered folders when articles change
-  const prevTreeRef = React.useRef(tree);
-  if (prevTreeRef.current !== tree) {
-    prevTreeRef.current = tree;
-    const all = collectFolderPaths(tree);
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      all.forEach((p) => next.add(p));
-      return next;
+  // When new folders appear (articles change), add them to both tabs' sets
+  const prevWikiTreeRef = React.useRef(wikiTree);
+  const prevRawTreeRef = React.useRef(rawTree);
+  if (prevWikiTreeRef.current !== wikiTree || prevRawTreeRef.current !== rawTree) {
+    prevWikiTreeRef.current = wikiTree;
+    prevRawTreeRef.current = rawTree;
+    const wikiPaths = collectFolderPaths(wikiTree);
+    const rawPaths = collectFolderPaths(rawTree);
+    setPerTabExpanded((prev) => {
+      const nextWiki = new Set(prev.wiki);
+      wikiPaths.forEach((p) => nextWiki.add(p));
+      const nextRaw = new Set(prev.raw);
+      rawPaths.forEach((p) => nextRaw.add(p));
+      return { wiki: nextWiki, raw: nextRaw };
     });
   }
 
+  // Active tab's expansion set
+  const expandedFolders = perTabExpanded[activeTab];
+
   const toggleFolder = (path: string) => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
+    setPerTabExpanded((prev) => {
+      const current = prev[activeTab];
+      const next = new Set(current);
       if (next.has(path)) next.delete(path);
       else next.add(path);
-      return next;
+      return { ...prev, [activeTab]: next };
     });
   };
 

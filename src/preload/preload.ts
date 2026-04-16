@@ -178,6 +178,14 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:selectVaultFolder");
   },
 
+  getBookmarks() {
+    return ipcRenderer.invoke("wiki:getBookmarks");
+  },
+
+  setBookmarks(filenames: string[]) {
+    return ipcRenderer.invoke("wiki:setBookmarks", filenames);
+  },
+
   // ── Vault file watcher ─────────────────────────────────────────
 
   onVaultChange(

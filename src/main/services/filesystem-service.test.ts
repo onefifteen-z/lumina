@@ -175,6 +175,34 @@ describe("fileExists", () => {
   });
 });
 
+// ─── bookmarks JSON ─────────────────────────────────────────────────────────
+
+describe("getBookmarks / setBookmarks", () => {
+  it("returns empty array when file is missing", async () => {
+    expect(await service.getBookmarks()).toEqual([]);
+  });
+
+  it("writes and reads bookmarks.json under .lumina", async () => {
+    await service.setBookmarks(["a.md", "b/c.md"]);
+    const abs = path.join(tmpDir, ".lumina", "bookmarks.json");
+    const raw = JSON.parse(await fs.readFile(abs, "utf-8"));
+    expect(raw.version).toBe(1);
+    expect(raw.filenames).toEqual(["a.md", "b/c.md"]);
+    expect(await service.getBookmarks()).toEqual(["a.md", "b/c.md"]);
+  });
+
+  it("returns empty array for invalid JSON shape", async () => {
+    const luminaDir = path.join(tmpDir, ".lumina");
+    await fs.mkdir(luminaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(luminaDir, "bookmarks.json"),
+      JSON.stringify({ foo: 1 }),
+      "utf-8",
+    );
+    expect(await service.getBookmarks()).toEqual([]);
+  });
+});
+
 // ─── titleToFilename / filenameToTitle ──────────────────────────────────────
 
 describe("titleToFilename / filenameToTitle", () => {

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 680 680">
+  <title>Lumina geometric fox icon</title>
+  <defs>
+    <clipPath id="cl">
+      <rect x="36" y="36" width="608" height="608" rx="140"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#cl)">
+
+    <!-- Background -->
+    <rect x="36" y="36" width="608" height="608" fill="#1C1C1E"/>
+
+    <!-- Ambient glow -->
+    <ellipse cx="340" cy="334" rx="218" ry="202" fill="#D4731A" fill-opacity="0.07"/>
+
+    <!-- HEAD SILHOUETTE (base amber) -->
+    <polygon points="216,156 340,172 464,156 490,320 432,462 340,486 248,462 190,320" fill="#D4731A"/>
+
+    <!-- FOREHEAD lighter zone -->
+    <polygon points="216,156 340,172 464,156 432,254 248,254" fill="#EFA03C"/>
+
+    <!-- LEFT EAR INNER -->
+    <polygon points="224,164 252,248 294,244" fill="#F2C898"/>
+
+    <!-- RIGHT EAR INNER -->
+    <polygon points="456,164 428,248 386,244" fill="#F2C898"/>
+
+    <!-- CENTER FOREHEAD golden sliver -->
+    <polygon points="324,172 356,172 350,252 340,284 330,252" fill="#F8CA52" fill-opacity="0.5"/>
+
+    <!-- LEFT DARK MASK -->
+    <polygon points="190,320 248,254 292,312 266,428 248,462" fill="#180A02"/>
+
+    <!-- RIGHT DARK MASK -->
+    <polygon points="490,320 432,254 388,312 414,428 432,462" fill="#180A02"/>
+
+    <!-- CENTER FACE bright amber -->
+    <polygon points="248,254 432,254 388,312 292,312" fill="#EFA03C"/>
+
+    <!-- LOWER CENTER -->
+    <polygon points="292,312 388,312 398,384 282,384" fill="#E09030"/>
+
+    <!-- MUZZLE cream -->
+    <polygon points="282,384 398,384 408,452 340,474 272,452" fill="#F2E0C6"/>
+
+    <!-- LEFT EYE -->
+    <polygon points="248,254 292,278 254,300 218,278" fill="#0E0502"/>
+
+    <!-- RIGHT EYE -->
+    <polygon points="432,254 388,278 426,300 462,278" fill="#0E0502"/>
+
+    <!-- Eye shines -->
+    <circle cx="257" cy="274" r="7" fill="#FFFFFF" fill-opacity="0.88"/>
+    <circle cx="423" cy="274" r="7" fill="#FFFFFF" fill-opacity="0.88"/>
+    <circle cx="254" cy="271" r="2.5" fill="#FFFFFF"/>
+    <circle cx="420" cy="271" r="2.5" fill="#FFFFFF"/>
+
+    <!-- NOSE -->
+    <ellipse cx="340" cy="416" rx="12" ry="8" fill="#140804"/>
+    <ellipse cx="337" cy="413" rx="4" ry="2.8" fill="#FFFFFF" fill-opacity="0.3"/>
+
+  </g>
+
+  <!-- Border -->
+  <rect x="36" y="36" width="608" height="608" rx="140" fill="none" stroke="#D4731A" stroke-width="1.5" stroke-opacity="0.18"/>
+</svg>

@@ -4,6 +4,7 @@ import { watch, type FSWatcher } from "fs";
 import type {
   ArticleMeta,
   ArticleFile,
+  BookmarksFile,
   VaultChangeEvent,
 } from "../../shared/types";
 import {
@@ -14,6 +15,8 @@ import {
   titleToFilename as sharedTitleToFilename,
   filenameToTitle as sharedFilenameToTitle,
 } from "../../shared/markdown-parser";
+
+const BOOKMARKS_RELATIVE = path.join(".lumina", "bookmarks.json");
 
 export class FileSystemService {
   private vaultPath: string;
@@ -118,6 +121,50 @@ export class FileSystemService {
 
   filenameToTitle(filename: string): string {
     return sharedFilenameToTitle(filename);
+  }
+
+  private bookmarksAbsolutePath(): string {
+    return path.join(this.vaultPath, BOOKMARKS_RELATIVE);
+  }
+
+  /**
+   * Read bookmarked article filenames from `.lumina/bookmarks.json`.
+   * Returns [] if missing, unreadable, or invalid.
+   */
+  async getBookmarks(): Promise<string[]> {
+    const abs = this.bookmarksAbsolutePath();
+    try {
+      const raw = await fs.readFile(abs, "utf-8");
+      const data = JSON.parse(raw) as unknown;
+      if (
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as BookmarksFile).filenames)
+      ) {
+        return (data as BookmarksFile).filenames.filter(
+          (f): f is string => typeof f === "string",
+        );
+      }
+      console.warn("Invalid bookmarks.json shape; expected { filenames: string[] }");
+      return [];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return [];
+      console.warn("Failed to read bookmarks.json:", err);
+      return [];
+    }
+  }
+
+  /**
+   * Atomically replace vault bookmarks JSON.
+   */
+  async setBookmarks(filenames: string[]): Promise<void> {
+    const abs = this.bookmarksAbsolutePath();
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    const payload: BookmarksFile = {
+      version: 1,
+      filenames: [...filenames],
+    };
+    await fs.writeFile(abs, JSON.stringify(payload, null, 2), "utf-8");
   }
 
   /**

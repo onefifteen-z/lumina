@@ -59,8 +59,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const disabled = isOffline || isGenerating;
 
   return (
-    <div className="border-t border-border px-4 py-3 shrink-0">
-      <div className="mx-auto max-w-3xl flex items-end gap-2">
+    <div className="border-t border-border px-4 py-2 shrink-0">
+      <div className="mx-auto max-w-3xl flex items-center gap-2">
         <textarea
           ref={textareaRef}
           value={value}

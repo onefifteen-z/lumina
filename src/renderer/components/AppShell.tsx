@@ -154,6 +154,8 @@ const SidebarLayout: React.FC<{
   headings: TocHeading[];
   onHeadingsChange: (headings: TocHeading[]) => void;
   vaultName: string;
+  bookmarks: Set<string>;
+  onToggleBookmark: (filename: string) => void;
 }> = ({
   activeView,
   onViewChange,
@@ -169,6 +171,8 @@ const SidebarLayout: React.FC<{
   headings,
   onHeadingsChange,
   vaultName,
+  bookmarks,
+  onToggleBookmark,
 }) => {
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate } = useNavigation();
@@ -212,23 +216,6 @@ const SidebarLayout: React.FC<{
       syncNavButtons();
       onSelectArticle(navStackRef.current[navIndexRef.current]);
     }, [onSelectArticle]);
-
-    // ── Bookmarks (localStorage-backed) ──────────────────────
-    const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
-      try {
-        const raw = localStorage.getItem('lumina-bookmarks');
-        return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-      } catch { return new Set(); }
-    });
-
-    const toggleBookmark = useCallback((filename: string) => {
-      setBookmarks(prev => {
-        const next = new Set(prev);
-        if (next.has(filename)) next.delete(filename); else next.add(filename);
-        try { localStorage.setItem('lumina-bookmarks', JSON.stringify([...next])); } catch { /* ignore */ }
-        return next;
-      });
-    }, []);
 
     const handleLeftResizeStart = (e: React.MouseEvent) => {
       e.preventDefault();
@@ -374,7 +361,20 @@ const SidebarLayout: React.FC<{
                   {activeView === 'search' && (
                     <SearchView onSelectArticle={selectArticleWithHistory} />
                   )}
-                  {activeView === 'bookmarks' && <BookmarksView />}
+                  {activeView === 'bookmarks' && (
+                    <BookmarksView
+                      articles={articles}
+                      bookmarkedFilenames={[...bookmarks].sort((a, b) =>
+                        a.localeCompare(b, undefined, { sensitivity: 'base' }),
+                      )}
+                      selectedFilename={selectedFilename}
+                      onOpenBookmark={(filename) => {
+                        selectArticleWithHistory(filename);
+                        onViewChange('files');
+                      }}
+                      onRemoveBookmark={onToggleBookmark}
+                    />
+                  )}
                 </SidebarContent>
               </Sidebar>
               {open && (
@@ -411,7 +411,7 @@ const SidebarLayout: React.FC<{
                     canGoForward={canGoForward}
                     onBack={handleHistoryBack}
                     onForward={handleHistoryForward}
-                    onToggleBookmark={() => toolbarFilename && toggleBookmark(toolbarFilename)}
+                    onToggleBookmark={() => toolbarFilename && onToggleBookmark(toolbarFilename)}
                     onToggleEditMode={() => {
                       if (isEditingMode) {
                         navigate('files');
@@ -470,6 +470,21 @@ const AppShell: React.FC = () => {
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [articlesError, setArticlesError] = useState<string | null>(null);
+  const [bookmarks, setBookmarks] = useState<Set<string>>(() => new Set());
+
+  const onToggleBookmark = useCallback((filename: string) => {
+    setBookmarks((prev) => {
+      const next = new Set(prev);
+      if (next.has(filename)) next.delete(filename);
+      else next.add(filename);
+      const arr = [...next];
+      const rollback = new Set(prev);
+      void window.api.setBookmarks(arr).catch(() => {
+        setBookmarks(rollback);
+      });
+      return next;
+    });
+  }, []);
 
   // Set document title on mount
   useEffect(() => {
@@ -545,10 +560,41 @@ const AppShell: React.FC = () => {
       }
     };
 
+    const fetchBookmarks = async () => {
+      try {
+        let list = await window.api.getBookmarks();
+        if (list.length === 0) {
+          try {
+            const raw = localStorage.getItem('lumina-bookmarks');
+            if (raw) {
+              const parsed = JSON.parse(raw) as unknown;
+              if (
+                Array.isArray(parsed) &&
+                parsed.every((x): x is string => typeof x === 'string')
+              ) {
+                list = parsed;
+                await window.api.setBookmarks(list);
+                localStorage.removeItem('lumina-bookmarks');
+              }
+            }
+          } catch {
+            // ignore migration errors
+          }
+        }
+        if (!cancelled) setBookmarks(new Set(list));
+      } catch {
+        if (!cancelled) setBookmarks(new Set());
+      }
+    };
+
     fetchArticles();
+    fetchBookmarks();
 
     window.api.onVaultChange(() => {
-      if (!cancelled) fetchArticles();
+      if (!cancelled) {
+        void fetchArticles();
+        void fetchBookmarks();
+      }
     });
 
     return () => {
@@ -651,6 +697,8 @@ const AppShell: React.FC = () => {
               headings={headings}
               onHeadingsChange={setHeadings}
               vaultName={vaultName}
+              bookmarks={bookmarks}
+              onToggleBookmark={onToggleBookmark}
             />
           </SidebarProvider>
         </TooltipProvider>

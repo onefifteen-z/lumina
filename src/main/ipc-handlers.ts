@@ -144,6 +144,24 @@ export function registerIpcHandlers(services: {
     },
   );
 
+  // ── Bookmarks (vault JSON) ───────────────────────────────────────
+
+  ipcMain.handle("wiki:getBookmarks", async (): Promise<string[]> => {
+    if (!fileSystem) return [];
+    return fileSystem.getBookmarks();
+  });
+
+  ipcMain.handle(
+    "wiki:setBookmarks",
+    async (_event, filenames: string[]): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
+      await fileSystem.setBookmarks(filenames);
+    },
+  );
+
   // ── Search ───────────────────────────────────────────────────────
 
   ipcMain.handle("wiki:search", async (_event, query: string) => {

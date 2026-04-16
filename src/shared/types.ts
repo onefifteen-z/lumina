@@ -60,6 +60,12 @@ export interface VaultMarker {
   createdAt: string; // ISO 8601
 }
 
+/** Bookmarks persisted at `{vault}/.lumina/bookmarks.json`. */
+export interface BookmarksFile {
+  version: number;
+  filenames: string[];
+}
+
 /** Configuration for an LLM provider endpoint. */
 export interface LLMProviderConfig {
   endpointUrl: string;
@@ -131,6 +137,10 @@ export interface WikiAPI {
   saveApiKey(key: string): Promise<void>;
   testLLMConnection(config: LLMProviderConfig): Promise<boolean>;
   selectVaultFolder(): Promise<string | null>;
+
+  // Bookmarks (vault JSON)
+  getBookmarks(): Promise<string[]>;
+  setBookmarks(filenames: string[]): Promise<void>;
 
   // Vault file watcher
   onVaultChange(callback: (event: VaultChangeEvent) => void): void;

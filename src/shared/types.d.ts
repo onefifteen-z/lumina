@@ -73,6 +73,11 @@ export interface VaultChangeEvent {
     type: "add" | "change" | "unlink";
     filename: string;
 }
+/** Bookmarks persisted at `{vault}/.lumina/bookmarks.json`. */
+export interface BookmarksFile {
+    version: number;
+    filenames: string[];
+}
 /** Typed IPC bridge API exposed to the renderer via contextBridge. */
 export interface WikiAPI {
     listArticles(): Promise<ArticleMeta[]>;
@@ -96,6 +101,8 @@ export interface WikiAPI {
     saveApiKey(key: string): Promise<void>;
     testLLMConnection(config: LLMProviderConfig): Promise<boolean>;
     selectVaultFolder(): Promise<string | null>;
+    getBookmarks(): Promise<string[]>;
+    setBookmarks(filenames: string[]): Promise<void>;
     onVaultChange(callback: (event: VaultChangeEvent) => void): void;
     removeVaultChangeListener(): void;
     onUnsavedChanges(callback: (hasChanges: boolean) => void): void;

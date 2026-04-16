@@ -303,31 +303,32 @@ const ChatView: React.FC = () => {
         </div>
       )}
 
-      {/* Welcome placeholder */}
-      {displayWelcome ? (
-        <div className="flex-1 flex items-center justify-center px-4">
-          <div className="text-center max-w-md">
-            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-accent/10 flex items-center justify-center">
-              <SquarePen size={24} className="text-accent" />
+      {/* Scrollable / centered middle: welcome or messages */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {displayWelcome ? (
+          <div className="flex-1 min-h-0 flex items-center justify-center px-4">
+            <div className="text-center max-w-md translate-y-[min(6vh,3rem)]">
+              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-accent/10 flex items-center justify-center">
+                <SquarePen size={24} className="text-accent shrink-0" />
+              </div>
+              <h2 className="text-lg font-semibold text-text-primary mb-2">Start a conversation</h2>
+              <p className="text-sm text-text-secondary">
+                Type a message below to begin chatting. Press{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-surface-hover text-text-primary text-xs font-mono">
+                  {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+N
+                </kbd>{' '}
+                to start a new session anytime.
+              </p>
             </div>
-            <h2 className="text-lg font-semibold text-text-primary mb-2">Start a conversation</h2>
-            <p className="text-sm text-text-secondary">
-              Type a message below to begin chatting. Press{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-surface-hover text-text-primary text-xs font-mono">
-                {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+N
-              </kbd>{' '}
-              to start a new session anytime.
-            </p>
           </div>
-        </div>
-      ) : (
-        /* Message list */
-        <MessageList
-          messages={messages}
-          streamingContent={streamingContent}
-          renderAssistantContent={(content) => <AssistantContent content={content} />}
-        />
-      )}
+        ) : (
+          <MessageList
+            messages={messages}
+            streamingContent={streamingContent}
+            renderAssistantContent={(content) => <AssistantContent content={content} />}
+          />
+        )}
+      </div>
 
       {/* Error display */}
       {error && (

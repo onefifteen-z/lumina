@@ -143,6 +143,7 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 - [x] Config Menu trigger in IconRail
 - [x] Config Menu wired in AppShell/SidebarLayout
 - [x] Tab count reactivity verified
+- [x] Final checkpoint — 223 tests passing across 15 suites, zero regressions
 
 ## License
 

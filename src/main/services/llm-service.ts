@@ -386,9 +386,8 @@ export class LLMService {
   /** Build the chat completions URL from the configured endpoint. */
   private buildUrl(): string {
     const base = this.config.endpointUrl.replace(/\/+$/, "");
-    // If the endpoint already includes a path (e.g. /v1/chat/completions), use as-is
     if (base.includes("/chat/completions")) return base;
-    // Otherwise append the standard OpenAI-compatible path
+    if (base.endsWith("/v1")) return `${base}/chat/completions`;
     return `${base}/v1/chat/completions`;
   }
 }

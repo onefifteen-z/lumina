@@ -205,12 +205,6 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
               </div>
             )}
 
-            <button
-              className="article-view__edit-btn"
-              onClick={() => currentFilename && editArticle(currentFilename)}
-            >
-              ✏️ Edit
-            </button>
           </header>
 
           {/* Rendered markdown body */}

@@ -59,7 +59,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const disabled = isOffline || isGenerating;
 
   return (
-    <div className="border-t border-border bg-surface-bg px-4 py-3">
+    <div className="border-t border-border px-4 py-3 shrink-0">
       <div className="mx-auto max-w-3xl flex items-end gap-2">
         <textarea
           ref={textareaRef}
@@ -76,7 +76,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }
           rows={1}
           aria-label="Chat message input"
-          className="flex-1 resize-none rounded-lg border border-border bg-surface-bg px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1 resize-none rounded-lg border border-border bg-sidebar-bg px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
           style={{ maxHeight: '30vh' }}
         />
 

@@ -31,11 +31,12 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      preload: path.join(__dirname, "..", "..", "preload", "preload.js"),
+      preload: path.join(__dirname, "..", "..", "preload", "preload", "preload.js"),
     },
   });
 

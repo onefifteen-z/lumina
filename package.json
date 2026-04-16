@@ -28,7 +28,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:renderer": "vite",
-    "dev:electron": "tsc -p tsconfig.main.json && electron .",
+    "dev:electron": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && electron .",
     "build": "npm run build:renderer && npm run build:main && npm run build:preload",
     "build:mac": "npm run build && electron-builder --mac",
     "build:main": "tsc -p tsconfig.main.json",

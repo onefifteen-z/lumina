@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useMemo } from "react";
-import { Plus, Sparkles, ChevronRight } from "lucide-react";
+import { Plus, ChevronRight } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 
@@ -179,7 +179,6 @@ export interface FilesViewProps {
   error: string | null;
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
-  onGenerateArticle: () => void;
 }
 
 export function FilesView({
@@ -189,7 +188,6 @@ export function FilesView({
   error,
   onSelectArticle,
   onNewArticle,
-  onGenerateArticle,
 }: FilesViewProps) {
   const tree = useMemo(() => buildTree(articles), [articles]);
 
@@ -241,18 +239,6 @@ export function FilesView({
         >
           <Plus size={16} />
           New Article
-        </button>
-        <button
-          type="button"
-          onClick={onGenerateArticle}
-          className={cn(
-            "flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-md cursor-pointer",
-            "border border-accent text-accent hover:bg-accent hover:text-white transition-colors",
-            "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-          )}
-        >
-          <Sparkles size={16} />
-          Generate with AI
         </button>
       </div>
 

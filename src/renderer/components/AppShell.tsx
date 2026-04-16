@@ -11,8 +11,9 @@ import { FilesView } from './FilesView';
 import { SearchView } from './SearchView';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
+import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
@@ -148,11 +149,11 @@ const SidebarLayout: React.FC<{
   articlesError: string | null;
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
-  onGenerateArticle: () => void;
   currentTheme: 'light' | 'dark' | 'system';
   onToggleTheme: () => void;
   headings: TocHeading[];
   onHeadingsChange: (headings: TocHeading[]) => void;
+  vaultName: string;
 }> = ({
   activeView,
   onViewChange,
@@ -163,14 +164,109 @@ const SidebarLayout: React.FC<{
   articlesError,
   onSelectArticle,
   onNewArticle,
-  onGenerateArticle,
   currentTheme,
   onToggleTheme,
   headings,
   onHeadingsChange,
+  vaultName,
 }) => {
     const { open, setOpen } = useSidebar();
+    const { editArticle, navigate } = useNavigation();
+
     const [rightCollapsed, setRightCollapsed] = useState(false);
+    const [leftWidth, setLeftWidth] = useState(240);
+    const [rightWidth, setRightWidth] = useState(200);
+    const [isLeftResizing, setIsLeftResizing] = useState(false);
+    const [isRightResizing, setIsRightResizing] = useState(false);
+
+    // ── Navigation history ────────────────────────────────────
+    const navStackRef = React.useRef<string[]>([]);
+    const navIndexRef = React.useRef(-1);
+    const [canGoBack, setCanGoBack] = useState(false);
+    const [canGoForward, setCanGoForward] = useState(false);
+
+    const syncNavButtons = () => {
+      setCanGoBack(navIndexRef.current > 0);
+      setCanGoForward(navIndexRef.current < navStackRef.current.length - 1);
+    };
+
+    /** Wraps onSelectArticle to push an entry onto the history stack. */
+    const selectArticleWithHistory = useCallback((filename: string) => {
+      navStackRef.current = navStackRef.current.slice(0, navIndexRef.current + 1);
+      navStackRef.current.push(filename);
+      navIndexRef.current = navStackRef.current.length - 1;
+      syncNavButtons();
+      onSelectArticle(filename);
+    }, [onSelectArticle]);
+
+    const handleHistoryBack = useCallback(() => {
+      if (navIndexRef.current <= 0) return;
+      navIndexRef.current--;
+      syncNavButtons();
+      onSelectArticle(navStackRef.current[navIndexRef.current]);
+    }, [onSelectArticle]);
+
+    const handleHistoryForward = useCallback(() => {
+      if (navIndexRef.current >= navStackRef.current.length - 1) return;
+      navIndexRef.current++;
+      syncNavButtons();
+      onSelectArticle(navStackRef.current[navIndexRef.current]);
+    }, [onSelectArticle]);
+
+    // ── Bookmarks (localStorage-backed) ──────────────────────
+    const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
+      try {
+        const raw = localStorage.getItem('lumina-bookmarks');
+        return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+      } catch { return new Set(); }
+    });
+
+    const toggleBookmark = useCallback((filename: string) => {
+      setBookmarks(prev => {
+        const next = new Set(prev);
+        if (next.has(filename)) next.delete(filename); else next.add(filename);
+        try { localStorage.setItem('lumina-bookmarks', JSON.stringify([...next])); } catch { /* ignore */ }
+        return next;
+      });
+    }, []);
+
+    const handleLeftResizeStart = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsLeftResizing(true);
+      document.body.classList.add('is-resizing');
+      const startX = e.clientX;
+      const startWidth = leftWidth;
+      const onMove = (ev: MouseEvent) => {
+        setLeftWidth(Math.max(160, Math.min(480, startWidth + (ev.clientX - startX))));
+      };
+      const onUp = () => {
+        setIsLeftResizing(false);
+        document.body.classList.remove('is-resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    };
+
+    const handleRightResizeStart = (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsRightResizing(true);
+      document.body.classList.add('is-resizing');
+      const startX = e.clientX;
+      const startWidth = rightWidth;
+      const onMove = (ev: MouseEvent) => {
+        setRightWidth(Math.max(140, Math.min(400, startWidth - (ev.clientX - startX))));
+      };
+      const onUp = () => {
+        setIsRightResizing(false);
+        document.body.classList.remove('is-resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    };
 
     const handleViewChange = useCallback(
       (view: SidebarView) => {
@@ -196,74 +292,164 @@ const SidebarLayout: React.FC<{
     const showSidebarPanel = activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph';
 
     return (
-      <div className="flex h-full w-full">
-        {/* Icon Rail — always visible */}
-        <IconRail
-          activeView={activeView}
-          onViewChange={handleViewChange}
-          isSidebarOpen={open}
-          currentTheme={currentTheme}
-          onToggleTheme={onToggleTheme}
-        />
-
-        {/* Sidebar Panel */}
-        {showSidebarPanel && (
-          <Sidebar>
-            <SidebarContent>
-              {activeView === 'files' && (
-                <FilesView
-                  articles={articles}
-                  selectedFilename={selectedFilename}
-                  loading={articlesLoading}
-                  error={articlesError}
-                  onSelectArticle={onSelectArticle}
-                  onNewArticle={onNewArticle}
-                  onGenerateArticle={onGenerateArticle}
-                />
-              )}
-              {activeView === 'search' && (
-                <SearchView onSelectArticle={onSelectArticle} />
-              )}
-              {activeView === 'bookmarks' && <BookmarksView />}
-            </SidebarContent>
-          </Sidebar>
-        )}
-
-        {/* Main Content Area + TOC */}
-        <div className="relative flex flex-1 overflow-hidden">
-          {/* TOC toggle — top-right, aligned with traffic lights */}
-          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
-            <button
-              type="button"
-              onClick={() => setRightCollapsed(c => !c)}
-              className="absolute top-4 right-3 z-10 flex items-center justify-center w-7 h-7 rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer"
-              aria-label={rightCollapsed ? "Expand table of contents" : "Collapse table of contents"}
+      <div className="flex flex-col h-full w-full">
+        {/* Full-width titlebar — drag region for macOS hiddenInset traffic lights */}
+        <div
+          style={{ height: "40px", flexShrink: 0, position: "relative", WebkitAppRegion: "drag" } as React.CSSProperties}
+          className="bg-rail-bg border-b border-border shrink-0"
+        >
+          {/* Left sidebar toggle — inside the sidebar near its right edge.
+              When sidebar is closed, clamp to 78px so it stays clear of
+              macOS traffic lights (close/minimize/zoom end at ≈67px). */}
+          {showSidebarPanel && (
+            <div
+              style={{
+                position: "absolute",
+                // Button is 32px wide; place its right edge 4px inside the sidebar's right edge.
+                // When closed, snap to 78px (clear of traffic lights).
+                left: open ? `${44 + leftWidth - 36}px` : "78px",
+                top: 0, bottom: 0,
+                display: "flex", alignItems: "center",
+                WebkitAppRegion: "no-drag",
+              } as React.CSSProperties}
             >
-              {rightCollapsed
-                ? <PanelRightOpen size={16} />
-                : <PanelRightClose size={16} />}
-            </button>
+              <button
+                type="button"
+                onClick={() => setOpen(!open)}
+                className="flex items-center justify-center w-8 h-8 rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer focus-visible:outline-none"
+                aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
+              >
+                {open ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
+              </button>
+            </div>
           )}
-          <main className="flex-1 overflow-auto bg-main-bg">
-            <OfflineBanner />
-            {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
-            {activeView === 'chat' && editingFilename === null && <ChatView />}
-            {activeView === 'graph' && editingFilename === null && (
-              <GraphView articles={articles} onSelectArticle={(f) => { onSelectArticle(f); onViewChange('files'); }} />
-            )}
-            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
-              <ArticleBrowser
-                selectedFilename={selectedFilename}
-                onHeadingsChange={onHeadingsChange}
-              />
-            )}
-            {editingFilename !== null && <ArticleEditor />}
-          </main>
-          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
-            <TocPanel headings={headings} collapsed={rightCollapsed} />
+
+          {/* Right TOC toggle */}
+          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && headings.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                right: "16px",
+                top: 0, bottom: 0,
+                display: "flex", alignItems: "center",
+                WebkitAppRegion: "no-drag",
+              } as React.CSSProperties}
+            >
+              <button
+                type="button"
+                onClick={() => setRightCollapsed(c => !c)}
+                className="flex items-center justify-center w-8 h-8 rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer focus-visible:outline-none"
+                aria-label={rightCollapsed ? "Expand table of contents" : "Collapse table of contents"}
+              >
+                {rightCollapsed ? <PanelRightOpen size={20} /> : <PanelRightClose size={20} />}
+              </button>
+            </div>
           )}
         </div>
-      </div >
+        <div className="flex flex-1 overflow-hidden">
+          {/* Icon Rail — always visible */}
+          <IconRail
+            activeView={activeView}
+            onViewChange={handleViewChange}
+            isSidebarOpen={open}
+            currentTheme={currentTheme}
+            onToggleTheme={onToggleTheme}
+          />
+
+          {/* Sidebar Panel */}
+          {showSidebarPanel && (
+            <>
+              <Sidebar panelWidth={leftWidth}>
+                <SidebarContent>
+                  {activeView === 'files' && (
+                    <FilesView
+                      articles={articles}
+                      selectedFilename={selectedFilename}
+                      loading={articlesLoading}
+                      error={articlesError}
+                      onSelectArticle={selectArticleWithHistory}
+                      onNewArticle={onNewArticle}
+                    />
+                  )}
+                  {activeView === 'search' && (
+                    <SearchView onSelectArticle={selectArticleWithHistory} />
+                  )}
+                  {activeView === 'bookmarks' && <BookmarksView />}
+                </SidebarContent>
+              </Sidebar>
+              {open && (
+                <div
+                  className={`lumina-resize-handle${isLeftResizing ? ' is-dragging' : ''}`}
+                  onMouseDown={handleLeftResizeStart}
+                />
+              )}
+            </>
+          )}
+
+          {/* Main Content Area + TOC */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* Main column: toolbar + article */}
+            <div className="flex flex-col flex-1 overflow-hidden">
+              {/* Content toolbar — shown only above the main article area */}
+              {(() => {
+                const isEditingMode = editingFilename !== null;
+                const isNewArticle = editingFilename === '';
+                const toolbarFilename = isEditingMode
+                  ? (editingFilename === '' ? null : editingFilename)
+                  : selectedFilename;
+                const showToolbar = (toolbarFilename !== null || isNewArticle)
+                  && activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph';
+                if (!showToolbar) return null;
+                return (
+                  <ContentToolbar
+                    filename={toolbarFilename}
+                    vaultName={vaultName}
+                    isEditing={isEditingMode}
+                    isNewArticle={isNewArticle}
+                    isBookmarked={toolbarFilename ? bookmarks.has(toolbarFilename) : false}
+                    canGoBack={canGoBack}
+                    canGoForward={canGoForward}
+                    onBack={handleHistoryBack}
+                    onForward={handleHistoryForward}
+                    onToggleBookmark={() => toolbarFilename && toggleBookmark(toolbarFilename)}
+                    onToggleEditMode={() => {
+                      if (isEditingMode) {
+                        navigate('files');
+                      } else if (selectedFilename) {
+                        editArticle(selectedFilename);
+                      }
+                    }}
+                  />
+                );
+              })()}
+              <main className="relative flex-1 overflow-auto bg-main-bg">
+                <OfflineBanner />
+                {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
+                {activeView === 'chat' && editingFilename === null && <ChatView />}
+                {activeView === 'graph' && editingFilename === null && (
+                  <GraphView articles={articles} onSelectArticle={(f) => { selectArticleWithHistory(f); onViewChange('files'); }} />
+                )}
+                {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
+                  <ArticleBrowser
+                    selectedFilename={selectedFilename}
+                    onHeadingsChange={onHeadingsChange}
+                  />
+                )}
+                {editingFilename !== null && <ArticleEditor />}
+              </main>
+            </div>
+            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && !rightCollapsed && headings.length > 0 && (
+              <div
+                className={`lumina-resize-handle${isRightResizing ? ' is-dragging' : ''}`}
+                onMouseDown={handleRightResizeStart}
+              />
+            )}
+            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
+              <TocPanel headings={headings} collapsed={rightCollapsed} width={rightWidth} />
+            )}
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -277,6 +463,7 @@ const AppShell: React.FC = () => {
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
   const [headings, setHeadings] = useState<TocHeading[]>([]);
+  const [vaultName, setVaultName] = useState('vault');
 
   // Article list state (shared with FilesView)
   const [articles, setArticles] = useState<ArticleMeta[]>([]);
@@ -300,6 +487,10 @@ const AppShell: React.FC = () => {
           setTheme(config.theme);
           applyTheme(resolveTheme(config.theme));
           setFirstRun(!config.vaultPath);
+          if (config.vaultPath) {
+            const segments = config.vaultPath.replace(/\\/g, '/').split('/').filter(Boolean);
+            setVaultName(segments[segments.length - 1] ?? 'vault');
+          }
         }
       } catch {
         if (!cancelled) {
@@ -455,11 +646,11 @@ const AppShell: React.FC = () => {
               articlesError={articlesError}
               onSelectArticle={handleSelectArticle}
               onNewArticle={createNewArticle}
-              onGenerateArticle={() => setGenerateOpen(true)}
               currentTheme={theme}
               onToggleTheme={handleToggleTheme}
               headings={headings}
               onHeadingsChange={setHeadings}
+              vaultName={vaultName}
             />
           </SidebarProvider>
         </TooltipProvider>

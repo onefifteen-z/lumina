@@ -268,15 +268,14 @@ const ChatView: React.FC = () => {
   /* ── Render ─────────────────────────────────────────────────── */
 
   return (
-    <div className="flex flex-col h-full bg-main-bg">
-      {/* Title bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-bg shrink-0">
-        <h1 className="text-sm font-semibold text-text-primary">Chat</h1>
+    <div className="flex flex-col absolute inset-0 bg-main-bg">
+      {/* Top bar — New Chat button only */}
+      <div className="flex items-center justify-end px-4 py-2 shrink-0">
         <button
           type="button"
           onClick={handleNewSession}
           aria-label="New session"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
         >
           <SquarePen size={14} />
           <span>New Chat</span>

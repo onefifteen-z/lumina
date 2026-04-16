@@ -65,6 +65,74 @@
   --color-text: #dcddde;
 }
 
+/* ── Resize handles (left/right sidebar) ───────────────────── */
+
+.lumina-resize-handle {
+  border: none;
+  width: 5px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  align-self: stretch;
+  /* prevent text selection flash during drag */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lumina-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.lumina-resize-handle:hover::after,
+.lumina-resize-handle.is-dragging::after {
+  background-color: var(--color-accent);
+  opacity: 0.55;
+}
+
+/* Suppress text selection across the whole page while a drag is active */
+body.is-resizing {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: col-resize;
+}
+
+/* ── Custom scrollbars ──────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+/* Show thumb only when the scrollable area is hovered */
+*:hover > ::-webkit-scrollbar-thumb,
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
 /* ── Reset & Base ───────────────────────────────────────────── */
 
 *,

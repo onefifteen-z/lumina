@@ -51,27 +51,33 @@ const SidebarProvider = React.forwardRef<HTMLDivElement, SidebarProviderProps>(
 )
 SidebarProvider.displayName = "SidebarProvider"
 
-const Sidebar = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<"aside">
->(({ className, children, ...props }, ref) => {
-  const { open } = useSidebar()
+interface SidebarProps extends React.ComponentProps<"aside"> {
+  panelWidth?: number;
+}
 
-  return (
-    <aside
-      ref={ref}
-      data-state={open ? "expanded" : "collapsed"}
-      className={cn(
-        "flex h-full flex-col overflow-hidden border-r border-border bg-sidebar-bg transition-[width] duration-200 ease-in-out",
-        className
-      )}
-      style={{ width: open ? SIDEBAR_WIDTH : SIDEBAR_WIDTH_COLLAPSED }}
-      {...props}
-    >
-      {children}
-    </aside>
-  )
-})
+const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
+  ({ className, children, panelWidth, style, ...props }, ref) => {
+    const { open } = useSidebar()
+    const width = open
+      ? panelWidth != null ? `${panelWidth}px` : SIDEBAR_WIDTH
+      : SIDEBAR_WIDTH_COLLAPSED
+
+    return (
+      <aside
+        ref={ref}
+        data-state={open ? "expanded" : "collapsed"}
+        className={cn(
+          "flex h-full flex-col overflow-hidden border-r border-border bg-sidebar-bg",
+          className
+        )}
+        style={{ width, ...style }}
+        {...props}
+      >
+        {children}
+      </aside>
+    )
+  }
+)
 Sidebar.displayName = "Sidebar"
 
 const SidebarHeader = React.forwardRef<

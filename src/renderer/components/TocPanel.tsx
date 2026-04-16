@@ -170,6 +170,7 @@ const TocNodeRow: React.FC<TocNodeRowProps> = ({
 interface TocPanelProps {
   headings: TocHeading[];
   collapsed?: boolean;
+  width?: number;
 }
 
 function collectAllIds(nodes: TocNode[], acc: Set<string> = new Set()): Set<string> {
@@ -182,7 +183,7 @@ function collectAllIds(nodes: TocNode[], acc: Set<string> = new Set()): Set<stri
   return acc;
 }
 
-export function TocPanel({ headings, collapsed }: TocPanelProps) {
+export function TocPanel({ headings, collapsed, width = 200 }: TocPanelProps) {
   const tree = React.useMemo(() => buildTocTree(headings), [headings]);
 
   // Start fully expanded
@@ -239,13 +240,8 @@ export function TocPanel({ headings, collapsed }: TocPanelProps) {
   return (
     <aside
       className="h-full flex flex-col border-l border-border bg-sidebar-bg shrink-0 overflow-hidden"
-      style={{ width: "200px" }}
+      style={{ width: `${width}px` }}
     >
-      <div className="px-4 py-3 border-b border-border shrink-0">
-        <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
-          On this page
-        </span>
-      </div>
       <div className="flex-1 overflow-y-auto py-1">
         {tree.map((node) => (
           <TocNodeRow

@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useCallback, useState } from "react";
+import { Scan } from "lucide-react";
 import {
   forceSimulation,
   forceLink,
   forceManyBody,
   forceCenter,
   forceCollide,
+  forceX,
+  forceY,
   type SimulationNodeDatum,
   type SimulationLinkDatum,
 } from "d3-force";
@@ -50,24 +53,34 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
 
   // Build graph data from articles
   useEffect(() => {
-    const filenameMap = new Map<string, GraphNode>();
-    const titleMap = new Map<string, string>(); // title -> id
+    // Only show articles under the wiki/ folder
+    const wikiArticles = articles.filter((a) => a.filename.startsWith("wiki/"));
 
-    const nodes: GraphNode[] = articles.map((a) => {
-      const node: GraphNode = {
-        id: a.filename,
-        title: displayTitle(a),
-        filename: a.filename,
-        linkCount: a.wikilinks.length,
-      };
-      filenameMap.set(a.filename, node);
+    // Build multiple lookup keys per article to maximise wikilink resolution:
+    //   1. full title (exact)
+    //   2. basename stem (for path-derived titles like "raw/MoM/file")
+    //   3. filename stem
+    const titleMap = new Map<string, string>(); // key -> filename
+    for (const a of wikiArticles) {
       titleMap.set(a.title.toLowerCase(), a.filename);
-      return node;
-    });
+      const stem = a.filename.split("/").pop()?.replace(/\.md$/i, "") ?? "";
+      if (stem) titleMap.set(stem.toLowerCase(), a.filename);
+      if (a.title.includes("/")) {
+        const baseStem = a.title.split("/").pop()?.trim() ?? "";
+        if (baseStem) titleMap.set(baseStem.toLowerCase(), a.filename);
+      }
+    }
+
+    const nodes: GraphNode[] = wikiArticles.map((a) => ({
+      id: a.filename,
+      title: displayTitle(a),
+      filename: a.filename,
+      linkCount: 0,
+    }));
 
     const links: GraphLink[] = [];
     const seen = new Set<string>();
-    for (const a of articles) {
+    for (const a of wikiArticles) {
       for (const target of a.wikilinks) {
         const targetFilename = titleMap.get(target.toLowerCase());
         if (!targetFilename || targetFilename === a.filename) continue;
@@ -92,15 +105,48 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     linksRef.current = links;
 
     const sim = forceSimulation<GraphNode>(nodes)
-      .force("link", forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(90).strength(0.5))
-      .force("charge", forceManyBody().strength(-250))
-      .force("center", forceCenter(0, 0).strength(0.05))
-      .force("collide", forceCollide(28))
-      .on("tick", draw);
+      .alphaDecay(0.015)
+      .velocityDecay(0.55)
+      .force("link", forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(220).strength(0.3))
+      .force("charge", forceManyBody().strength(-900).distanceMax(900))
+      .force("center", forceCenter(0, 0).strength(0.015))
+      .force("x", forceX(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
+      .force("y", forceY(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
+      .force("collide", forceCollide(65))
+      .on("tick", draw)
+      .on("end", () => {
+        fitAll();
+        draw();
+      });
 
     simRef.current = sim;
     return () => { sim.stop(); };
-  }, [articles]);
+  }, [articles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fitAll = useCallback(() => {
+    const nodes = nodesRef.current;
+    if (nodes.length === 0) return;
+    const { w, h } = sizeRef.current;
+    if (w === 0 || h === 0) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      if (n.x == null || n.y == null) continue;
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y);
+    }
+    const pad = 60;
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const scale = Math.min((w - pad * 2) / rangeX, (h - pad * 2) / rangeY, 2);
+    transformRef.current = {
+      x: -((minX + maxX) / 2) * scale,
+      y: -((minY + maxY) / 2) * scale,
+      k: scale,
+    };
+  }, []);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -117,10 +163,10 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
     const edgeColor        = isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)";
     const edgeHoverColor   = "rgba(139,92,246,0.7)";
-    const nodeColor        = isDark ? "rgba(160,160,160,0.9)" : "rgba(100,100,100,0.85)";
+    const nodeColor        = isDark ? "#a0a0a0" : "#646464";
     const nodeHoverColor   = "#a78bfa";
-    const nodeBorderColor  = isDark ? "rgba(220,220,220,0.6)" : "rgba(80,80,80,0.6)";
-    const labelColor       = isDark ? "rgba(210,210,210,0.85)" : "rgba(40,40,40,0.85)";
+    const nodeBorderColor  = isDark ? "#dcdcdc" : "#505050";
+    const labelColor       = isDark ? "#d2d2d2" : "#282828";
 
     ctx.clearRect(0, 0, w, h);
     ctx.save();
@@ -219,7 +265,7 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
       dragRef.current = { node, offsetX: node.x - mx, offsetY: node.y - my };
       node.fx = node.x;
       node.fy = node.y;
-      simRef.current?.alphaTarget(0.3).restart();
+      simRef.current?.alphaTarget(0.08).restart();
     } else {
       panRef.current = { startX: e.clientX, startY: e.clientY, tx: transformRef.current.x, ty: transformRef.current.y };
     }
@@ -289,8 +335,17 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
         onClick={handleClick}
         onWheel={handleWheel}
       />
+      {/* Fit-to-view button */}
+      <button
+        type="button"
+        title="Fit all nodes"
+        onClick={() => { fitAll(); draw(); }}
+        className="absolute bottom-3 right-3 w-8 h-8 flex items-center justify-center rounded-md bg-surface-hover border border-border text-text-secondary hover:text-text-primary transition-colors"
+      >
+        <Scan size={15} />
+      </button>
       {hovered && (
-        <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-surface-bg/90 border border-border text-xs text-text-primary pointer-events-none">
+        <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md border border-border text-xs text-text-primary pointer-events-none bg-sidebar-bg">
           {nodesRef.current.find((n) => n.id === hovered)?.title}
         </div>
       )}

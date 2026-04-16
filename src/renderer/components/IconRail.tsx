@@ -20,9 +20,9 @@ export interface IconRailProps {
 
 const topItems: { view: SidebarView; icon: React.ElementType; label: string }[] = [
   { view: "files", icon: Files, label: "Files" },
+  { view: "chat", icon: MessageSquare, label: "Chat" },
   { view: "search", icon: Search, label: "Search" },
   { view: "bookmarks", icon: Bookmark, label: "Bookmarks" },
-  { view: "chat", icon: MessageSquare, label: "Chat" },
   { view: "graph", icon: Network, label: "Graph" },
 ];
 
@@ -91,16 +91,16 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
       role="toolbar"
       aria-label="Navigation"
       aria-orientation="vertical"
-      style={{ paddingTop: "16px", paddingBottom: "48px" }}
+      style={{ paddingTop: "6px", paddingBottom: "48px" }}
       className="relative flex flex-col items-center w-11 bg-rail-bg border-r border-border gap-1 shrink-0"
     >
       {/* Top group */}
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {topItems.map((item, i) => renderButton(item, i))}
       </div>
 
       {/* Settings pushed to bottom */}
-      <div className="flex flex-col items-center gap-1 mt-auto">
+      <div className="flex flex-col items-center gap-1 mt-auto" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {bottomItems.map((item, i) =>
           renderButton(item, topItems.length + i)
         )}

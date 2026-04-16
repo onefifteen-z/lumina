@@ -145,6 +145,12 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 - [x] Tab count reactivity verified
 - [x] Final checkpoint — 223 tests passing across 15 suites, zero regressions
 
+## Fox Thinking Animation
+
+Adding an animated geometric fox SVG loading indicator to the chat interface, replacing the plain-text "…" placeholder shown while waiting for the LLM to begin streaming. See `.kiro/specs/2026041703-fox-thinking-animation/` for the full spec.
+
+- [x] CSS keyframe animations (breathing, ear wiggle, eye blink, eye shine, facet shimmer, glow pulse, dot bounce, label fade, reduced-motion support)
+
 ## License
 
 MIT

@@ -1,0 +1,156 @@
+/* Fox Thinking Indicator — CSS Keyframe Animations
+ * All animations use transform and opacity only (GPU-accelerated, no layout recalculations).
+ * All animations use animation-iteration-count: infinite.
+ */
+
+/* Breathing: subtle scale pulse on the fox body */
+@keyframes fox-breathe {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Ear wiggle: gentle rotation on ear elements */
+@keyframes fox-ear-wiggle {
+  0% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+  100% {
+    transform: rotate(-3deg);
+  }
+}
+
+/* Eye blink: brief scaleY collapse at midpoint, open for majority */
+@keyframes fox-eye-blink {
+  0% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.1);
+  }
+  55% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+/* Eye shine: horizontal drift on highlight elements */
+@keyframes fox-eye-shine {
+  0% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+  100% {
+    transform: translateX(-1px);
+  }
+}
+
+/* Facet shimmer: opacity pulse across polygon facets */
+@keyframes fox-facet-shimmer {
+  0% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
+
+/* Glow pulse: ambient glow ring opacity */
+@keyframes fox-glow-pulse {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+/* Dot bounce: vertical wave on thinking dots */
+@keyframes fox-dot-bounce {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* Label fade: opacity pulse on "Thinking" text */
+@keyframes fox-label-fade {
+  0% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}
+
+/* Animation utility classes */
+
+.fox-breathe {
+  animation: fox-breathe 3s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.fox-ear-wiggle {
+  animation: fox-ear-wiggle 2.5s ease-in-out infinite;
+}
+
+.fox-eye-blink {
+  animation: fox-eye-blink 4s ease-in-out infinite;
+}
+
+.fox-eye-shine {
+  animation: fox-eye-shine 3s ease-in-out infinite;
+}
+
+.fox-facet-shimmer {
+  animation: fox-facet-shimmer 2s ease-in-out infinite;
+}
+
+.fox-glow-pulse {
+  animation: fox-glow-pulse 3s ease-in-out infinite;
+}
+
+.fox-dot-bounce {
+  animation: fox-dot-bounce 1.2s ease-in-out infinite;
+}
+
+.fox-label-fade {
+  animation: fox-label-fade 2s ease-in-out infinite;
+}
+
+/* Accessibility: disable all animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .fox-thinking-indicator * {
+    animation: none !important;
+  }
+}

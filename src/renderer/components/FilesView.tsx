@@ -266,6 +266,21 @@ export function FilesView({
 }: FilesViewProps) {
   const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
 
+  // Per-tab selection tracking — stores the last selected filename per tab for highlight restoration
+  const [tabSelections, setTabSelections] = useState<{
+    wiki: string | null;
+    raw: string | null;
+  }>({ wiki: selectedFilename, raw: null });
+
+  // Sync tabSelections when selectedFilename prop changes from outside
+  const prevSelectedRef = React.useRef(selectedFilename);
+  if (prevSelectedRef.current !== selectedFilename) {
+    prevSelectedRef.current = selectedFilename;
+    if (selectedFilename !== null) {
+      setTabSelections((prev) => ({ ...prev, [activeTab]: selectedFilename }));
+    }
+  }
+
   // Filter articles by active tab (excludes config files automatically)
   const wikiArticles = useMemo(() => filterArticlesForTab(articles, "wiki"), [articles]);
   const rawArticles = useMemo(() => filterArticlesForTab(articles, "raw"), [articles]);
@@ -299,6 +314,23 @@ export function FilesView({
     });
   }
 
+  // When a file is selected, store it in the active tab's selection and forward to parent
+  const handleSelectArticle = useCallback(
+    (filename: string) => {
+      setTabSelections((prev) => ({ ...prev, [activeTab]: filename }));
+      onSelectArticle(filename);
+    },
+    [activeTab, onSelectArticle],
+  );
+
+  // When switching tabs, just change the active tab — highlight comes from tabSelections
+  const handleTabChange = useCallback((tab: FileCategory) => {
+    setActiveTab(tab);
+  }, []);
+
+  // The highlight filename for the tree: use the active tab's stored selection
+  const highlightFilename = tabSelections[activeTab];
+
   // Active tab's expansion set
   const expandedFolders = perTabExpanded[activeTab];
 
@@ -327,7 +359,7 @@ export function FilesView({
           activeTab={activeTab}
           wikiCount={wikiArticles.length}
           rawCount={rawArticles.length}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
         />
       </div>
 
@@ -365,9 +397,9 @@ export function FilesView({
               key={node.type === "file" ? node.article.filename : node.path}
               node={node}
               depth={0}
-              selectedFilename={selectedFilename}
+              selectedFilename={highlightFilename}
               expandedFolders={expandedFolders}
-              onSelectArticle={onSelectArticle}
+              onSelectArticle={handleSelectArticle}
               onToggleFolder={toggleFolder}
             />
           ))}

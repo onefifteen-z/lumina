@@ -137,6 +137,7 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 - [x] TabBar inline component in FilesView (Wiki/Raw tabs with counts, keyboard nav, ARIA roles)
 - [x] Tab filtering wired into file tree rendering pipeline
 - [x] Per-tab folder expansion state isolation
+- [x] Per-tab selection tracking for highlight restoration
 
 ## License
 

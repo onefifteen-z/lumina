@@ -135,6 +135,7 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 
 - [x] File classification utility module (`file-classification.ts` — classifyFile, isConfigFile, filterArticlesForTab, getConfigFiles)
 - [x] TabBar inline component in FilesView (Wiki/Raw tabs with counts, keyboard nav, ARIA roles)
+- [x] Tab filtering wired into file tree rendering pipeline
 
 ## License
 

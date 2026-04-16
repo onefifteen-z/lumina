@@ -142,6 +142,7 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 - [x] ConfigMenu dropdown component
 - [x] Config Menu trigger in IconRail
 - [x] Config Menu wired in AppShell/SidebarLayout
+- [x] Tab count reactivity verified
 
 ## License
 

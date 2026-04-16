@@ -1,8 +1,9 @@
 import * as React from "react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Plus, ChevronRight } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
+import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
 
 // ── Tree data model ────────────────────────────────────────────
 
@@ -181,6 +182,80 @@ export interface FilesViewProps {
   onNewArticle: () => void;
 }
 
+// ── TabBar (inline) ────────────────────────────────────────────
+
+interface TabBarProps {
+  activeTab: FileCategory;
+  wikiCount: number;
+  rawCount: number;
+  onTabChange: (tab: FileCategory) => void;
+}
+
+const tabs: { key: FileCategory; label: string }[] = [
+  { key: "wiki", label: "Wiki" },
+  { key: "raw", label: "Raw" },
+];
+
+function TabBar({ activeTab, wikiCount, rawCount, onTabChange }: TabBarProps) {
+  const counts: Record<FileCategory, number> = { wiki: wikiCount, raw: rawCount };
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const currentIndex = tabs.findIndex((t) => t.key === activeTab);
+      let nextIndex = -1;
+
+      if (e.key === "ArrowRight") {
+        nextIndex = (currentIndex + 1) % tabs.length;
+      } else if (e.key === "ArrowLeft") {
+        nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      }
+
+      if (nextIndex >= 0) {
+        e.preventDefault();
+        onTabChange(tabs[nextIndex].key);
+        // Focus the newly active tab button
+        const container = e.currentTarget;
+        const buttons = container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+        buttons[nextIndex]?.focus();
+      }
+    },
+    [activeTab, onTabChange],
+  );
+
+  return (
+    <div
+      role="tablist"
+      className="flex gap-1 px-3"
+      onKeyDown={handleKeyDown}
+    >
+      {tabs.map((tab) => {
+        const isActive = activeTab === tab.key;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => onTabChange(tab.key)}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+              "focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none",
+              isActive
+                ? "bg-accent/20 text-accent"
+                : "text-text-secondary hover:bg-surface-hover",
+            )}
+          >
+            {tab.label} ({counts[tab.key]})
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── FilesView ──────────────────────────────────────────────────
+
 export function FilesView({
   articles,
   selectedFilename,
@@ -189,7 +264,14 @@ export function FilesView({
   onSelectArticle,
   onNewArticle,
 }: FilesViewProps) {
-  const tree = useMemo(() => buildTree(articles), [articles]);
+  const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
+
+  // Filter articles by active tab (excludes config files automatically)
+  const wikiArticles = useMemo(() => filterArticlesForTab(articles, "wiki"), [articles]);
+  const rawArticles = useMemo(() => filterArticlesForTab(articles, "raw"), [articles]);
+  const filteredArticles = activeTab === "wiki" ? wikiArticles : rawArticles;
+
+  const tree = useMemo(() => buildTree(filteredArticles), [filteredArticles]);
 
   // Start with all folders expanded
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
@@ -224,6 +306,16 @@ export function FilesView({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
           Files
         </h2>
+      </div>
+
+      {/* Tab Bar */}
+      <div className="px-0 pt-3 pb-1">
+        <TabBar
+          activeTab={activeTab}
+          wikiCount={wikiArticles.length}
+          rawCount={rawArticles.length}
+          onTabChange={setActiveTab}
+        />
       </div>
 
       {/* Action buttons */}

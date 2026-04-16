@@ -1,0 +1,140 @@
+import { describe, it, expect } from "vitest";
+import type { ArticleMeta } from "../../shared/types";
+import { filterArticlesForTab } from "../lib/file-classification";
+
+/**
+ * Unit tests for FilesView TabBar logic.
+ * Tests tab data, filtering integration, and keyboard navigation math
+ * without requiring a DOM or React rendering environment.
+ */
+
+// ── Tab configuration (mirrors component) ──────────────────────
+
+const tabs: { key: "wiki" | "raw"; label: string }[] = [
+  { key: "wiki", label: "Wiki" },
+  { key: "raw", label: "Raw" },
+];
+
+// Keyboard navigation logic (mirrors TabBar handleKeyDown)
+function getNextTabIndex(
+  currentKey: "wiki" | "raw",
+  direction: "left" | "right",
+): number {
+  const currentIndex = tabs.findIndex((t) => t.key === currentKey);
+  if (direction === "right") {
+    return (currentIndex + 1) % tabs.length;
+  }
+  return (currentIndex - 1 + tabs.length) % tabs.length;
+}
+
+// ── Test fixtures ──────────────────────────────────────────────
+
+function makeArticle(overrides: Partial<ArticleMeta> = {}): ArticleMeta {
+  return {
+    title: "Test Article",
+    filename: "test.md",
+    tags: [],
+    created: "",
+    modified: "",
+    wikilinks: [],
+    excerpt: "",
+    ...overrides,
+  };
+}
+
+const wikiArticle = makeArticle({
+  title: "Wiki Page",
+  filename: "wiki-page.md",
+  tags: ["note"],
+  created: "2024-01-01",
+  modified: "2024-01-02",
+});
+
+const rawArticle = makeArticle({
+  title: "",
+  filename: "raw-file.md",
+  tags: [],
+});
+
+const configArticle = makeArticle({
+  title: "Config",
+  filename: ".CLAUDE.md",
+  tags: ["config"],
+});
+
+const mixedArticles = [wikiArticle, rawArticle, configArticle];
+
+// ── Tests ──────────────────────────────────────────────────────
+
+describe("TabBar configuration", () => {
+  it("has exactly two tabs: wiki and raw", () => {
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0].key).toBe("wiki");
+    expect(tabs[1].key).toBe("raw");
+  });
+
+  it("labels tabs as Wiki and Raw", () => {
+    expect(tabs[0].label).toBe("Wiki");
+    expect(tabs[1].label).toBe("Raw");
+  });
+
+  it("defaults active tab to wiki (first tab)", () => {
+    const defaultTab = tabs[0].key;
+    expect(defaultTab).toBe("wiki");
+  });
+});
+
+describe("TabBar keyboard navigation", () => {
+  it("ArrowRight from wiki moves to raw", () => {
+    const nextIndex = getNextTabIndex("wiki", "right");
+    expect(tabs[nextIndex].key).toBe("raw");
+  });
+
+  it("ArrowRight from raw wraps to wiki", () => {
+    const nextIndex = getNextTabIndex("raw", "right");
+    expect(tabs[nextIndex].key).toBe("wiki");
+  });
+
+  it("ArrowLeft from raw moves to wiki", () => {
+    const nextIndex = getNextTabIndex("raw", "left");
+    expect(tabs[nextIndex].key).toBe("wiki");
+  });
+
+  it("ArrowLeft from wiki wraps to raw", () => {
+    const nextIndex = getNextTabIndex("wiki", "left");
+    expect(tabs[nextIndex].key).toBe("raw");
+  });
+});
+
+describe("Tab filtering integration", () => {
+  it("wiki tab shows only wiki-classified articles", () => {
+    const result = filterArticlesForTab(mixedArticles, "wiki");
+    expect(result).toHaveLength(1);
+    expect(result[0].filename).toBe("wiki-page.md");
+  });
+
+  it("raw tab shows only raw-classified articles", () => {
+    const result = filterArticlesForTab(mixedArticles, "raw");
+    expect(result).toHaveLength(1);
+    expect(result[0].filename).toBe("raw-file.md");
+  });
+
+  it("config files are excluded from both tabs", () => {
+    const wikiResult = filterArticlesForTab(mixedArticles, "wiki");
+    const rawResult = filterArticlesForTab(mixedArticles, "raw");
+    const allFilenames = [...wikiResult, ...rawResult].map((a) => a.filename);
+    expect(allFilenames).not.toContain(".CLAUDE.md");
+  });
+
+  it("counts reflect filtered article counts", () => {
+    const wikiCount = filterArticlesForTab(mixedArticles, "wiki").length;
+    const rawCount = filterArticlesForTab(mixedArticles, "raw").length;
+    expect(wikiCount).toBe(1);
+    expect(rawCount).toBe(1);
+  });
+
+  it("empty article list produces zero counts for both tabs", () => {
+    expect(filterArticlesForTab([], "wiki")).toHaveLength(0);
+    expect(filterArticlesForTab([], "raw")).toHaveLength(0);
+  });
+});

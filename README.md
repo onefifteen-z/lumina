@@ -134,6 +134,7 @@ Migrating the color palette from purple (#7c3aed family) to amber (#D4731A famil
 Restructuring the FilesView sidebar to classify vault files into Wiki and Raw categories with a tab bar, exclude config files from the file tree, and provide a Config Menu for accessing config files separately. See `.kiro/specs/2026041702-file-viewer-tabs/` for the full spec.
 
 - [x] File classification utility module (`file-classification.ts` — classifyFile, isConfigFile, filterArticlesForTab, getConfigFiles)
+- [x] TabBar inline component in FilesView (Wiki/Raw tabs with counts, keyboard nav, ARIA roles)
 
 ## License
 

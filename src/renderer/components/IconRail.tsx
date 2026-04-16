@@ -6,6 +6,8 @@ import {
   TooltipContent,
 } from "./ui/tooltip";
 import { cn } from "../lib/utils";
+import { ConfigMenu } from "./ConfigMenu";
+import type { ArticleMeta } from "../../shared/types";
 
 export type SidebarView = "files" | "search" | "bookmarks" | "chat" | "graph" | "settings";
 
@@ -15,6 +17,8 @@ export interface IconRailProps {
   isSidebarOpen: boolean;
   currentTheme: "light" | "dark" | "system";
   onToggleTheme: () => void;
+  configFiles?: ArticleMeta[];
+  onSelectConfigFile?: (filename: string) => void;
 }
 
 
@@ -32,7 +36,7 @@ const bottomItems: { view: SidebarView; icon: React.ElementType; label: string }
 
 const allItems = [...topItems, ...bottomItems];
 
-export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme }: IconRailProps) {
+export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile }: IconRailProps) {
   const buttonRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -99,8 +103,18 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
         {topItems.map((item, i) => renderButton(item, i))}
       </div>
 
-      {/* Settings pushed to bottom */}
+      {/* Config Menu + Settings pushed to bottom */}
       <div className="flex flex-col items-center gap-1 mt-auto" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        {configFiles && onSelectConfigFile && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <ConfigMenu configFiles={configFiles} onSelectFile={onSelectConfigFile} />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right">Config Files</TooltipContent>
+          </Tooltip>
+        )}
         {bottomItems.map((item, i) =>
           renderButton(item, topItems.length + i)
         )}

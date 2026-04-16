@@ -140,6 +140,7 @@ Restructuring the FilesView sidebar to classify vault files into Wiki and Raw ca
 - [x] Per-tab selection tracking for highlight restoration
 - [x] Checkpoint — 223 tests passing, tabs, filtering, and state isolation verified
 - [x] ConfigMenu dropdown component
+- [x] Config Menu trigger in IconRail
 
 ## License
 

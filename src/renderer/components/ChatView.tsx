@@ -516,6 +516,7 @@ const ChatView: React.FC = () => {
           <MessageList
             messages={messages}
             streamingContent={streamingContent}
+            isGenerating={isGenerating}
             renderAssistantContent={(content) => <AssistantContent content={content} />}
             onRegenerate={handleRetry}
           />

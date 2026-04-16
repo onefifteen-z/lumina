@@ -153,6 +153,7 @@ Adding an animated geometric fox SVG loading indicator to the chat interface, re
 - [x] FoxThinkingIndicator SVG fox head geometry component
 - [x] Glow ring, thinking dots, and thinking label (large/small variants)
 - [x] MessageList integration with fox indicator conditional rendering
+- [x] ChatView passes isGenerating prop to MessageList
 
 ## License
 

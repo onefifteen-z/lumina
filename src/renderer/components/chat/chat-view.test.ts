@@ -40,7 +40,13 @@ describe("Property 5: Timestamp formatting to HH:mm", () => {
   });
 });
 
-import { parseMarkdownSegments, friendlyError } from "../ChatView";
+import {
+  parseMarkdownSegments,
+  friendlyError,
+  classifyLine,
+  parseMarkdownLines,
+  applyInlineFormatting,
+} from "../ChatView";
 
 /* ── parseMarkdownSegments tests ──────────────────────────────── */
 
@@ -213,5 +219,151 @@ describe("ChatView display logic", () => {
     expect(lastUserMsg).toBeDefined();
     expect(lastUserMsg!.content).toBe("Hello");
     expect(error).toBeTruthy();
+  });
+});
+
+/* ── classifyLine tests ───────────────────────────────────────── */
+
+describe("classifyLine", () => {
+  it("classifies h1 heading", () => {
+    expect(classifyLine("# Hello")).toEqual({
+      type: "heading",
+      level: 1,
+      content: "Hello",
+    });
+  });
+
+  it("classifies h2 heading", () => {
+    expect(classifyLine("## World")).toEqual({
+      type: "heading",
+      level: 2,
+      content: "World",
+    });
+  });
+
+  it("classifies h3 heading", () => {
+    expect(classifyLine("### Sub")).toEqual({
+      type: "heading",
+      level: 3,
+      content: "Sub",
+    });
+  });
+
+  it("classifies unordered list with dash", () => {
+    expect(classifyLine("- item")).toEqual({ type: "ul", content: "item" });
+  });
+
+  it("classifies unordered list with asterisk", () => {
+    expect(classifyLine("* item")).toEqual({ type: "ul", content: "item" });
+  });
+
+  it("classifies ordered list", () => {
+    expect(classifyLine("1. first")).toEqual({ type: "ol", content: "first" });
+  });
+
+  it("classifies horizontal rule", () => {
+    expect(classifyLine("---")).toEqual({ type: "hr", content: "" });
+  });
+
+  it("classifies plain text as paragraph", () => {
+    expect(classifyLine("just text")).toEqual({
+      type: "paragraph",
+      content: "just text",
+    });
+  });
+
+  it("treats # without space as paragraph", () => {
+    expect(classifyLine("#nospace")).toEqual({
+      type: "paragraph",
+      content: "#nospace",
+    });
+  });
+});
+
+/* ── parseMarkdownLines tests ─────────────────────────────────── */
+
+describe("parseMarkdownLines", () => {
+  it("returns empty array for empty string", () => {
+    expect(parseMarkdownLines("")).toEqual([]);
+  });
+
+  it("returns empty array for whitespace-only string", () => {
+    expect(parseMarkdownLines("   \n  ")).toEqual([]);
+  });
+
+  it("parses a heading", () => {
+    const result = parseMarkdownLines("# Title");
+    expect(result).toEqual([{ type: "heading", level: 1, content: "Title" }]);
+  });
+
+  it("parses a horizontal rule", () => {
+    const result = parseMarkdownLines("---");
+    expect(result).toEqual([{ type: "hr" }]);
+  });
+
+  it("groups consecutive unordered list items", () => {
+    const result = parseMarkdownLines("- a\n- b\n- c");
+    expect(result).toEqual([{ type: "ul", items: ["a", "b", "c"] }]);
+  });
+
+  it("groups consecutive ordered list items", () => {
+    const result = parseMarkdownLines("1. first\n2. second");
+    expect(result).toEqual([{ type: "ol", items: ["first", "second"] }]);
+  });
+
+  it("separates different block types", () => {
+    const result = parseMarkdownLines("# Title\nSome text\n- item");
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ type: "heading", level: 1, content: "Title" });
+    expect(result[1]).toEqual({ type: "paragraph", content: "Some text" });
+    expect(result[2]).toEqual({ type: "ul", items: ["item"] });
+  });
+
+  it("handles mixed content with hr", () => {
+    const result = parseMarkdownLines("Above\n---\nBelow");
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ type: "paragraph", content: "Above" });
+    expect(result[1]).toEqual({ type: "hr" });
+    expect(result[2]).toEqual({ type: "paragraph", content: "Below" });
+  });
+});
+
+/* ── applyInlineFormatting tests ──────────────────────────────── */
+
+describe("applyInlineFormatting", () => {
+  it("returns plain text when no formatting markers", () => {
+    const result = applyInlineFormatting("hello world");
+    expect(result).toEqual(["hello world"]);
+  });
+
+  it("handles bold text", () => {
+    const result = applyInlineFormatting("this is **bold** text");
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe("this is ");
+    expect(result[2]).toBe(" text");
+  });
+
+  it("handles inline code", () => {
+    const result = applyInlineFormatting("use `npm install` here");
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe("use ");
+    expect(result[2]).toBe(" here");
+  });
+
+  it("treats unclosed bold markers as plain text", () => {
+    const result = applyInlineFormatting("this is **unclosed");
+    expect(result).toEqual(["this is **unclosed"]);
+  });
+
+  it("treats unclosed backtick as plain text", () => {
+    const result = applyInlineFormatting("this is `unclosed");
+    expect(result).toEqual(["this is `unclosed"]);
+  });
+
+  it("handles multiple inline elements", () => {
+    const result = applyInlineFormatting("**bold** and `code`");
+    expect(result).toHaveLength(3);
+    // bold element, " and ", code element
+    expect(result[1]).toBe(" and ");
   });
 });

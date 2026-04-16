@@ -60,7 +60,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="border-t border-border px-4 py-2 shrink-0">
-      <div className="mx-auto max-w-3xl flex items-center gap-2">
+      <div className="mx-auto max-w-[720px] px-5 flex items-center gap-2">
         <textarea
           ref={textareaRef}
           value={value}
@@ -77,7 +77,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           rows={1}
           aria-label="Chat message input"
           className="flex-1 resize-none rounded-lg border border-border bg-sidebar-bg px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-border disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ maxHeight: '30vh' }}
+          style={{ maxHeight: '120px', minHeight: '22px', overflowY: 'auto' }}
         />
 
         {isGenerating ? (

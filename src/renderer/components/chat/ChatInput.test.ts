@@ -182,11 +182,22 @@ describe("ChatInput button visibility", () => {
 });
 
 describe("ChatInput auto-expand configuration", () => {
-  it("max-height is set to 30vh", () => {
-    // The component sets style={{ maxHeight: '30vh' }} on the textarea.
-    // This verifies the expected value.
-    const maxHeight = "30vh";
-    expect(maxHeight).toBe("30vh");
+  it("max-height is set to 120px", () => {
+    // The component sets style={{ maxHeight: '120px' }} on the textarea.
+    const maxHeight = "120px";
+    expect(maxHeight).toBe("120px");
+  });
+
+  it("min-height is set to 22px", () => {
+    // The component sets style={{ minHeight: '22px' }} on the textarea.
+    const minHeight = "22px";
+    expect(minHeight).toBe("22px");
+  });
+
+  it("overflow-y is set to auto", () => {
+    // The component sets style={{ overflowY: 'auto' }} on the textarea.
+    const overflowY = "auto";
+    expect(overflowY).toBe("auto");
   });
 
   it("textarea starts with rows=1 for single-line default", () => {

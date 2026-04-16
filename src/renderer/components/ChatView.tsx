@@ -45,21 +45,212 @@ export function parseMarkdownSegments(text: string): Segment[] {
   return segments;
 }
 
-/** Render a text segment with basic inline markdown (bold, italic, inline code). */
+/* ── Line-based markdown types & parser ──────────────────────── */
+
+export type LineType = 'heading' | 'ul' | 'ol' | 'hr' | 'paragraph';
+
+export interface ParsedLine {
+  type: LineType;
+  level?: number;       // heading level 1-3
+  content: string;      // text content (stripped of markdown markers)
+}
+
+/**
+ * Classify a single line of text into a markdown line type.
+ * Returns a ParsedLine with the type and cleaned content.
+ */
+export function classifyLine(line: string): ParsedLine {
+  const trimmed = line.trimStart();
+
+  // Horizontal rule: line is only dashes (3+), optionally with spaces
+  if (/^-{3,}\s*$/.test(trimmed) && trimmed.length >= 3) {
+    return { type: 'hr', content: '' };
+  }
+
+  // Headings: # ## ###
+  const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
+  if (headingMatch) {
+    return { type: 'heading', level: headingMatch[1].length, content: headingMatch[2] };
+  }
+
+  // Unordered list: - or *
+  const ulMatch = trimmed.match(/^[-*]\s+(.*)$/);
+  if (ulMatch) {
+    return { type: 'ul', content: ulMatch[1] };
+  }
+
+  // Ordered list: 1. 2. etc.
+  const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+  if (olMatch) {
+    return { type: 'ol', content: olMatch[1] };
+  }
+
+  return { type: 'paragraph', content: line };
+}
+
+/**
+ * Parse a text segment into structured blocks by classifying each line
+ * and grouping consecutive list items.
+ */
+export type MarkdownBlock =
+  | { type: 'heading'; level: number; content: string }
+  | { type: 'paragraph'; content: string }
+  | { type: 'hr' }
+  | { type: 'ul'; items: string[] }
+  | { type: 'ol'; items: string[] };
+
+export function parseMarkdownLines(text: string): MarkdownBlock[] {
+  if (!text || !text.trim()) return [];
+
+  const lines = text.split('\n');
+  const blocks: MarkdownBlock[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const parsed = classifyLine(lines[i]);
+
+    if (parsed.type === 'hr') {
+      blocks.push({ type: 'hr' });
+      i++;
+    } else if (parsed.type === 'heading') {
+      blocks.push({ type: 'heading', level: parsed.level!, content: parsed.content });
+      i++;
+    } else if (parsed.type === 'ul') {
+      const items: string[] = [parsed.content];
+      i++;
+      while (i < lines.length) {
+        const next = classifyLine(lines[i]);
+        if (next.type !== 'ul') break;
+        items.push(next.content);
+        i++;
+      }
+      blocks.push({ type: 'ul', items });
+    } else if (parsed.type === 'ol') {
+      const items: string[] = [parsed.content];
+      i++;
+      while (i < lines.length) {
+        const next = classifyLine(lines[i]);
+        if (next.type !== 'ol') break;
+        items.push(next.content);
+        i++;
+      }
+      blocks.push({ type: 'ol', items });
+    } else {
+      // Paragraph: collect consecutive paragraph lines
+      const paraLines: string[] = [parsed.content];
+      i++;
+      while (i < lines.length) {
+        const next = classifyLine(lines[i]);
+        if (next.type !== 'paragraph') break;
+        paraLines.push(next.content);
+        i++;
+      }
+      const joined = paraLines.join('\n').trim();
+      if (joined) {
+        blocks.push({ type: 'paragraph', content: joined });
+      }
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Apply inline formatting to a text string.
+ * Handles **bold** and `inline code`. Unclosed markers are treated as plain text.
+ * Returns an array of React nodes.
+ */
+export function applyInlineFormatting(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  // Match **bold** or `code` — non-greedy, requires closing marker
+  const inlineRegex = /(\*\*(.+?)\*\*|`([^`]+)`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = inlineRegex.exec(text)) !== null) {
+    // Plain text before this match
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[2] !== undefined) {
+      // Bold
+      nodes.push(<strong key={key++}>{match[2]}</strong>);
+    } else if (match[3] !== undefined) {
+      // Inline code
+      nodes.push(
+        <code
+          key={key++}
+          className="px-1 py-0.5 rounded bg-surface-hover font-mono text-[0.85em]"
+        >
+          {match[3]}
+        </code>,
+      );
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Remaining plain text
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+/** Render a text segment with line-by-line markdown parsing. */
 const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
-  // Split into paragraphs
-  const paragraphs = content.split(/\n{2,}/);
+  const blocks = parseMarkdownLines(content);
+
+  if (blocks.length === 0) return null;
 
   return (
     <>
-      {paragraphs.map((para, i) => {
-        const trimmed = para.trim();
-        if (!trimmed) return null;
-        return (
-          <p key={i} className="text-sm whitespace-pre-wrap break-words mb-2 last:mb-0">
-            {trimmed}
-          </p>
-        );
+      {blocks.map((block, i) => {
+        switch (block.type) {
+          case 'hr':
+            return <hr key={i} className="my-3 border-border" />;
+          case 'heading': {
+            const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3';
+            const sizeClass =
+              block.level === 1
+                ? 'text-xl font-bold'
+                : block.level === 2
+                  ? 'text-lg font-semibold'
+                  : 'text-base font-semibold';
+            return (
+              <Tag key={i} className={`${sizeClass} text-text-primary mb-2`}>
+                {applyInlineFormatting(block.content)}
+              </Tag>
+            );
+          }
+          case 'ul':
+            return (
+              <ul key={i} className="list-disc list-inside text-sm mb-2 space-y-0.5">
+                {block.items.map((item, j) => (
+                  <li key={j} className="break-words">{applyInlineFormatting(item)}</li>
+                ))}
+              </ul>
+            );
+          case 'ol':
+            return (
+              <ol key={i} className="list-decimal list-inside text-sm mb-2 space-y-0.5">
+                {block.items.map((item, j) => (
+                  <li key={j} className="break-words">{applyInlineFormatting(item)}</li>
+                ))}
+              </ol>
+            );
+          case 'paragraph':
+            return (
+              <p key={i} className="text-sm whitespace-pre-wrap break-words mb-2 last:mb-0">
+                {applyInlineFormatting(block.content)}
+              </p>
+            );
+          default:
+            return null;
+        }
       })}
     </>
   );
@@ -307,7 +498,7 @@ const ChatView: React.FC = () => {
       <div className="flex-1 min-h-0 flex flex-col">
         {displayWelcome ? (
           <div className="flex-1 min-h-0 flex items-center justify-center px-4">
-            <div className="text-center max-w-md translate-y-[min(6vh,3rem)]">
+            <div className="text-center max-w-md">
               <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-primary-bg flex items-center justify-center">
                 <SquarePen size={24} className="text-primary shrink-0" />
               </div>
@@ -326,6 +517,7 @@ const ChatView: React.FC = () => {
             messages={messages}
             streamingContent={streamingContent}
             renderAssistantContent={(content) => <AssistantContent content={content} />}
+            onRegenerate={handleRetry}
           />
         )}
       </div>

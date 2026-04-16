@@ -13,7 +13,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language }) => {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
       // Fallback: silently fail if clipboard API is unavailable
     }
@@ -22,7 +22,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language }) => {
   const displayLanguage = language || 'text';
 
   return (
-    <div className="my-3 rounded-lg overflow-hidden border border-border">
+    <div className="my-3 rounded-lg overflow-hidden border-[0.5px] border-[rgba(255,255,255,0.08)]">
       {/* Header bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-surface-active text-text-secondary text-xs select-none">
         <span className="font-medium">{displayLanguage}</span>
@@ -47,7 +47,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language }) => {
       </div>
 
       {/* Code content */}
-      <pre className="overflow-x-auto px-4 py-3 bg-[--color-bg-secondary] m-0">
+      <pre className="overflow-x-auto px-4 py-3 bg-[#0f0f12] m-0">
         <code
           className={`text-sm leading-relaxed text-text-primary font-mono ${language ? `language-${language}` : ''}`}
         >

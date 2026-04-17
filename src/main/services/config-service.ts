@@ -2,13 +2,15 @@ import { app, dialog, safeStorage, BrowserWindow } from "electron";
 import Store from "electron-store";
 import path from "path";
 import fs from "fs";
-import { AppConfig, LLMProviderConfig } from "../../shared/types";
+import { AppConfig, LLMProviderConfig, VaultEntry } from "../../shared/types";
 
 const API_KEY_BUFFER_ENCODING = "latin1";
 const API_KEY_FILE = "llm-api-key.enc";
+const VAULT_HISTORY_MAX = 20;
 
 interface StoreSchema {
   vaultPath: string;
+  vaultHistory: VaultEntry[];
   llmProvider: LLMProviderConfig | null;
   theme: "light" | "dark" | "system";
 }
@@ -22,6 +24,7 @@ export class ConfigService {
       name: "llm-wiki-config",
       defaults: {
         vaultPath: "",
+        vaultHistory: [],
         llmProvider: null,
         theme: "system",
       },
@@ -118,6 +121,32 @@ export class ConfigService {
     }
 
     return result.filePaths[0];
+  }
+
+  /** Return the list of recently-used vaults. */
+  getVaultHistory(): VaultEntry[] {
+    return this.store.get("vaultHistory");
+  }
+
+  /**
+   * Add a vault path to the history list (deduplicates, most-recent first).
+   * Caps the list at VAULT_HISTORY_MAX entries.
+   */
+  addVaultToHistory(vaultPath: string): void {
+    const name = path.basename(vaultPath);
+    const entry: VaultEntry = { path: vaultPath, name };
+    const existing = this.store.get("vaultHistory").filter(
+      (e) => e.path !== vaultPath,
+    );
+    this.store.set("vaultHistory", [entry, ...existing].slice(0, VAULT_HISTORY_MAX));
+  }
+
+  /** Remove a vault from the history list. Does not affect the active vault. */
+  removeVaultFromHistory(vaultPath: string): void {
+    const filtered = this.store.get("vaultHistory").filter(
+      (e) => e.path !== vaultPath,
+    );
+    this.store.set("vaultHistory", filtered);
   }
 
   /** Returns true when no vault path has been configured (first-run state). */

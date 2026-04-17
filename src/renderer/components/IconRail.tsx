@@ -1,12 +1,12 @@
 import * as React from "react";
-import { Files, Search, Bookmark, MessageSquare, Settings, Sun, Moon, Network } from "lucide-react";
+import { Files, Search, Bookmark, MessageSquare, Settings, Sun, Moon, Network, FileCode } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
 } from "./ui/tooltip";
 import { cn } from "../lib/utils";
-import { ConfigMenu } from "./ConfigMenu";
+
 import type { ArticleMeta } from "../../shared/types";
 
 export type SidebarView = "files" | "search" | "bookmarks" | "chat" | "graph" | "settings";
@@ -103,16 +103,21 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
         {topItems.map((item, i) => renderButton(item, i))}
       </div>
 
-      {/* Config Menu + Settings pushed to bottom */}
+      {/* Config button + Settings pushed to bottom */}
       <div className="flex flex-col items-center gap-1 mt-auto" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        {configFiles && onSelectConfigFile && (
+        {configFiles && configFiles.length > 0 && onSelectConfigFile && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div>
-                <ConfigMenu configFiles={configFiles} onSelectFile={onSelectConfigFile} />
-              </div>
+              <button
+                type="button"
+                aria-label="Open CLAUDE.md"
+                onClick={() => onSelectConfigFile(configFiles[0].filename)}
+                className="flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
+              >
+                <FileCode size={18} aria-hidden="true" />
+              </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Config Files</TooltipContent>
+            <TooltipContent side="right">CLAUDE.md</TooltipContent>
           </Tooltip>
         )}
         {bottomItems.map((item, i) =>

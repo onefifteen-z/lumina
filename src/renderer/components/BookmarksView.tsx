@@ -26,12 +26,6 @@ export function BookmarksView({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
-          Bookmarks
-        </h2>
-      </div>
-
       <div className="flex-1 overflow-y-auto py-1">
         {bookmarkedFilenames.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-text-secondary">

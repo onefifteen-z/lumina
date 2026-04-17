@@ -157,34 +157,33 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
 
 /**
  * Apply inline formatting to a text string.
- * Handles **bold** and `inline code`. Unclosed markers are treated as plain text.
+ * Handles **bold**, *italic*, and `inline code`. Unclosed markers are treated as plain text.
  * Returns an array of React nodes.
  */
 export function applyInlineFormatting(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  // Match **bold** or `code` — non-greedy, requires closing marker
-  const inlineRegex = /(\*\*(.+?)\*\*|`([^`]+)`)/g;
+  // Match **bold**, *italic* (not preceded/followed by *), or `code`
+  const inlineRegex = /(\*\*(.+?)\*\*|\*([^*]+)\*|`([^`]+)`)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let key = 0;
 
   while ((match = inlineRegex.exec(text)) !== null) {
-    // Plain text before this match
     if (match.index > lastIndex) {
       nodes.push(text.slice(lastIndex, match.index));
     }
 
     if (match[2] !== undefined) {
-      // Bold
-      nodes.push(<strong key={key++}>{match[2]}</strong>);
+      nodes.push(<strong key={key++} className="font-semibold">{match[2]}</strong>);
     } else if (match[3] !== undefined) {
-      // Inline code
+      nodes.push(<em key={key++}>{match[3]}</em>);
+    } else if (match[4] !== undefined) {
       nodes.push(
         <code
           key={key++}
-          className="px-1 py-0.5 rounded bg-surface-hover font-mono text-[0.85em]"
+          className="px-[5px] py-[2px] rounded-md bg-[rgba(255,255,255,0.08)] font-mono text-[0.85em] text-text-primary"
         >
-          {match[3]}
+          {match[4]}
         </code>,
       );
     }
@@ -192,7 +191,6 @@ export function applyInlineFormatting(text: string): React.ReactNode[] {
     lastIndex = match.index + match[0].length;
   }
 
-  // Remaining plain text
   if (lastIndex < text.length) {
     nodes.push(text.slice(lastIndex));
   }
@@ -207,44 +205,48 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
   if (blocks.length === 0) return null;
 
   return (
-    <>
+    <div className="flex flex-col gap-3">
       {blocks.map((block, i) => {
         switch (block.type) {
           case 'hr':
-            return <hr key={i} className="my-3 border-border" />;
+            return <hr key={i} className="border-border" />;
           case 'heading': {
             const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3';
-            const sizeClass =
+            const cls =
               block.level === 1
-                ? 'text-xl font-bold'
+                ? 'text-[1.05rem] font-bold leading-snug text-text-primary mt-1'
                 : block.level === 2
-                  ? 'text-lg font-semibold'
-                  : 'text-base font-semibold';
+                  ? 'text-[0.95rem] font-semibold leading-snug text-text-primary mt-0.5'
+                  : 'text-sm font-semibold leading-snug text-text-primary';
             return (
-              <Tag key={i} className={`${sizeClass} text-text-primary mb-2`}>
+              <Tag key={i} className={cls}>
                 {applyInlineFormatting(block.content)}
               </Tag>
             );
           }
           case 'ul':
             return (
-              <ul key={i} className="list-disc list-inside text-sm mb-2 space-y-0.5">
+              <ul key={i} className="text-sm space-y-1 pl-5" style={{ listStyleType: 'disc' }}>
                 {block.items.map((item, j) => (
-                  <li key={j} className="break-words">{applyInlineFormatting(item)}</li>
+                  <li key={j} className="break-words leading-relaxed pl-0.5">
+                    {applyInlineFormatting(item)}
+                  </li>
                 ))}
               </ul>
             );
           case 'ol':
             return (
-              <ol key={i} className="list-decimal list-inside text-sm mb-2 space-y-0.5">
+              <ol key={i} className="text-sm space-y-1 pl-5" style={{ listStyleType: 'decimal' }}>
                 {block.items.map((item, j) => (
-                  <li key={j} className="break-words">{applyInlineFormatting(item)}</li>
+                  <li key={j} className="break-words leading-relaxed pl-0.5">
+                    {applyInlineFormatting(item)}
+                  </li>
                 ))}
               </ol>
             );
           case 'paragraph':
             return (
-              <p key={i} className="text-sm whitespace-pre-wrap break-words mb-2 last:mb-0">
+              <p key={i} className="text-sm leading-relaxed break-words">
                 {applyInlineFormatting(block.content)}
               </p>
             );
@@ -252,7 +254,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
             return null;
         }
       })}
-    </>
+    </div>
   );
 };
 
@@ -261,7 +263,7 @@ export const AssistantContent: React.FC<{ content: string }> = ({ content }) => 
   const segments = parseMarkdownSegments(content);
 
   return (
-    <>
+    <div className="flex flex-col gap-3">
       {segments.map((seg, i) =>
         seg.type === 'code' ? (
           <CodeBlock key={i} code={seg.content} language={seg.language} />
@@ -269,7 +271,7 @@ export const AssistantContent: React.FC<{ content: string }> = ({ content }) => 
           <MarkdownText key={i} content={seg.content} />
         ),
       )}
-    </>
+    </div>
   );
 };
 
@@ -458,25 +460,19 @@ const ChatView: React.FC = () => {
 
   /* ── Render ─────────────────────────────────────────────────── */
 
+  // Centered column padding: keeps content at max 720px, centered
+  const colStyle: React.CSSProperties = {
+    paddingLeft: 'max(1rem, calc(50% - 360px))',
+    paddingRight: 'max(1rem, calc(50% - 360px))',
+  };
+
   return (
-    <div className="flex flex-col absolute inset-0 bg-main-bg">
-      {/* Top bar — New Chat button only */}
-      <div className="flex items-center justify-end px-4 py-2 shrink-0">
-        <button
-          type="button"
-          onClick={handleNewSession}
-          aria-label="New session"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-white hover:bg-primary-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
-        >
-          <SquarePen size={14} />
-          <span>New Chat</span>
-        </button>
-      </div>
+    <div className="flex flex-col flex-1 min-h-0 bg-main-bg">
 
       {/* Offline banner */}
       {isOffline && (
         <div
-          className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-xs"
+          className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-xs shrink-0"
           role="status"
         >
           <WifiOff size={14} />
@@ -484,32 +480,36 @@ const ChatView: React.FC = () => {
         </div>
       )}
 
-      {/* Warning banner (e.g. claude.md read failure) */}
+      {/* Warning banner */}
       {warning && (
         <div
-          className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs"
+          className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-400 text-xs shrink-0"
           role="status"
         >
           {warning}
         </div>
       )}
 
-      {/* Scrollable / centered middle: welcome or messages */}
+      {/* Scrollable middle: welcome or messages */}
       <div className="flex-1 min-h-0 flex flex-col">
         {displayWelcome ? (
           <div className="flex-1 min-h-0 flex items-center justify-center px-4">
-            <div className="text-center max-w-md">
-              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-primary-bg flex items-center justify-center">
-                <SquarePen size={24} className="text-primary shrink-0" />
+            <div className="flex flex-col items-center gap-3 text-center max-w-sm">
+              <div className="w-12 h-12 rounded-full bg-primary-bg flex items-center justify-center">
+                <SquarePen size={22} className="text-primary" />
               </div>
-              <h2 className="text-lg font-semibold text-text-primary mb-2">Start a conversation</h2>
-              <p className="text-sm text-text-secondary">
-                Type a message below to begin chatting. Press{' '}
-                <kbd className="px-1.5 py-0.5 rounded bg-surface-hover text-text-primary text-xs font-mono">
-                  {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+N
-                </kbd>{' '}
-                to start a new session anytime.
-              </p>
+              <div>
+                <h2 className="text-base font-semibold text-text-primary mb-1">
+                  How can I help you today?
+                </h2>
+                <p className="text-sm text-text-secondary leading-relaxed">
+                  Type a message below.{' '}
+                  <kbd className="px-1 py-0.5 rounded bg-surface-hover text-text-primary text-xs font-mono">
+                    {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+N
+                  </kbd>{' '}
+                  starts a new session.
+                </p>
+              </div>
             </div>
           </div>
         ) : (
@@ -525,8 +525,8 @@ const ChatView: React.FC = () => {
 
       {/* Error display */}
       {error && (
-        <div className="px-4 py-3 border-t border-red-500/20 bg-red-500/5 shrink-0">
-          <div className="mx-auto max-w-3xl flex items-center justify-between gap-3">
+        <div className="border-t border-red-500/20 bg-red-500/5 shrink-0" style={colStyle}>
+          <div className="flex items-center justify-between gap-3 py-2.5">
             <p className="text-sm text-red-600 dark:text-red-400">
               {friendlyError(error.type)}
             </p>
@@ -546,8 +546,10 @@ const ChatView: React.FC = () => {
       <ChatInput
         onSend={handleSend}
         onStop={handleStop}
+        onNewSession={handleNewSession}
         isGenerating={isGenerating}
         isOffline={isOffline}
+        colStyle={colStyle}
       />
     </div>
   );

@@ -183,7 +183,7 @@ function collectAllIds(nodes: TocNode[], acc: Set<string> = new Set()): Set<stri
   return acc;
 }
 
-export function TocPanel({ headings, collapsed, width = 200 }: TocPanelProps) {
+export function TocPanel({ headings, collapsed, width = 260 }: TocPanelProps) {
   const tree = React.useMemo(() => buildTocTree(headings), [headings]);
 
   // Start fully expanded

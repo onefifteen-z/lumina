@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useMemo, useCallback } from "react";
-import { Plus, ChevronRight } from "lucide-react";
+import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
@@ -29,7 +29,7 @@ function fileDisplayName(article: ArticleMeta): string {
 }
 
 /** Build a nested tree from a flat list of ArticleMeta. */
-function buildTree(articles: ArticleMeta[]): TreeNode[] {
+function buildTree(articles: ArticleMeta[], sortMode: "modified" | "alpha" = "modified"): TreeNode[] {
   const root: FolderNode = { type: "folder", name: "", path: "", children: [] };
 
   for (const article of articles) {
@@ -53,15 +53,18 @@ function buildTree(articles: ArticleMeta[]): TreeNode[] {
     current.children.push({ type: "file", name: fileDisplayName(article), article });
   }
 
-  return sortNodes(root.children);
+  return sortNodes(root.children, sortMode);
 }
 
-/** Folders first (alpha), then files (most-recently-modified first). */
-function sortNodes(nodes: TreeNode[]): TreeNode[] {
+/** Folders first (alpha), then files sorted by chosen mode. */
+function sortNodes(nodes: TreeNode[], sortMode: "modified" | "alpha" = "modified"): TreeNode[] {
   return [...nodes].sort((a, b) => {
     if (a.type === "folder" && b.type === "file") return -1;
     if (a.type === "file" && b.type === "folder") return 1;
     if (a.type === "folder" && b.type === "folder") {
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    }
+    if (sortMode === "alpha") {
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     }
     // Both files — most recently modified first
@@ -82,6 +85,27 @@ function collectFolderPaths(nodes: TreeNode[], acc: Set<string> = new Set()): Se
   return acc;
 }
 
+/** Get the max depth of currently expanded folders. */
+function maxExpandedDepth(expanded: Set<string>): number {
+  let max = -1;
+  for (const p of expanded) {
+    const depth = p.split("/").length - 1;
+    if (depth > max) max = depth;
+  }
+  return max;
+}
+
+/** Collect folder paths at a given depth (0-indexed by slash count). */
+function collectFolderPathsAtDepth(nodes: TreeNode[], targetDepth: number, currentDepth = 0, acc: Set<string> = new Set()): Set<string> {
+  for (const node of nodes) {
+    if (node.type === "folder") {
+      if (currentDepth <= targetDepth) acc.add(node.path);
+      collectFolderPathsAtDepth(node.children, targetDepth, currentDepth + 1, acc);
+    }
+  }
+  return acc;
+}
+
 // ── Tree node renderer ─────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -89,6 +113,7 @@ interface TreeNodeProps {
   depth: number;
   selectedFilename: string | null;
   expandedFolders: Set<string>;
+  sortMode: "modified" | "alpha";
   onSelectArticle: (filename: string) => void;
   onToggleFolder: (path: string) => void;
 }
@@ -98,6 +123,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   depth,
   selectedFilename,
   expandedFolders,
+  sortMode,
   onSelectArticle,
   onToggleFolder,
 }) => {
@@ -154,13 +180,14 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
             className="absolute top-0 bottom-0 w-px bg-border/50"
             style={{ left: `${indent + 5}px` }}
           />
-          {sortNodes(node.children).map((child) => (
+          {sortNodes(node.children, sortMode).map((child) => (
             <TreeNodeRow
               key={child.type === "file" ? child.article.filename : child.path}
               node={child}
               depth={depth + 1}
               selectedFilename={selectedFilename}
               expandedFolders={expandedFolders}
+              sortMode={sortMode}
               onSelectArticle={onSelectArticle}
               onToggleFolder={onToggleFolder}
             />
@@ -180,6 +207,7 @@ export interface FilesViewProps {
   error: string | null;
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
+  onNewFolder: (folderPath: string) => void;
 }
 
 // ── TabBar (inline) ────────────────────────────────────────────
@@ -263,8 +291,10 @@ export function FilesView({
   error,
   onSelectArticle,
   onNewArticle,
+  onNewFolder,
 }: FilesViewProps) {
   const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
+  const [sortMode, setSortMode] = useState<"modified" | "alpha">("modified");
 
   // Per-tab selection tracking — stores the last selected filename per tab for highlight restoration
   const [tabSelections, setTabSelections] = useState<{
@@ -284,8 +314,8 @@ export function FilesView({
   // Filter articles by active tab (excludes config files automatically)
   const wikiArticles = useMemo(() => filterArticlesForTab(articles, "wiki"), [articles]);
   const rawArticles = useMemo(() => filterArticlesForTab(articles, "raw"), [articles]);
-  const wikiTree = useMemo(() => buildTree(wikiArticles), [wikiArticles]);
-  const rawTree = useMemo(() => buildTree(rawArticles), [rawArticles]);
+  const wikiTree = useMemo(() => buildTree(wikiArticles, sortMode), [wikiArticles, sortMode]);
+  const rawTree = useMemo(() => buildTree(rawArticles, sortMode), [rawArticles, sortMode]);
   const tree = activeTab === "wiki" ? wikiTree : rawTree;
 
   // Per-tab folder expansion state — each tab remembers its own expanded folders
@@ -344,15 +374,35 @@ export function FilesView({
     });
   };
 
+  // Expand one more level beyond the current deepest expanded depth
+  const handleExpandLevel = useCallback(() => {
+    setPerTabExpanded((prev) => {
+      const current = prev[activeTab];
+      const currentMaxDepth = maxExpandedDepth(current);
+      const nextDepth = currentMaxDepth + 1;
+      const paths = collectFolderPathsAtDepth(tree, nextDepth);
+      return { ...prev, [activeTab]: paths };
+    });
+  }, [activeTab, tree]);
+
+  // Collapse all folders
+  const handleCollapseAll = useCallback(() => {
+    setPerTabExpanded((prev) => ({ ...prev, [activeTab]: new Set<string>() }));
+  }, [activeTab]);
+
+  // New folder prompt
+  const handleNewFolder = useCallback(() => {
+    const name = window.prompt("Folder name:");
+    if (!name?.trim()) return;
+    onNewFolder(name.trim());
+  }, [onNewFolder]);
+
+  const toggleSort = useCallback(() => {
+    setSortMode((prev) => (prev === "modified" ? "alpha" : "modified"));
+  }, []);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Heading */}
-      <div className="px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
-          Files
-        </h2>
-      </div>
-
       {/* Tab Bar */}
       <div className="px-0 pt-3 pb-1">
         <TabBar
@@ -363,20 +413,23 @@ export function FilesView({
         />
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-col gap-2 px-3 py-3">
-        <button
-          type="button"
-          onClick={onNewArticle}
-          className={cn(
-            "flex items-center justify-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-md cursor-pointer",
-            "bg-primary text-white hover:bg-primary-hover transition-colors",
-            "focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
-          )}
-        >
-          <Plus size={16} />
-          New Article
-        </button>
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 px-3 py-2">
+        <ToolbarButton title="New Markdown" onClick={onNewArticle}>
+          <FilePlus size={15} />
+        </ToolbarButton>
+        <ToolbarButton title="New Folder" onClick={handleNewFolder}>
+          <FolderPlus size={15} />
+        </ToolbarButton>
+        <ToolbarButton title={sortMode === "modified" ? "Sort: Recent" : "Sort: A-Z"} onClick={toggleSort}>
+          {sortMode === "modified" ? <ArrowDownWideNarrow size={15} /> : <ArrowDownAZ size={15} />}
+        </ToolbarButton>
+        <ToolbarButton title="Expand Level" onClick={handleExpandLevel}>
+          <ChevronsUpDown size={15} />
+        </ToolbarButton>
+        <ToolbarButton title="Collapse All" onClick={handleCollapseAll}>
+          <ChevronsDownUp size={15} />
+        </ToolbarButton>
       </div>
 
       {/* Tree */}
@@ -399,11 +452,30 @@ export function FilesView({
               depth={0}
               selectedFilename={highlightFilename}
               expandedFolders={expandedFolders}
+              sortMode={sortMode}
               onSelectArticle={handleSelectArticle}
               onToggleFolder={toggleFolder}
             />
           ))}
       </div>
     </div>
+  );
+}
+
+// ── Toolbar icon button ────────────────────────────────────────
+
+function ToolbarButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "p-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors cursor-pointer",
+        "focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
+      )}
+    >
+      {children}
+    </button>
   );
 }

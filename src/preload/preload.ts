@@ -4,6 +4,7 @@ import type {
   AppConfig,
   LLMProviderConfig,
   LLMAssistParams,
+  VaultEntry,
   WikiAPI,
 } from "../shared/types";
 
@@ -33,6 +34,10 @@ const api: WikiAPI = {
 
   articleExists(title: string) {
     return ipcRenderer.invoke("wiki:articleExists", title);
+  },
+
+  createFolder(relativePath: string) {
+    return ipcRenderer.invoke("wiki:createFolder", relativePath);
   },
 
   // ── Search ───────────────────────────────────────────────────────
@@ -176,6 +181,26 @@ const api: WikiAPI = {
 
   selectVaultFolder() {
     return ipcRenderer.invoke("wiki:selectVaultFolder");
+  },
+
+  getVaultHistory(): Promise<VaultEntry[]> {
+    return ipcRenderer.invoke("wiki:getVaultHistory");
+  },
+
+  switchVault(vaultPath: string) {
+    return ipcRenderer.invoke("wiki:switchVault", vaultPath);
+  },
+
+  removeVaultFromHistory(vaultPath: string) {
+    return ipcRenderer.invoke("wiki:removeVaultFromHistory", vaultPath);
+  },
+
+  onVaultSwitched(callback: (vaultPath: string) => void) {
+    ipcRenderer.on("wiki:vaultSwitched", (_event, vaultPath: string) => callback(vaultPath));
+  },
+
+  removeVaultSwitchedListener() {
+    ipcRenderer.removeAllListeners("wiki:vaultSwitched");
   },
 
   getBookmarks() {

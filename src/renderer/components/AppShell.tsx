@@ -10,10 +10,12 @@ import GenerateArticleDialog from './GenerateArticleDialog';
 import { IconRail, type SidebarView } from './IconRail';
 import { FilesView } from './FilesView';
 import { SearchView } from './SearchView';
+import { SearchPopup } from './SearchPopup';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
 import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
+import { VaultSwitcher } from './VaultSwitcher';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { TooltipProvider } from './ui/tooltip';
 import {
@@ -150,11 +152,14 @@ const SidebarLayout: React.FC<{
   articlesError: string | null;
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
+  onNewFolder: (folderPath: string) => void;
   currentTheme: 'light' | 'dark' | 'system';
   onToggleTheme: () => void;
   headings: TocHeading[];
   onHeadingsChange: (headings: TocHeading[]) => void;
   vaultName: string;
+  vaultPath: string;
+  onVaultSwitched: (newPath: string, newName: string) => void;
   bookmarks: Set<string>;
   onToggleBookmark: (filename: string) => void;
 }> = ({
@@ -167,11 +172,14 @@ const SidebarLayout: React.FC<{
   articlesError,
   onSelectArticle,
   onNewArticle,
+  onNewFolder,
   currentTheme,
   onToggleTheme,
   headings,
   onHeadingsChange,
   vaultName,
+  vaultPath,
+  onVaultSwitched,
   bookmarks,
   onToggleBookmark,
 }) => {
@@ -183,7 +191,7 @@ const SidebarLayout: React.FC<{
 
     const [rightCollapsed, setRightCollapsed] = useState(false);
     const [leftWidth, setLeftWidth] = useState(240);
-    const [rightWidth, setRightWidth] = useState(200);
+    const [rightWidth, setRightWidth] = useState(260);
     const [isLeftResizing, setIsLeftResizing] = useState(false);
     const [isRightResizing, setIsRightResizing] = useState(false);
 
@@ -261,14 +269,19 @@ const SidebarLayout: React.FC<{
 
     const handleViewChange = useCallback(
       (view: SidebarView) => {
+        // Search always opens the floating popup
+        if (view === 'search') {
+          onViewChange(view);
+          return;
+        }
         if (view === activeView) {
           // Clicking the active icon toggles sidebar open/closed
           setOpen(!open);
         } else {
           // Switching to a different view
           onViewChange(view);
-          // Settings/chat/graph don't use the sidebar panel, so collapse it
-          if (view === 'settings' || view === 'chat' || view === 'graph') {
+          // Settings/chat don't use the sidebar panel, so collapse it
+          if (view === 'settings' || view === 'chat') {
             setOpen(false);
           } else if (!open) {
             // Open sidebar if switching to a panel view while collapsed
@@ -279,8 +292,8 @@ const SidebarLayout: React.FC<{
       [activeView, open, setOpen, onViewChange]
     );
 
-    // Determine if sidebar panel should show content (not for settings, chat, or graph)
-    const showSidebarPanel = activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph';
+    // Determine if sidebar panel should show content (not for settings or chat)
+    const showSidebarPanel = activeView !== 'settings' && activeView !== 'chat';
 
     return (
       <div className="flex flex-col h-full w-full">
@@ -362,10 +375,8 @@ const SidebarLayout: React.FC<{
                       error={articlesError}
                       onSelectArticle={selectArticleWithHistory}
                       onNewArticle={onNewArticle}
+                      onNewFolder={onNewFolder}
                     />
-                  )}
-                  {activeView === 'search' && (
-                    <SearchView onSelectArticle={selectArticleWithHistory} />
                   )}
                   {activeView === 'bookmarks' && (
                     <BookmarksView
@@ -382,6 +393,12 @@ const SidebarLayout: React.FC<{
                     />
                   )}
                 </SidebarContent>
+                {/* Vault switcher pinned to sidebar bottom */}
+                <VaultSwitcher
+                  currentVaultPath={vaultPath}
+                  currentVaultName={vaultName}
+                  onSwitched={onVaultSwitched}
+                />
               </Sidebar>
               {open && (
                 <div
@@ -428,7 +445,7 @@ const SidebarLayout: React.FC<{
                   />
                 );
               })()}
-              <main className="relative flex-1 overflow-auto bg-main-bg">
+              <main className="flex flex-col flex-1 overflow-hidden bg-main-bg">
                 <OfflineBanner />
                 {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
                 {activeView === 'chat' && editingFilename === null && <ChatView />}
@@ -466,10 +483,13 @@ const AppShell: React.FC = () => {
   const [editingFilename, setEditingFilename] = useState<string | null>(null);
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [searchPopupOpen, setSearchPopupOpen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
   const [headings, setHeadings] = useState<TocHeading[]>([]);
   const [vaultName, setVaultName] = useState('vault');
+  const [vaultPath, setVaultPath] = useState('');
+  const [vaultReloadKey, setVaultReloadKey] = useState(0);
 
   // Article list state (shared with FilesView)
   const [articles, setArticles] = useState<ArticleMeta[]>([]);
@@ -511,6 +531,7 @@ const AppShell: React.FC = () => {
           if (config.vaultPath) {
             const segments = config.vaultPath.replace(/\\/g, '/').split('/').filter(Boolean);
             setVaultName(segments[segments.length - 1] ?? 'vault');
+            setVaultPath(config.vaultPath);
           }
         }
       } catch {
@@ -543,7 +564,19 @@ const AppShell: React.FC = () => {
     };
   }, []);
 
-  // Fetch articles on mount + listen for vault changes
+  // ── Cmd+Shift+F → open search popup ──────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setSearchPopupOpen(o => !o);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // Fetch articles on mount + on vault switch + listen for vault changes
   useEffect(() => {
     if (firstRun === null || firstRun) return;
 
@@ -607,7 +640,24 @@ const AppShell: React.FC = () => {
       cancelled = true;
       window.api.removeVaultChangeListener();
     };
-  }, [firstRun]);
+  }, [firstRun, vaultReloadKey]);
+
+  // Listen for vault-switched events from the main process
+  useEffect(() => {
+    window.api.onVaultSwitched((newVaultPath: string) => {
+      const segments = newVaultPath.replace(/\\/g, '/').split('/').filter(Boolean);
+      const name = segments[segments.length - 1] ?? 'vault';
+      setVaultPath(newVaultPath);
+      setVaultName(name);
+      setSelectedFilename(null);
+      setEditingFilename(null);
+      setFirstRun(false);
+      setVaultReloadKey((k) => k + 1);
+    });
+    return () => {
+      window.api.removeVaultSwitchedListener();
+    };
+  }, []);
 
   const navigate = useCallback((v: string) => {
     // Handle legacy NavView values for backward compatibility
@@ -618,6 +668,11 @@ const AppShell: React.FC = () => {
     }
     if (v === 'edit') {
       // 'edit' is no longer a sidebar view; ignore (use editArticle/createNewArticle instead)
+      return;
+    }
+    // Search opens the floating popup instead of a sidebar panel
+    if (v === 'search') {
+      setSearchPopupOpen(true);
       return;
     }
     setActiveView(v as SidebarView);
@@ -635,6 +690,12 @@ const AppShell: React.FC = () => {
     // Set editingFilename to empty string to signal "new article" mode
     // (null means "not editing", so we use a sentinel)
     setEditingFilename('');
+  }, []);
+
+  const createNewFolder = useCallback(async (folderName: string) => {
+    try {
+      await window.api.createFolder(folderName);
+    } catch { /* folder may already exist */ }
   }, []);
 
   const handleSelectArticle = useCallback((filename: string) => {
@@ -698,11 +759,17 @@ const AppShell: React.FC = () => {
               articlesError={articlesError}
               onSelectArticle={handleSelectArticle}
               onNewArticle={createNewArticle}
+              onNewFolder={createNewFolder}
               currentTheme={theme}
               onToggleTheme={handleToggleTheme}
               headings={headings}
               onHeadingsChange={setHeadings}
               vaultName={vaultName}
+              vaultPath={vaultPath}
+              onVaultSwitched={(newPath, newName) => {
+                setVaultPath(newPath);
+                setVaultName(newName);
+              }}
               bookmarks={bookmarks}
               onToggleBookmark={onToggleBookmark}
             />
@@ -714,6 +781,13 @@ const AppShell: React.FC = () => {
           open={generateOpen}
           onClose={() => setGenerateOpen(false)}
           onAccept={handleAcceptGenerated}
+        />
+
+        {/* Search Popup (Alfred-style) */}
+        <SearchPopup
+          open={searchPopupOpen}
+          onClose={() => setSearchPopupOpen(false)}
+          onSelectArticle={handleSelectArticle}
         />
       </NavContext.Provider>
     </NetworkStatusProvider>

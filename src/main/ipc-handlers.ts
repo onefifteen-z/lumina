@@ -39,6 +39,21 @@ export function registerIpcHandlers(services: {
   let llm = services.llm;
   const chat = services.chat ?? null;
 
+  /**
+   * Rebuild the LLM service from the current persisted config and API key,
+   * then push the new instance into the chat service so it takes effect immediately.
+   */
+  function rebuildLLMService(): void {
+    const appConfig = config.getConfig();
+    if (appConfig.llmProvider) {
+      const apiKey = config.getApiKey();
+      llm = new LLMService(appConfig.llmProvider, apiKey);
+    } else {
+      llm = null;
+    }
+    chat?.setLLMService(llm);
+  }
+
   // Keep a cached article list for backlink computation
   let cachedArticles: ArticleMeta[] = [];
 
@@ -47,7 +62,11 @@ export function registerIpcHandlers(services: {
    * sets up FileSystemService + SearchIndexService, and starts the watcher.
    */
   async function initializeVaultServices(vaultPath: string): Promise<void> {
+    // Stop any existing watcher before replacing the service
+    fileSystem?.stopWatching();
+
     await config.createMarkerFile(vaultPath);
+    config.addVaultToHistory(vaultPath);
 
     fileSystem = new FileSystemService(vaultPath);
 
@@ -59,6 +78,8 @@ export function registerIpcHandlers(services: {
     fileSystem.watchVault((event) => {
       services.mainWindow?.webContents.send("wiki:vaultChange", event);
     });
+
+    chat?.setFileSystemService(fileSystem);
   }
 
   // ── Article CRUD ─────────────────────────────────────────────────
@@ -141,6 +162,14 @@ export function registerIpcHandlers(services: {
       if (!fileSystem) return false;
       const filename = titleToFilename(title) + ".md";
       return fileSystem.fileExists(filename);
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:createFolder",
+    async (_event, relativePath: string): Promise<void> => {
+      if (!fileSystem) return;
+      await fileSystem.createFolder(relativePath);
     },
   );
 
@@ -330,6 +359,10 @@ export function registerIpcHandlers(services: {
       }
 
       config.saveConfig(partial);
+      // If the provider config changed, rebuild the LLM service immediately.
+      if (partial.llmProvider !== undefined) {
+        rebuildLLMService();
+      }
     },
   );
 
@@ -341,6 +374,7 @@ export function registerIpcHandlers(services: {
     "wiki:saveApiKey",
     async (_event, key: string): Promise<void> => {
       config.saveApiKey(key);
+      rebuildLLMService();
     },
   );
 
@@ -355,6 +389,22 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("wiki:selectVaultFolder", async (): Promise<string | null> => {
     return config.selectVaultFolder();
+  });
+
+  // ── Vault history & switching ────────────────────────────────────
+
+  ipcMain.handle("wiki:getVaultHistory", () => {
+    return config.getVaultHistory();
+  });
+
+  ipcMain.handle("wiki:switchVault", async (_event, vaultPath: string): Promise<void> => {
+    await initializeVaultServices(vaultPath);
+    config.saveConfig({ vaultPath });
+    services.mainWindow?.webContents.send("wiki:vaultSwitched", vaultPath);
+  });
+
+  ipcMain.handle("wiki:removeVaultFromHistory", (_event, vaultPath: string): void => {
+    config.removeVaultFromHistory(vaultPath);
   });
 
   // ── Lifecycle ────────────────────────────────────────────────────

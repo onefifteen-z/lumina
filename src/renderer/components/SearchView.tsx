@@ -133,13 +133,6 @@ export function SearchView({ onSelectArticle }: SearchViewProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Heading */}
-      <div className="px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
-          Search
-        </h2>
-      </div>
-
       {/* Search input */}
       <div className="px-3 py-3">
         <div className="relative">

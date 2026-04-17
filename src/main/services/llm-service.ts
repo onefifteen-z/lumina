@@ -102,12 +102,44 @@ export class LLMService {
   }
 
   /**
+   * Non-streaming chat call. Returns the assistant message content and any
+   * tool calls requested by the model. Used for the tool-resolution loop
+   * before streaming the final response.
+   */
+  async callNonStreaming(
+    messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }>,
+    tools?: unknown[],
+  ): Promise<{ content: string | null; toolCalls: Array<{ id: string; function: { name: string; arguments: string } }> | null }> {
+    const body = JSON.stringify({
+      model: this.config.model,
+      messages,
+      ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
+    });
+
+    const response = await this.fetchWithTimeout(body, false);
+    this.setAvailable(true);
+
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new LLMError("Failed to parse LLM response as JSON", "malformed_response");
+    }
+
+    const message = (json as any)?.choices?.[0]?.message;
+    return {
+      content: message?.content ?? null,
+      toolCalls: message?.tool_calls ?? null,
+    };
+  }
+
+  /**
    * Generate a chat response from a full messages array via streaming.
    * Yields content chunks as they arrive from the LLM endpoint.
    * Accepts an optional AbortSignal for external cancellation support.
    */
   async *generateChat(
-    messages: Array<{ role: string; content: string }>,
+    messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }>,
     signal?: AbortSignal,
   ): AsyncGenerator<string> {
     const body = JSON.stringify({

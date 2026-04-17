@@ -21,6 +21,8 @@
   --color-border: var(--border);
   --color-surface-hover: var(--surface-hover);
   --color-surface-active: var(--surface-active);
+  --color-tooltip-bg: var(--tooltip-bg);
+  --color-tooltip-text: var(--tooltip-text);
 }
 
 /* ── Light Theme (default) ──────────────────────────────────── */
@@ -42,6 +44,8 @@
   --border: #e0e0e0;
   --surface-hover: #e4e4e4;
   --surface-active: #d4d4d4;
+  --tooltip-bg: #1a1a1a;
+  --tooltip-text: #ffffff;
 
   /* Legacy vars used by hand-written CSS classes */
   --color-bg: #ffffff;
@@ -71,6 +75,8 @@
   --border: #3a3a3a;
   --surface-hover: #2d2d2d;
   --surface-active: #383838;
+  --tooltip-bg: #e0e0e0;
+  --tooltip-text: #1a1a1a;
 
   /* Legacy vars used by hand-written CSS classes */
   --color-bg: #202020;
@@ -154,8 +160,6 @@ body.is-resizing {
 *::before,
 *::after {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html,

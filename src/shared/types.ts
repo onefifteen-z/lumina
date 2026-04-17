@@ -60,6 +60,12 @@ export interface VaultMarker {
   createdAt: string; // ISO 8601
 }
 
+/** A vault entry stored in the recent-vaults history. */
+export interface VaultEntry {
+  path: string;
+  name: string; // basename of path
+}
+
 /** Bookmarks persisted at `{vault}/.lumina/bookmarks.json`. */
 export interface BookmarksFile {
   version: number;
@@ -116,6 +122,7 @@ export interface WikiAPI {
   saveArticle(article: ArticleFile): Promise<void>;
   deleteArticle(title: string): Promise<void>;
   articleExists(title: string): Promise<boolean>;
+  createFolder(relativePath: string): Promise<void>;
 
   // Search
   search(query: string): Promise<SearchResult[]>;
@@ -137,6 +144,13 @@ export interface WikiAPI {
   saveApiKey(key: string): Promise<void>;
   testLLMConnection(config: LLMProviderConfig): Promise<boolean>;
   selectVaultFolder(): Promise<string | null>;
+
+  // Vault history & switching
+  getVaultHistory(): Promise<VaultEntry[]>;
+  switchVault(vaultPath: string): Promise<void>;
+  removeVaultFromHistory(vaultPath: string): Promise<void>;
+  onVaultSwitched(callback: (vaultPath: string) => void): void;
+  removeVaultSwitchedListener(): void;
 
   // Bookmarks (vault JSON)
   getBookmarks(): Promise<string[]>;

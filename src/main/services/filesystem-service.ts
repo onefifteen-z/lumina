@@ -27,38 +27,52 @@ export class FileSystemService {
   }
 
   /**
-   * Recursively find all .md files in the vault, parse each,
+   * Recursively find all files in the vault, parse .md files fully,
    * and return lightweight ArticleMeta[] for indexing/listing.
+   * Non-markdown files get minimal metadata (title = basename, empty fields).
    */
   async scanVault(): Promise<ArticleMeta[]> {
-    const mdFiles = await this.findMarkdownFiles(this.vaultPath);
+    const allFiles = await this.findAllFiles(this.vaultPath);
     const results: ArticleMeta[] = [];
 
-    for (const filePath of mdFiles) {
+    for (const filePath of allFiles) {
       try {
-        const raw = await fs.readFile(filePath, "utf-8");
-        const article = parseArticleFile(raw);
-        const filename = path.relative(this.vaultPath, filePath);
-        const wikilinks = extractWikilinks(article.content).map(
-          (w) => w.target,
-        );
-        const tags = extractTags(article);
-        const excerpt = article.content
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 200);
+        const filename = path.relative(this.vaultPath, filePath).replace(/\\/g, "/");
 
-        results.push({
-          title: article.frontmatter.title || sharedFilenameToTitle(filename),
-          filename,
-          tags,
-          created: article.frontmatter.created,
-          modified: article.frontmatter.modified,
-          wikilinks,
-          excerpt,
-        });
+        if (filePath.toLowerCase().endsWith(".md")) {
+          const raw = await fs.readFile(filePath, "utf-8");
+          const article = parseArticleFile(raw);
+          const wikilinks = extractWikilinks(article.content).map(
+            (w) => w.target,
+          );
+          const tags = extractTags(article);
+          const excerpt = article.content
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 200);
+
+          results.push({
+            title: article.frontmatter.title || sharedFilenameToTitle(filename),
+            filename,
+            tags,
+            created: article.frontmatter.created,
+            modified: article.frontmatter.modified,
+            wikilinks,
+            excerpt,
+          });
+        } else {
+          // Non-markdown: minimal metadata, title is the basename with extension
+          results.push({
+            title: path.basename(filename),
+            filename,
+            tags: [],
+            created: "",
+            modified: "",
+            wikilinks: [],
+            excerpt: "",
+          });
+        }
       } catch (err) {
-        // Corrupted or unreadable file — log and skip
         console.warn(`Skipping file ${filePath}:`, err);
       }
     }
@@ -185,7 +199,7 @@ export class FileSystemService {
           rawFilename.endsWith("/.lumina-vault")
         )
           return;
-        if (!rawFilename.endsWith(".md")) return;
+        // allow all file types through
 
         const filename = rawFilename.replace(/\\/g, "/");
 
@@ -212,10 +226,17 @@ export class FileSystemService {
     }
   }
 
+  /** Create a folder inside the vault. */
+  async createFolder(relativePath: string): Promise<void> {
+    const abs = path.join(this.vaultPath, relativePath);
+    await fs.mkdir(abs, { recursive: true });
+  }
+
   /**
-   * Recursively find all .md files under a directory.
+   * Recursively find all files under a directory (any extension).
+   * Skips the .lumina-vault marker file only.
    */
-  private async findMarkdownFiles(dir: string): Promise<string[]> {
+  private async findAllFiles(dir: string): Promise<string[]> {
     const results: string[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
@@ -223,9 +244,9 @@ export class FileSystemService {
       if (entry.name === ".lumina-vault") continue;
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        const nested = await this.findMarkdownFiles(fullPath);
+        const nested = await this.findAllFiles(fullPath);
         results.push(...nested);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      } else if (entry.isFile()) {
         results.push(fullPath);
       }
     }

@@ -60,6 +60,18 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
 
   // Fetch article content + backlinks by vault-relative filename
   const selectArticle = useCallback(async (filename: string) => {
+    // Non-markdown files cannot be rendered — just track the selection
+    if (!filename.toLowerCase().endsWith(".md")) {
+      setArticle(null);
+      setCurrentFilename(filename);
+      setRenderedHtml('');
+      setBacklinks([]);
+      setArticleError(null);
+      setArticleLoading(false);
+      onHeadingsChange?.([]);
+      return;
+    }
+
     setArticleLoading(true);
     setArticleError(null);
     setArticle(null);
@@ -82,7 +94,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
     } finally {
       setArticleLoading(false);
     }
-  }, []);
+  }, [onHeadingsChange]);
 
   // Fetch article when selectedFilename prop changes
   useEffect(() => {
@@ -158,6 +170,12 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
     <section className="article-browser__view">
       {!selectedFilename && (
         <div className="article-browser__empty">Select an article to view</div>
+      )}
+
+      {selectedFilename && !selectedFilename.toLowerCase().endsWith(".md") && !articleLoading && !articleError && !article && (
+        <div className="article-browser__status">
+          Preview not available for this file type.
+        </div>
       )}
 
       {selectedFilename && articleLoading && (

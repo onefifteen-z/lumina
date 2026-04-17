@@ -22,34 +22,34 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language }) => {
   const displayLanguage = language || 'text';
 
   return (
-    <div className="my-3 rounded-lg overflow-hidden border-[0.5px] border-[rgba(255,255,255,0.08)]">
+    <div
+      className="rounded-lg overflow-hidden text-sm"
+      style={{ background: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)' }}
+    >
       {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-1.5 bg-surface-active text-text-secondary text-xs select-none">
-        <span className="font-medium">{displayLanguage}</span>
+      <div
+        className="flex items-center justify-between px-4 py-2.5 select-none"
+        style={{ background: '#2a2a2a', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+      >
+        <span className="text-[11px] font-medium" style={{ color: '#888' }}>
+          {displayLanguage}
+        </span>
         <button
           type="button"
           onClick={handleCopy}
           aria-label={copied ? 'Copied' : 'Copy code'}
-          className="flex items-center gap-1.5 px-2 py-1 rounded text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
+          className="flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer hover:bg-white/10"
+          style={{ color: copied ? '#4ade80' : '#888' }}
         >
-          {copied ? (
-            <>
-              <Check size={14} className="text-green-500" />
-              <span className="text-green-500">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy size={14} />
-              <span>Copy</span>
-            </>
-          )}
+          {copied ? <Check size={14} /> : <Copy size={14} />}
         </button>
       </div>
 
       {/* Code content */}
-      <pre className="overflow-x-auto px-4 py-3 bg-[#0f0f12] m-0">
+      <pre className="overflow-x-auto px-4 py-4 m-0" style={{ background: '#1e1e1e' }}>
         <code
-          className={`text-sm leading-relaxed text-text-primary font-mono ${language ? `language-${language}` : ''}`}
+          className={`text-[0.8125rem] leading-[1.6] font-mono ${language ? `language-${language}` : ''}`}
+          style={{ color: '#d4d4d4' }}
         >
           {code}
         </code>

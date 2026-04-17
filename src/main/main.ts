@@ -101,6 +101,7 @@ app.whenReady().then(async () => {
   let searchIndexService: SearchIndexService | null = null;
 
   if (vaultPath) {
+    configService.addVaultToHistory(vaultPath);
     fileSystemService = new FileSystemService(vaultPath);
     searchIndexService = new SearchIndexService();
 

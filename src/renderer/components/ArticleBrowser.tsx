@@ -119,7 +119,7 @@ const FileViewer: React.FC<{ filename: string }> = ({ filename }) => {
   if (ext === 'pdf') {
     if (!pdfSrc) return <div className="article-browser__status">Loading PDF…</div>;
     return (
-      <div className="flex-1 h-full -m-[32px_40px]" style={{ margin: '-32px -40px', height: 'calc(100% + 64px)' }}>
+      <div className="flex-1 h-full" style={{ margin: '-32px -64px', height: 'calc(100% + 64px)' }}>
         <embed src={`vault-file://local${pdfSrc.split('/').map(encodeURIComponent).join('/')}#navpanes=0`} type="application/pdf" className="w-full h-full" />
       </div>
     );
@@ -344,6 +344,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
             <h2 className="text-sm font-semibold text-text-primary mb-3">Properties</h2>
             <div className="flex flex-col gap-2.5">
               {/* title */}
+              {article.frontmatter.title && (
               <div className="flex items-start gap-3 text-[13px]">
                 <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
                   <AlignLeft size={14} className="opacity-60" />
@@ -351,6 +352,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
                 </div>
                 <span className="text-text-primary">{article.frontmatter.title}</span>
               </div>
+              )}
 
               {/* extra string fields */}
               {Object.entries(article.frontmatter)
@@ -366,6 +368,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
                 ))}
 
               {/* created */}
+              {article.frontmatter.created && (
               <div className="flex items-start gap-3 text-[13px]">
                 <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
                   <Calendar size={14} className="opacity-60" />
@@ -373,8 +376,10 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
                 </div>
                 <span className="text-text-primary">{formatDate(article.frontmatter.created)}</span>
               </div>
+              )}
 
               {/* modified */}
+              {article.frontmatter.modified && (
               <div className="flex items-start gap-3 text-[13px]">
                 <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
                   <Calendar size={14} className="opacity-60" />
@@ -382,6 +387,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
                 </div>
                 <span className="text-text-primary">{formatDate(article.frontmatter.modified)}</span>
               </div>
+              )}
 
               {/* list fields (sources etc.) */}
               {Object.entries(article.frontmatter)

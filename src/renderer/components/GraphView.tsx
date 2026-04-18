@@ -54,7 +54,7 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
   // Build graph data from articles
   useEffect(() => {
     // Only show articles under the wiki/ folder
-    const wikiArticles = articles.filter((a) => a.filename.startsWith("wiki/"));
+    const wikiArticles = articles.filter((a) => a.filename.startsWith("wiki/") && !a.filename.split("/").some((s) => s.startsWith(".")));
 
     // Build multiple lookup keys per article to maximise wikilink resolution:
     //   1. full title (exact)

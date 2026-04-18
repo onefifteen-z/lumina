@@ -17,7 +17,7 @@ import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
 import { VaultSwitcher } from './VaultSwitcher';
 import { VaultInitDialog } from './VaultInitDialog';
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X, FileText, Plus } from 'lucide-react';
 import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
@@ -141,6 +141,24 @@ const OfflineBanner: React.FC = () => {
   );
 };
 
+// ── NewTabPage ─────────────────────────────────────────────────
+
+const NewTabPage: React.FC<{ onNewNote: () => void; onGoToFile: () => void; onClose: () => void }> = ({ onNewNote, onGoToFile, onClose }) => {
+  const isMac = navigator.platform.includes('Mac');
+  const mod = isMac ? '⌘' : 'Ctrl+';
+  const linkClass = "text-primary hover:text-primary-hover text-sm cursor-pointer transition-colors";
+
+  return (
+    <div className="flex-1 flex items-center justify-center bg-main-bg">
+      <div className="flex flex-col items-center gap-4">
+        <button type="button" onClick={onNewNote} className={linkClass}>Create new note ({mod}N)</button>
+        <button type="button" onClick={onGoToFile} className={linkClass}>Go to file ({mod}O)</button>
+        <button type="button" onClick={onClose} className={linkClass}>Close</button>
+      </div>
+    </div>
+  );
+};
+
 // ── SidebarLayout (inner component that uses useSidebar) ───────
 
 const SidebarLayout: React.FC<{
@@ -197,6 +215,46 @@ const SidebarLayout: React.FC<{
     const [rightWidth, setRightWidth] = useState(260);
     const [isLeftResizing, setIsLeftResizing] = useState(false);
     const [isRightResizing, setIsRightResizing] = useState(false);
+
+    // ── Tabs ──────────────────────────────────────────────────
+    const [tabs, setTabs] = useState<string[]>(() => selectedFilename ? [selectedFilename] : []);
+    const activeTab = selectedFilename;
+
+    // Sync: when a file is selected, replace active tab or switch to it if already open
+    const prevSelectedRef2 = React.useRef(selectedFilename);
+    if (prevSelectedRef2.current !== selectedFilename && selectedFilename) {
+      const oldActive = prevSelectedRef2.current;
+      prevSelectedRef2.current = selectedFilename;
+      setTabs(prev => {
+        if (prev.includes(selectedFilename)) return prev;
+        if (prev.length === 0) return [selectedFilename];
+        // Replace the previously active tab
+        const idx = oldActive ? prev.indexOf(oldActive) : -1;
+        if (idx === -1) return [...prev, selectedFilename];
+        const next = [...prev];
+        next[idx] = selectedFilename;
+        return next;
+      });
+    }
+
+    const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+    const openInNewTab = useCallback((filename: string) => {
+      setTabs(prev => prev.includes(filename) ? prev : [...prev, filename]);
+      onSelectArticle(filename);
+    }, [onSelectArticle]);
+
+    const closeTab = useCallback((filename: string) => {
+      setTabs(prev => {
+        const next = prev.filter(t => t !== filename);
+        if (filename === selectedFilename) {
+          const idx = prev.indexOf(filename);
+          const newActive = next[Math.min(idx, next.length - 1)] ?? null;
+          onSelectArticle(newActive ?? '');
+        }
+        return next;
+      });
+    }, [selectedFilename, onSelectArticle]);
 
     // ── Navigation history ────────────────────────────────────
     const navStackRef = React.useRef<string[]>([]);
@@ -331,6 +389,72 @@ const SidebarLayout: React.FC<{
             </div>
           )}
 
+          {/* Tabs in titlebar */}
+          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && tabs.length > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: open ? `${44 + leftWidth}px` : "110px",
+                right: `${(activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && !rightCollapsed && headings.length > 0) ? rightWidth + 53 : 48}px`,
+                top: 0, bottom: 0,
+                display: "flex", alignItems: "end",
+                overflow: "hidden",
+                WebkitAppRegion: "drag",
+              } as React.CSSProperties}
+            >
+              <div className="flex items-end gap-0.5 overflow-x-auto px-1" style={{ scrollbarWidth: "none" }}>
+                {tabs.map((t, i) => {
+                  const label = t === '__new__' ? 'New tab' : (t.split('/').pop()?.replace(/\.md$/i, '') ?? t);
+                  const isActive = t === activeTab;
+                  const isPdf = t.toLowerCase().endsWith('.pdf');
+                  return (
+                    <div
+                      key={t}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(i)); e.dataTransfer.effectAllowed = 'move'; }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverIdx(i); }}
+                      onDragLeave={() => setDragOverIdx(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOverIdx(null);
+                        const from = Number(e.dataTransfer.getData('text/plain'));
+                        if (from !== i) setTabs(prev => { const next = [...prev]; const [item] = next.splice(from, 1); next.splice(i, 0, item); return next; });
+                      }}
+                      onDragEnd={() => setDragOverIdx(null)}
+                      className={`group relative flex items-center gap-1.5 px-3 h-[30px] text-[11px] rounded-t-lg cursor-pointer shrink-0 max-w-[160px] transition-colors ${isActive ? 'bg-main-bg text-primary' : 'text-text-secondary hover:bg-surface-hover'}`}
+                      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                      onClick={() => onSelectArticle(t)}
+                    >
+                      {dragOverIdx === i && <div className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-primary" />}
+                      {isPdf && <FileText size={11} className="shrink-0 text-red-400" />}
+                      <span className="truncate">{label}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); closeTab(t); }}
+                        className="shrink-0 opacity-0 group-hover:opacity-100 hover:text-text-primary transition-opacity"
+                        aria-label="Close tab"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!tabs.includes('__new__')) setTabs(prev => [...prev, '__new__']);
+                    onSelectArticle('__new__');
+                  }}
+                  className="flex items-center justify-center w-6 h-6 mb-[2px] rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer shrink-0"
+                  style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+                  aria-label="New tab"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Right TOC toggle */}
           {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && headings.length > 0 && (
             <div
@@ -456,7 +580,10 @@ const SidebarLayout: React.FC<{
                 {activeView === 'graph' && editingFilename === null && (
                   <GraphView articles={articles} onSelectArticle={(f) => { selectArticleWithHistory(f); onViewChange('files'); }} />
                 )}
-                {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
+                {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && selectedFilename === '__new__' && (
+                  <NewTabPage onNewNote={onNewArticle} onGoToFile={() => onViewChange('search')} onClose={() => closeTab('__new__')} />
+                )}
+                {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && selectedFilename !== '__new__' && (
                   <ArticleBrowser
                     selectedFilename={selectedFilename}
                     onHeadingsChange={onHeadingsChange}
@@ -584,6 +711,10 @@ const AppShell: React.FC = () => {
         e.preventDefault();
         setActiveView("settings");
         setEditingFilename(null);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        setSearchPopupOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
@@ -719,7 +850,7 @@ const AppShell: React.FC = () => {
   }, []);
 
   const handleSelectArticle = useCallback((filename: string) => {
-    setSelectedFilename(filename);
+    setSelectedFilename(filename || null);
     setEditingFilename(null);
   }, []);
 

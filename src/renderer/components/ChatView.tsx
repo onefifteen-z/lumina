@@ -108,38 +108,49 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
   let i = 0;
 
+  // Parse cells from a table row — handles lines with or without leading/trailing |
+  const parseCells = (line: string) => {
+    let t = line.trim();
+    if (t.startsWith('|')) t = t.slice(1);
+    if (t.endsWith('|')) t = t.slice(0, -1);
+    return t.split('|').map((c) => c.trim());
+  };
+  // Separator row: only pipes, dashes, colons, spaces
+  const isSepLine = (l: string) => /^[\s|:\-]+$/.test(l.trim()) && l.includes('-') && l.includes('|');
+  // A line is table-like if it contains | and isn't purely a separator
+  const isTableLike = (l: string) => l.includes('|');
+  // Look ahead from startIdx to check a separator exists within 2 lines
+  const hasSepNearby = (startIdx: number) => {
+    for (let k = startIdx; k < Math.min(startIdx + 3, lines.length); k++) {
+      if (isSepLine(lines[k])) return true;
+    }
+    return false;
+  };
+
   while (i < lines.length) {
-    // Table detection: line starts with |
-    if (lines[i].trimStart().startsWith('|')) {
+    // Table detection: line contains | AND a separator row is nearby
+    if (isTableLike(lines[i]) && hasSepNearby(i)) {
       const tableLines: string[] = [];
-      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+      while (i < lines.length && isTableLike(lines[i])) {
         tableLines.push(lines[i]);
         i++;
       }
-      const parseCells = (line: string) =>
-        line.split('|').slice(1, -1).map((c) => c.trim());
-      // A separator row contains only |, -, :, and spaces
-      const isSep = (l: string) => /^\s*\|[\s|\-:]+\|\s*$/.test(l) && l.includes('-');
-      const sepIdx = tableLines.findIndex(isSep);
+      const sepIdx = tableLines.findIndex(isSepLine);
       if (sepIdx >= 1) {
-        // Standard: rows before sep are headers (usually one), rows after are data
         const headers = parseCells(tableLines[sepIdx - 1]);
         const rows = tableLines.slice(sepIdx + 1).map(parseCells);
         blocks.push({ type: 'table', headers, rows });
         continue;
       } else if (sepIdx === 0) {
-        // Separator is first — header was on the preceding paragraph line; render headerless
         const rows = tableLines.slice(1).map(parseCells);
         blocks.push({ type: 'table', headers: [], rows });
         continue;
       } else if (tableLines.length >= 2) {
-        // No separator found — treat first row as header, rest as data
         const headers = parseCells(tableLines[0]);
         const rows = tableLines.slice(1).map(parseCells);
         blocks.push({ type: 'table', headers, rows });
         continue;
       }
-      // Not enough lines — fall through as paragraphs
       for (const tl of tableLines) {
         const joined = tl.trim();
         if (joined) blocks.push({ type: 'paragraph', content: joined });
@@ -180,6 +191,7 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
       const paraLines: string[] = [parsed.content];
       i++;
       while (i < lines.length) {
+        if (isTableLike(lines[i]) && hasSepNearby(i)) break;
         const next = classifyLine(lines[i]);
         if (next.type !== 'paragraph') break;
         paraLines.push(next.content);
@@ -233,7 +245,7 @@ export function applyInlineFormatting(text: string, onWikilinkClick?: (target: s
         <button
           key={key++}
           onClick={() => onWikilinkClick?.(target)}
-          className="text-accent font-medium hover:underline cursor-pointer focus:outline-none"
+          className="text-primary font-medium hover:underline cursor-pointer focus:outline-none"
         >
           {target}
         </button>,
@@ -305,13 +317,13 @@ const MarkdownText: React.FC<{ content: string; onWikilinkClick?: (target: strin
             );
           case 'table':
             return (
-              <div key={i} className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-sm">
+              <div key={i} className="overflow-x-auto my-1">
+                <table className="w-full text-sm border-collapse border border-border">
                   {block.headers.length > 0 && (
                     <thead>
-                      <tr className="border-b border-border bg-[rgba(255,255,255,0.04)]">
+                      <tr className="bg-[var(--surface-hover)]">
                         {block.headers.map((h, j) => (
-                          <th key={j} className="px-3 py-2 text-left font-semibold text-text-primary whitespace-nowrap">
+                          <th key={j} className="border border-border px-4 py-3 text-left font-semibold text-text-primary">
                             {applyInlineFormatting(h, onWikilinkClick)}
                           </th>
                         ))}
@@ -320,9 +332,9 @@ const MarkdownText: React.FC<{ content: string; onWikilinkClick?: (target: strin
                   )}
                   <tbody>
                     {block.rows.map((row, ri) => (
-                      <tr key={ri} className="border-b border-border last:border-b-0">
+                      <tr key={ri}>
                         {row.map((cell, ci) => (
-                          <td key={ci} className="px-3 py-2 text-text-secondary break-words">
+                          <td key={ci} className="border border-border px-4 py-3 text-text-primary break-words">
                             {applyInlineFormatting(cell, onWikilinkClick)}
                           </td>
                         ))}
@@ -411,10 +423,16 @@ const ChatView: React.FC = () => {
     try { setHistoryList(await window.api.listChatSessions()); } catch { /* ignore */ }
   }, []);
 
-  const persistSession = useCallback(() => {
-    const s = sessionRef.current;
-    if (!s || s.messages.length === 0) return;
-    window.api.saveChatSession(s).then(refreshHistory);
+  const persistSession = useCallback(async () => {
+    try {
+      const s = await window.api.getChatSession();
+      if (!s || s.messages.length === 0) return;
+      sessionRef.current = s;
+      await window.api.saveChatSession(s);
+    } catch (err) {
+      console.warn('Failed to persist chat session:', err);
+    }
+    await refreshHistory();
   }, [refreshHistory]);
 
   /* ── Session initialisation ─────────────────────────────────── */
@@ -434,11 +452,31 @@ const ChatView: React.FC = () => {
     }
   }, []);
 
+  /* ── Restore persisted UI state on mount ───────────────────── */
+
+  useEffect(() => {
+    window.api.getConfig().then((cfg) => {
+      if (cfg.chatHistorySidebarOpen) setShowHistory(true);
+      if (cfg.lastChatSessionId) {
+        loadSession(cfg.lastChatSessionId).catch(() => initSession());
+      } else {
+        initSession();
+      }
+    }).catch(() => initSession());
+    refreshHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ── Persist sidebar open state ────────────────────────────── */
+
+  const toggleHistory = useCallback((open: boolean) => {
+    setShowHistory(open);
+    window.api.saveConfig({ chatHistorySidebarOpen: open }).catch(() => {});
+  }, []);
+
   /* ── IPC listeners ──────────────────────────────────────────── */
 
   useEffect(() => {
-    initSession();
-    refreshHistory();
 
     window.api.onChatChunk((chunk: string) => {
       streamBuf.current += chunk;
@@ -523,6 +561,7 @@ const ChatView: React.FC = () => {
     setError(null);
     setStreamingContent('');
     streamBuf.current = '';
+    window.api.saveConfig({ lastChatSessionId: sessionId }).catch(() => {});
   }, []);
 
   const deleteSession = useCallback(async (sessionId: string) => {
@@ -639,7 +678,7 @@ const ChatView: React.FC = () => {
       <div className="flex items-center px-3 py-1.5 shrink-0">
         <button
           type="button"
-          onClick={() => { setShowHistory(h => !h); if (!showHistory) refreshHistory(); }}
+          onClick={() => { toggleHistory(!showHistory); if (!showHistory) refreshHistory(); }}
           className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer ${showHistory ? 'bg-primary-bg text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
           aria-label="Toggle history"
         >

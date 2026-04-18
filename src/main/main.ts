@@ -140,7 +140,14 @@ app.whenReady().then(async () => {
   // Initialize chat service
   const chatService = new ChatService(llmService, fileSystemService);
   const chatHistoryService = new ChatHistoryService();
-  if (vaultPath) chatHistoryService.open(vaultPath);
+  if (vaultPath) {
+    try {
+      chatHistoryService.open(vaultPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logToFile(`WARNING: Failed to open chat history DB: ${msg}`);
+    }
+  }
 
   // Register all IPC handlers
   registerIpcHandlers({

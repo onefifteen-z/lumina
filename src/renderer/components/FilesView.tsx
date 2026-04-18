@@ -489,22 +489,22 @@ export function FilesView({
       {/* Context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-50 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[160px]"
+          className="fixed z-50 bg-sidebar-bg border border-border rounded-lg shadow-xl py-1 w-fit"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
           {onOpenInNewTab && (
             <button type="button" onClick={() => { onOpenInNewTab(ctxMenu.filename); setCtxMenu(null); }}
-              className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
+              className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
               Open in new tab
             </button>
           )}
           <button type="button" onClick={() => { window.api.revealInFinder(ctxMenu.filename); setCtxMenu(null); }}
-            className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
+            className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
             Reveal in Finder
           </button>
           {onToggleBookmark && (
             <button type="button" onClick={() => { onToggleBookmark(ctxMenu.filename); setCtxMenu(null); }}
-              className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
+              className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
               {isBookmarked?.(ctxMenu.filename) ? 'Remove bookmark' : 'Bookmark'}
             </button>
           )}

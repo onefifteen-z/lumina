@@ -173,6 +173,11 @@ const SidebarLayout: React.FC<{
   articlesLoading: boolean;
   articlesError: string | null;
   onSelectArticle: (filename: string) => void;
+  selectWithHistory: (filename: string) => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onHistoryBack: () => void;
+  onHistoryForward: () => void;
   onNewArticle: () => void;
   onNewFolder: (folderPath: string) => void;
   currentTheme: 'light' | 'dark' | 'system';
@@ -194,6 +199,11 @@ const SidebarLayout: React.FC<{
   articlesLoading,
   articlesError,
   onSelectArticle,
+  selectWithHistory,
+  canGoBack,
+  canGoForward,
+  onHistoryBack,
+  onHistoryForward,
   onNewArticle,
   onNewFolder,
   currentTheme,
@@ -259,39 +269,7 @@ const SidebarLayout: React.FC<{
       });
     }, [selectedFilename, onSelectArticle]);
 
-    // ── Navigation history ────────────────────────────────────
-    const navStackRef = React.useRef<string[]>([]);
-    const navIndexRef = React.useRef(-1);
-    const [canGoBack, setCanGoBack] = useState(false);
-    const [canGoForward, setCanGoForward] = useState(false);
-
-    const syncNavButtons = () => {
-      setCanGoBack(navIndexRef.current > 0);
-      setCanGoForward(navIndexRef.current < navStackRef.current.length - 1);
-    };
-
-    /** Wraps onSelectArticle to push an entry onto the history stack. */
-    const selectArticleWithHistory = useCallback((filename: string) => {
-      navStackRef.current = navStackRef.current.slice(0, navIndexRef.current + 1);
-      navStackRef.current.push(filename);
-      navIndexRef.current = navStackRef.current.length - 1;
-      syncNavButtons();
-      onSelectArticle(filename);
-    }, [onSelectArticle]);
-
-    const handleHistoryBack = useCallback(() => {
-      if (navIndexRef.current <= 0) return;
-      navIndexRef.current--;
-      syncNavButtons();
-      onSelectArticle(navStackRef.current[navIndexRef.current]);
-    }, [onSelectArticle]);
-
-    const handleHistoryForward = useCallback(() => {
-      if (navIndexRef.current >= navStackRef.current.length - 1) return;
-      navIndexRef.current++;
-      syncNavButtons();
-      onSelectArticle(navStackRef.current[navIndexRef.current]);
-    }, [onSelectArticle]);
+    // Navigation history is managed by AppShell and passed as props.
 
     const handleLeftResizeStart = (e: React.MouseEvent) => {
       e.preventDefault();
@@ -504,7 +482,7 @@ const SidebarLayout: React.FC<{
                       selectedFilename={selectedFilename}
                       loading={articlesLoading}
                       error={articlesError}
-                      onSelectArticle={(f) => { selectArticleWithHistory(f); if (activeView === 'graph') onViewChange('files'); }}
+                      onSelectArticle={(f) => { selectWithHistory(f); if (activeView === 'graph') onViewChange('files'); }}
                       onNewArticle={onNewArticle}
                       onNewFolder={onNewFolder}
                       onOpenInNewTab={openInNewTab}
@@ -520,7 +498,7 @@ const SidebarLayout: React.FC<{
                       )}
                       selectedFilename={selectedFilename}
                       onOpenBookmark={(filename) => {
-                        selectArticleWithHistory(filename);
+                        selectWithHistory(filename);
                         onViewChange('files');
                       }}
                       onRemoveBookmark={onToggleBookmark}
@@ -566,8 +544,8 @@ const SidebarLayout: React.FC<{
                     isBookmarked={toolbarFilename ? bookmarks.has(toolbarFilename) : false}
                     canGoBack={canGoBack}
                     canGoForward={canGoForward}
-                    onBack={handleHistoryBack}
-                    onForward={handleHistoryForward}
+                    onBack={onHistoryBack}
+                    onForward={onHistoryForward}
                     onToggleBookmark={() => toolbarFilename && onToggleBookmark(toolbarFilename)}
                     onToggleEditMode={() => {
                       if (isEditingMode) {
@@ -584,7 +562,7 @@ const SidebarLayout: React.FC<{
                 {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
                 {activeView === 'chat' && editingFilename === null && <ChatView />}
                 {activeView === 'graph' && editingFilename === null && (
-                  <GraphView articles={articles} onSelectArticle={(f) => { selectArticleWithHistory(f); onViewChange('files'); }} />
+                  <GraphView articles={articles} onSelectArticle={(f) => { selectWithHistory(f); onViewChange('files'); }} />
                 )}
                 {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && selectedFilename === '__new__' && (
                   <NewTabPage onNewNote={onNewArticle} onGoToFile={() => onViewChange('search')} onClose={() => closeTab('__new__')} />
@@ -593,7 +571,7 @@ const SidebarLayout: React.FC<{
                   <ArticleBrowser
                     selectedFilename={selectedFilename}
                     onHeadingsChange={onHeadingsChange}
-                    onNavigate={selectArticleWithHistory}
+                    onNavigate={selectWithHistory}
                   />
                 )}
                 {editingFilename !== null && <ArticleEditor />}
@@ -860,11 +838,44 @@ const AppShell: React.FC = () => {
     setEditingFilename(null);
   }, []);
 
+  // ── Navigation history ────────────────────────────────────────
+  const navStackRef = React.useRef<string[]>([]);
+  const navIndexRef = React.useRef(-1);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+
+  const syncNavButtons = () => {
+    setCanGoBack(navIndexRef.current > 0);
+    setCanGoForward(navIndexRef.current < navStackRef.current.length - 1);
+  };
+
+  const selectArticleWithHistory = useCallback((filename: string) => {
+    navStackRef.current = navStackRef.current.slice(0, navIndexRef.current + 1);
+    navStackRef.current.push(filename);
+    navIndexRef.current = navStackRef.current.length - 1;
+    syncNavButtons();
+    handleSelectArticle(filename);
+  }, [handleSelectArticle]);
+
+  const handleHistoryBack = useCallback(() => {
+    if (navIndexRef.current <= 0) return;
+    navIndexRef.current--;
+    syncNavButtons();
+    handleSelectArticle(navStackRef.current[navIndexRef.current]);
+  }, [handleSelectArticle]);
+
+  const handleHistoryForward = useCallback(() => {
+    if (navIndexRef.current >= navStackRef.current.length - 1) return;
+    navIndexRef.current++;
+    syncNavButtons();
+    handleSelectArticle(navStackRef.current[navIndexRef.current]);
+  }, [handleSelectArticle]);
+
   const viewArticle = useCallback((filename: string) => {
-    setSelectedFilename(filename);
+    selectArticleWithHistory(filename);
     setEditingFilename(null);
     setActiveView('files');
-  }, []);
+  }, [selectArticleWithHistory]);
 
   const handleAcceptGenerated = useCallback((content: string) => {
     setGenerateOpen(false);
@@ -941,6 +952,11 @@ const AppShell: React.FC = () => {
               articlesLoading={articlesLoading}
               articlesError={articlesError}
               onSelectArticle={handleSelectArticle}
+              selectWithHistory={selectArticleWithHistory}
+              canGoBack={canGoBack}
+              canGoForward={canGoForward}
+              onHistoryBack={handleHistoryBack}
+              onHistoryForward={handleHistoryForward}
               onNewArticle={createNewArticle}
               onNewFolder={createNewFolder}
               currentTheme={theme}

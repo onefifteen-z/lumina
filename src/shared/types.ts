@@ -84,6 +84,8 @@ export interface AppConfig {
   vaultPath: string;
   llmProvider: LLMProviderConfig | null;
   theme: "light" | "dark" | "system";
+  chatHistorySidebarOpen: boolean;
+  lastChatSessionId: string;
 }
 
 /** Parameters for LLM content assistance actions. */

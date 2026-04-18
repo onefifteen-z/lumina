@@ -11,6 +11,7 @@ import { titleToFilename } from '../../shared/markdown-parser';
 import { useNavigation } from './AppShell';
 import { extractHeadings, addHeadingIds, type TocHeading } from './TocPanel';
 import { AlignLeft, Calendar, List, Tag, X } from 'lucide-react';
+import hljs from 'highlight.js';
 
 // ── Remark pipeline ────────────────────────────────────────────
 
@@ -247,6 +248,14 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
       })
     );
     return () => { cancelled = true; };
+  }, [renderedHtml]);
+
+  // Syntax-highlight code blocks after render
+  useEffect(() => {
+    if (!renderedHtml || !contentRef.current) return;
+    contentRef.current.querySelectorAll<HTMLElement>('pre code').forEach((el) => {
+      hljs.highlightElement(el);
+    });
   }, [renderedHtml]);
 
   // Navigate to a backlinked article by its filename

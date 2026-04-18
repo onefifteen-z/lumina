@@ -13,6 +13,8 @@ interface StoreSchema {
   vaultHistory: VaultEntry[];
   llmProvider: LLMProviderConfig | null;
   theme: "light" | "dark" | "system";
+  chatHistorySidebarOpen: boolean;
+  lastChatSessionId: string;
 }
 
 export class ConfigService {
@@ -27,6 +29,8 @@ export class ConfigService {
         vaultHistory: [],
         llmProvider: null,
         theme: "system",
+        chatHistorySidebarOpen: false,
+        lastChatSessionId: "",
       },
     });
 
@@ -39,6 +43,8 @@ export class ConfigService {
       vaultPath: this.store.get("vaultPath"),
       llmProvider: this.store.get("llmProvider"),
       theme: this.store.get("theme"),
+      chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
+      lastChatSessionId: this.store.get("lastChatSessionId"),
     };
   }
 
@@ -52,6 +58,12 @@ export class ConfigService {
     }
     if (partial.theme !== undefined) {
       this.store.set("theme", partial.theme);
+    }
+    if (partial.chatHistorySidebarOpen !== undefined) {
+      this.store.set("chatHistorySidebarOpen", partial.chatHistorySidebarOpen);
+    }
+    if (partial.lastChatSessionId !== undefined) {
+      this.store.set("lastChatSessionId", partial.lastChatSessionId);
     }
   }
 

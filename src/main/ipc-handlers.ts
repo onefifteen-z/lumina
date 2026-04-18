@@ -84,7 +84,11 @@ export function registerIpcHandlers(services: {
     });
 
     chat?.setFileSystemService(fileSystem);
-    chatHistory?.open(vaultPath);
+    try {
+      chatHistory?.open(vaultPath);
+    } catch (err) {
+      console.warn("Failed to open chat history DB:", err);
+    }
   }
 
   // ── Article CRUD ─────────────────────────────────────────────────

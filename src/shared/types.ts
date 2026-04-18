@@ -114,6 +114,14 @@ export interface ChatSession {
   createdAt: string; // ISO 8601
 }
 
+/** A chat history list entry (no messages). */
+export interface ChatHistoryEntry {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Typed IPC bridge API exposed to the renderer via contextBridge. */
 export interface WikiAPI {
   // Article CRUD
@@ -172,6 +180,12 @@ export interface WikiAPI {
   onChatEnd(callback: (error?: string) => void): void;
   onChatWarning(callback: (message: string) => void): void;
   removeChatListeners(): void;
+
+  // Chat history
+  listChatSessions(): Promise<ChatHistoryEntry[]>;
+  getChatHistory(sessionId: string): Promise<(ChatSession & { title: string }) | null>;
+  saveChatSession(session: ChatSession, title?: string): Promise<void>;
+  deleteChatSession(sessionId: string): Promise<void>;
 
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;

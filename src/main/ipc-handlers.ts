@@ -13,6 +13,7 @@ import { SearchIndexService } from "./services/search-index-service";
 import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
+import { ChatHistoryService } from "./services/chat-history-service";
 
 // Track whether the renderer has unsaved changes
 let rendererHasUnsavedChanges = false;
@@ -33,12 +34,14 @@ export function registerIpcHandlers(services: {
   config: ConfigService;
   mainWindow: BrowserWindow | null;
   chat?: ChatService | null;
+  chatHistory?: ChatHistoryService | null;
 }): void {
   let fileSystem = services.fileSystem;
   let searchIndex = services.searchIndex;
   const { config } = services;
   let llm = services.llm;
   const chat = services.chat ?? null;
+  const chatHistory = services.chatHistory ?? null;
 
   /**
    * Rebuild the LLM service from the current persisted config and API key,
@@ -81,6 +84,7 @@ export function registerIpcHandlers(services: {
     });
 
     chat?.setFileSystemService(fileSystem);
+    chatHistory?.open(vaultPath);
   }
 
   // ── Article CRUD ─────────────────────────────────────────────────
@@ -382,6 +386,24 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("wiki:getChatSession", async () => {
     if (!chat) return null;
     return chat.getSession();
+  });
+
+  // ── Chat History ─────────────────────────────────────────────────
+
+  ipcMain.handle("wiki:listChatSessions", async () => {
+    return chatHistory?.listSessions() ?? [];
+  });
+
+  ipcMain.handle("wiki:getChatHistory", async (_event, sessionId: string) => {
+    return chatHistory?.getSession(sessionId) ?? null;
+  });
+
+  ipcMain.handle("wiki:saveChatSession", async (_event, session: any, title?: string) => {
+    chatHistory?.saveSession(session, title);
+  });
+
+  ipcMain.handle("wiki:deleteChatSession", async (_event, sessionId: string) => {
+    chatHistory?.deleteSession(sessionId);
   });
 
   // ── Config ───────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import { SearchIndexService } from "./services/search-index-service";
 import { LLMService } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
+import { ChatHistoryService } from "./services/chat-history-service";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -138,6 +139,8 @@ app.whenReady().then(async () => {
 
   // Initialize chat service
   const chatService = new ChatService(llmService, fileSystemService);
+  const chatHistoryService = new ChatHistoryService();
+  if (vaultPath) chatHistoryService.open(vaultPath);
 
   // Register all IPC handlers
   registerIpcHandlers({
@@ -147,6 +150,7 @@ app.whenReady().then(async () => {
     config: configService,
     mainWindow: mainWindow,
     chat: chatService,
+    chatHistory: chatHistoryService,
   });
 
   // Register vault-file:// protocol to serve local vault files (e.g. PDFs).

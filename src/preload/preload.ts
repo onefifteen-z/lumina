@@ -299,6 +299,24 @@ const api: WikiAPI = {
     ipcRenderer.removeAllListeners("wiki:chatWarning");
   },
 
+  // ── Chat History ─────────────────────────────────────────────────
+
+  listChatSessions() {
+    return ipcRenderer.invoke("wiki:listChatSessions");
+  },
+
+  getChatHistory(sessionId: string) {
+    return ipcRenderer.invoke("wiki:getChatHistory", sessionId);
+  },
+
+  saveChatSession(session: any, title?: string) {
+    return ipcRenderer.invoke("wiki:saveChatSession", session, title);
+  },
+
+  deleteChatSession(sessionId: string) {
+    return ipcRenderer.invoke("wiki:deleteChatSession", sessionId);
+  },
+
   // ── Lifecycle ────────────────────────────────────────────────────
 
   onUnsavedChanges(callback: (hasChanges: boolean) => void) {

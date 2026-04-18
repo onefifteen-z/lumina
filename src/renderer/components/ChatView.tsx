@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SquarePen, RefreshCw, WifiOff } from 'lucide-react';
-import type { ChatMessage, ChatSession } from '../../shared/types';
+import { SquarePen, RefreshCw, WifiOff, History, Trash2 } from 'lucide-react';
+import type { ChatMessage, ChatSession, ChatHistoryEntry } from '../../shared/types';
 import { MessageList } from './chat/MessageList';
 import { ChatInput } from './chat/ChatInput';
 import { CodeBlock } from './chat/CodeBlock';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useNavigation } from './AppShell';
 
 /* ── Markdown-ish rendering ─────────────────────────────────── */
 
@@ -199,7 +200,7 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
  * Handles **bold**, *italic*, and `inline code`. Unclosed markers are treated as plain text.
  * Returns an array of React nodes.
  */
-export function applyInlineFormatting(text: string): React.ReactNode[] {
+export function applyInlineFormatting(text: string, onWikilinkClick?: (target: string) => void): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   // Match **bold**, *italic* (not preceded/followed by *), `code`, [[wikilink]], or [ ]/[x] checkbox
   const inlineRegex = /(\*\*(.+?)\*\*|\*([^*]+)\*|`([^`]+)`|\[\[([^\]]+)\]\]|\[([ xX])\])/g;
@@ -227,10 +228,15 @@ export function applyInlineFormatting(text: string): React.ReactNode[] {
       );
     } else if (match[5] !== undefined) {
       // [[wikilink]]
+      const target = match[5];
       nodes.push(
-        <span key={key++} className="text-accent font-medium">
-          {match[5]}
-        </span>,
+        <button
+          key={key++}
+          onClick={() => onWikilinkClick?.(target)}
+          className="text-accent font-medium hover:underline cursor-pointer focus:outline-none"
+        >
+          {target}
+        </button>,
       );
     } else if (match[6] !== undefined) {
       // Checkbox [ ] or [x]
@@ -251,7 +257,7 @@ export function applyInlineFormatting(text: string): React.ReactNode[] {
 }
 
 /** Render a text segment with line-by-line markdown parsing. */
-const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
+const MarkdownText: React.FC<{ content: string; onWikilinkClick?: (target: string) => void }> = ({ content, onWikilinkClick }) => {
   const blocks = parseMarkdownLines(content);
 
   if (blocks.length === 0) return null;
@@ -273,7 +279,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
                   : 'text-sm font-semibold leading-snug text-text-primary';
             return (
               <Tag key={i} className={cls}>
-                {applyInlineFormatting(block.content)}
+                {applyInlineFormatting(block.content, onWikilinkClick)}
               </Tag>
             );
           }
@@ -282,7 +288,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
               <ul key={i} className="text-sm space-y-1 pl-5" style={{ listStyleType: 'disc' }}>
                 {block.items.map((item, j) => (
                   <li key={j} className="break-words leading-relaxed pl-0.5">
-                    {applyInlineFormatting(item)}
+                    {applyInlineFormatting(item, onWikilinkClick)}
                   </li>
                 ))}
               </ul>
@@ -292,7 +298,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
               <ol key={i} className="text-sm space-y-1 pl-5" style={{ listStyleType: 'decimal' }}>
                 {block.items.map((item, j) => (
                   <li key={j} className="break-words leading-relaxed pl-0.5">
-                    {applyInlineFormatting(item)}
+                    {applyInlineFormatting(item, onWikilinkClick)}
                   </li>
                 ))}
               </ol>
@@ -306,7 +312,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
                       <tr className="border-b border-border bg-[rgba(255,255,255,0.04)]">
                         {block.headers.map((h, j) => (
                           <th key={j} className="px-3 py-2 text-left font-semibold text-text-primary whitespace-nowrap">
-                            {applyInlineFormatting(h)}
+                            {applyInlineFormatting(h, onWikilinkClick)}
                           </th>
                         ))}
                       </tr>
@@ -317,7 +323,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
                       <tr key={ri} className="border-b border-border last:border-b-0">
                         {row.map((cell, ci) => (
                           <td key={ci} className="px-3 py-2 text-text-secondary break-words">
-                            {applyInlineFormatting(cell)}
+                            {applyInlineFormatting(cell, onWikilinkClick)}
                           </td>
                         ))}
                       </tr>
@@ -329,7 +335,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
           case 'paragraph':
             return (
               <p key={i} className="text-sm leading-relaxed break-words">
-                {applyInlineFormatting(block.content)}
+                {applyInlineFormatting(block.content, onWikilinkClick)}
               </p>
             );
           default:
@@ -341,7 +347,7 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
 };
 
 /** Render assistant message content with code blocks and text. */
-export const AssistantContent: React.FC<{ content: string }> = ({ content }) => {
+export const AssistantContent: React.FC<{ content: string; onWikilinkClick?: (target: string) => void }> = ({ content, onWikilinkClick }) => {
   const segments = parseMarkdownSegments(content);
 
   return (
@@ -350,7 +356,7 @@ export const AssistantContent: React.FC<{ content: string }> = ({ content }) => 
         seg.type === 'code' ? (
           <CodeBlock key={i} code={seg.content} language={seg.language} />
         ) : (
-          <MarkdownText key={i} content={seg.content} />
+          <MarkdownText key={i} content={seg.content} onWikilinkClick={onWikilinkClick} />
         ),
       )}
     </div>
@@ -384,10 +390,32 @@ const ChatView: React.FC = () => {
   const [error, setError] = useState<ChatError | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
+  const [historyList, setHistoryList] = useState<ChatHistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const { isOffline } = useNetworkStatus();
+  const { viewArticle } = useNavigation();
   const sessionRef = useRef<ChatSession | null>(null);
   const streamBuf = useRef('');
+
+  const handleWikilinkClick = useCallback(async (target: string) => {
+    try {
+      const resolved = await window.api.resolveWikilink(target);
+      if (resolved.exists && resolved.filename) {
+        viewArticle(resolved.filename);
+      }
+    } catch { /* ignore */ }
+  }, [viewArticle]);
+
+  const refreshHistory = useCallback(async () => {
+    try { setHistoryList(await window.api.listChatSessions()); } catch { /* ignore */ }
+  }, []);
+
+  const persistSession = useCallback(() => {
+    const s = sessionRef.current;
+    if (!s || s.messages.length === 0) return;
+    window.api.saveChatSession(s).then(refreshHistory);
+  }, [refreshHistory]);
 
   /* ── Session initialisation ─────────────────────────────────── */
 
@@ -410,6 +438,7 @@ const ChatView: React.FC = () => {
 
   useEffect(() => {
     initSession();
+    refreshHistory();
 
     window.api.onChatChunk((chunk: string) => {
       streamBuf.current += chunk;
@@ -442,6 +471,8 @@ const ChatView: React.FC = () => {
 
       setStreamingContent('');
       streamBuf.current = '';
+      // Auto-persist to history
+      setTimeout(() => persistSession(), 100);
     });
 
     window.api.onChatWarning((msg: string) => {
@@ -482,6 +513,23 @@ const ChatView: React.FC = () => {
     setShowWelcome(true);
     await initSession();
   }, [isGenerating, initSession]);
+
+  const loadSession = useCallback(async (sessionId: string) => {
+    const data = await window.api.getChatHistory(sessionId);
+    if (!data) return;
+    sessionRef.current = { id: data.id, systemPrompt: data.systemPrompt, messages: data.messages, createdAt: data.createdAt };
+    setMessages(data.messages.filter((m) => m.role !== 'system'));
+    setShowWelcome(false);
+    setError(null);
+    setStreamingContent('');
+    streamBuf.current = '';
+  }, []);
+
+  const deleteSession = useCallback(async (sessionId: string) => {
+    await window.api.deleteChatSession(sessionId);
+    refreshHistory();
+    if (sessionRef.current?.id === sessionId) handleNewSession();
+  }, [refreshHistory]);
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -549,7 +597,55 @@ const ChatView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-main-bg">
+    <div className="flex flex-1 min-h-0">
+      {/* History sidebar */}
+      {showHistory && (
+        <div className="w-56 shrink-0 border-r border-border bg-sidebar-bg flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+            <span className="text-xs font-semibold text-text-primary">History</span>
+            <button type="button" onClick={handleNewSession} className="text-text-secondary hover:text-text-primary cursor-pointer" aria-label="New chat">
+              <SquarePen size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto py-1">
+            {historyList.length === 0 && (
+              <p className="px-3 py-4 text-xs text-text-secondary">No history yet</p>
+            )}
+            {historyList.map((entry) => (
+              <div
+                key={entry.id}
+                className={`group flex items-center gap-1 px-3 py-2 text-xs cursor-pointer transition-colors ${sessionRef.current?.id === entry.id ? 'bg-primary-bg text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
+                onClick={() => loadSession(entry.id)}
+              >
+                <span className="truncate flex-1">{entry.title || 'Untitled'}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); deleteSession(entry.id); }}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-400 transition-opacity cursor-pointer"
+                  aria-label="Delete"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main chat area */}
+      <div className="flex flex-col flex-1 min-h-0 bg-main-bg">
+
+      {/* History toggle */}
+      <div className="flex items-center px-3 py-1.5 shrink-0">
+        <button
+          type="button"
+          onClick={() => { setShowHistory(h => !h); if (!showHistory) refreshHistory(); }}
+          className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer ${showHistory ? 'bg-primary-bg text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
+          aria-label="Toggle history"
+        >
+          <History size={16} />
+        </button>
+      </div>
 
       {/* Offline banner */}
       {isOffline && (
@@ -599,7 +695,7 @@ const ChatView: React.FC = () => {
             messages={messages}
             streamingContent={streamingContent}
             isGenerating={isGenerating}
-            renderAssistantContent={(content) => <AssistantContent content={content} />}
+            renderAssistantContent={(content) => <AssistantContent content={content} onWikilinkClick={handleWikilinkClick} />}
             onRegenerate={handleRetry}
           />
         )}
@@ -633,6 +729,7 @@ const ChatView: React.FC = () => {
         isOffline={isOffline}
         colStyle={colStyle}
       />
+      </div>
     </div>
   );
 };

@@ -53,6 +53,8 @@ export interface NavigationContext {
   generatedContent: string | null;
   /** Clear the generated content after it's been consumed */
   clearGeneratedContent: () => void;
+  /** Switch to the files view and select the given article for viewing */
+  viewArticle: (filename: string) => void;
 }
 
 const NavContext = createContext<NavigationContext>({
@@ -63,6 +65,7 @@ const NavContext = createContext<NavigationContext>({
   createNewArticle: () => { },
   generatedContent: null,
   clearGeneratedContent: () => { },
+  viewArticle: () => { },
 });
 
 export const useNavigation = () => useContext(NavContext);
@@ -205,7 +208,7 @@ const SidebarLayout: React.FC<{
   hasClaudeMd,
 }) => {
     const { open, setOpen } = useSidebar();
-    const { editArticle, navigate } = useNavigation();
+    const { editArticle, navigate, viewArticle } = useNavigation();
 
     // Derive config files from articles for the ConfigMenu
     const configFiles = useMemo(() => getConfigFiles(articles), [articles]);
@@ -486,7 +489,7 @@ const SidebarLayout: React.FC<{
             currentTheme={currentTheme}
             onToggleTheme={onToggleTheme}
             configFiles={configFiles}
-            onSelectConfigFile={selectArticleWithHistory}
+            onSelectConfigFile={viewArticle}
             hasClaudeMd={hasClaudeMd}
           />
 
@@ -501,7 +504,7 @@ const SidebarLayout: React.FC<{
                       selectedFilename={selectedFilename}
                       loading={articlesLoading}
                       error={articlesError}
-                      onSelectArticle={selectArticleWithHistory}
+                      onSelectArticle={(f) => { selectArticleWithHistory(f); if (activeView === 'graph') onViewChange('files'); }}
                       onNewArticle={onNewArticle}
                       onNewFolder={onNewFolder}
                       onOpenInNewTab={openInNewTab}
@@ -857,6 +860,12 @@ const AppShell: React.FC = () => {
     setEditingFilename(null);
   }, []);
 
+  const viewArticle = useCallback((filename: string) => {
+    setSelectedFilename(filename);
+    setEditingFilename(null);
+    setActiveView('files');
+  }, []);
+
   const handleAcceptGenerated = useCallback((content: string) => {
     setGenerateOpen(false);
     setEditingFilename('');
@@ -905,6 +914,7 @@ const AppShell: React.FC = () => {
     createNewArticle,
     generatedContent,
     clearGeneratedContent,
+    viewArticle,
   };
 
   // Still loading config
@@ -964,7 +974,7 @@ const AppShell: React.FC = () => {
         <SearchPopup
           open={searchPopupOpen}
           onClose={() => setSearchPopupOpen(false)}
-          onSelectArticle={handleSelectArticle}
+          onSelectArticle={viewArticle}
         />
 
         {/* Vault Init Dialog */}

@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow } from "electron";
+import { shell } from "electron";
 import type {
   ArticleFile,
   ArticleMeta,
@@ -186,6 +187,15 @@ export function registerIpcHandlers(services: {
     async (_event, filename: string): Promise<string> => {
       if (!fileSystem) throw new Error("No vault is open.");
       return fileSystem.readRawFile(filename);
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:revealInFinder",
+    async (_event, filename: string): Promise<void> => {
+      if (!fileSystem) throw new Error("No vault is open.");
+      const abs = require("path").join(fileSystem.getVaultPath(), filename);
+      shell.showItemInFolder(abs);
     },
   );
 

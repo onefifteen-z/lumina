@@ -504,6 +504,9 @@ const SidebarLayout: React.FC<{
                       onSelectArticle={selectArticleWithHistory}
                       onNewArticle={onNewArticle}
                       onNewFolder={onNewFolder}
+                      onOpenInNewTab={openInNewTab}
+                      onToggleBookmark={onToggleBookmark}
+                      isBookmarked={(f) => bookmarks.has(f)}
                     />
                   )}
                   {activeView === 'bookmarks' && (

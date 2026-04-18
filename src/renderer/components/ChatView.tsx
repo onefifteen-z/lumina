@@ -115,16 +115,30 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
         tableLines.push(lines[i]);
         i++;
       }
-      // Need at least header + separator (2 lines)
-      if (tableLines.length >= 2 && /^\s*\|[\s:]*-+/.test(tableLines[1])) {
-        const parseCells = (line: string) =>
-          line.split('|').slice(1, -1).map((c) => c.trim());
+      const parseCells = (line: string) =>
+        line.split('|').slice(1, -1).map((c) => c.trim());
+      // A separator row contains only |, -, :, and spaces
+      const isSep = (l: string) => /^\s*\|[\s|\-:]+\|\s*$/.test(l) && l.includes('-');
+      const sepIdx = tableLines.findIndex(isSep);
+      if (sepIdx >= 1) {
+        // Standard: rows before sep are headers (usually one), rows after are data
+        const headers = parseCells(tableLines[sepIdx - 1]);
+        const rows = tableLines.slice(sepIdx + 1).map(parseCells);
+        blocks.push({ type: 'table', headers, rows });
+        continue;
+      } else if (sepIdx === 0) {
+        // Separator is first — header was on the preceding paragraph line; render headerless
+        const rows = tableLines.slice(1).map(parseCells);
+        blocks.push({ type: 'table', headers: [], rows });
+        continue;
+      } else if (tableLines.length >= 2) {
+        // No separator found — treat first row as header, rest as data
         const headers = parseCells(tableLines[0]);
-        const rows = tableLines.slice(2).map(parseCells);
+        const rows = tableLines.slice(1).map(parseCells);
         blocks.push({ type: 'table', headers, rows });
         continue;
       }
-      // Not a valid table — fall through as paragraphs
+      // Not enough lines — fall through as paragraphs
       for (const tl of tableLines) {
         const joined = tl.trim();
         if (joined) blocks.push({ type: 'paragraph', content: joined });
@@ -287,15 +301,17 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
             return (
               <div key={i} className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-[rgba(255,255,255,0.04)]">
-                      {block.headers.map((h, j) => (
-                        <th key={j} className="px-3 py-2 text-left font-semibold text-text-primary whitespace-nowrap">
-                          {applyInlineFormatting(h)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
+                  {block.headers.length > 0 && (
+                    <thead>
+                      <tr className="border-b border-border bg-[rgba(255,255,255,0.04)]">
+                        {block.headers.map((h, j) => (
+                          <th key={j} className="px-3 py-2 text-left font-semibold text-text-primary whitespace-nowrap">
+                            {applyInlineFormatting(h)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                  )}
                   <tbody>
                     {block.rows.map((row, ri) => (
                       <tr key={ri} className="border-b border-border last:border-b-0">

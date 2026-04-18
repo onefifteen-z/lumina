@@ -125,6 +125,7 @@ export interface WikiAPI {
   createFolder(relativePath: string): Promise<void>;
   getAbsolutePath(filename: string): Promise<string>;
   readFile(filename: string): Promise<string>;
+  revealInFinder(filename: string): Promise<void>;
 
   // Search
   search(query: string): Promise<SearchResult[]>;

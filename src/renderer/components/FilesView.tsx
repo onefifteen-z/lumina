@@ -116,6 +116,7 @@ interface TreeNodeProps {
   sortMode: "modified" | "alpha";
   onSelectArticle: (filename: string) => void;
   onToggleFolder: (path: string) => void;
+  onContextMenu?: (e: React.MouseEvent, filename: string) => void;
 }
 
 const TreeNodeRow: React.FC<TreeNodeProps> = ({
@@ -126,6 +127,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   sortMode,
   onSelectArticle,
   onToggleFolder,
+  onContextMenu,
 }) => {
   const indent = 6 + depth * 16;
 
@@ -137,6 +139,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         type="button"
         title={node.article.title}
         onClick={() => onSelectArticle(node.article.filename)}
+        onContextMenu={(e) => onContextMenu?.(e, node.article.filename)}
         style={{ paddingLeft: `${indent + 18}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
           "flex items-center gap-1.5 w-full text-left truncate transition-colors",
@@ -192,6 +195,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
               sortMode={sortMode}
               onSelectArticle={onSelectArticle}
               onToggleFolder={onToggleFolder}
+              onContextMenu={onContextMenu}
             />
           ))}
         </div>
@@ -210,6 +214,9 @@ export interface FilesViewProps {
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
   onNewFolder: (folderPath: string) => void;
+  onOpenInNewTab?: (filename: string) => void;
+  onToggleBookmark?: (filename: string) => void;
+  isBookmarked?: (filename: string) => boolean;
 }
 
 // ── TabBar (inline) ────────────────────────────────────────────
@@ -294,7 +301,24 @@ export function FilesView({
   onSelectArticle,
   onNewArticle,
   onNewFolder,
+  onOpenInNewTab,
+  onToggleBookmark,
+  isBookmarked,
 }: FilesViewProps) {
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; filename: string } | null>(null);
+
+  const handleCtx = useCallback((e: React.MouseEvent, filename: string) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, filename });
+  }, []);
+
+  // Close context menu on any click
+  React.useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [ctxMenu]);
   const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
   const [sortMode, setSortMode] = useState<"modified" | "alpha">("modified");
 
@@ -457,9 +481,35 @@ export function FilesView({
               sortMode={sortMode}
               onSelectArticle={handleSelectArticle}
               onToggleFolder={toggleFolder}
+              onContextMenu={handleCtx}
             />
           ))}
       </div>
+
+      {/* Context menu */}
+      {ctxMenu && (
+        <div
+          className="fixed z-50 bg-surface border border-border rounded-lg shadow-xl py-1 min-w-[160px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          {onOpenInNewTab && (
+            <button type="button" onClick={() => { onOpenInNewTab(ctxMenu.filename); setCtxMenu(null); }}
+              className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
+              Open in new tab
+            </button>
+          )}
+          <button type="button" onClick={() => { window.api.revealInFinder(ctxMenu.filename); setCtxMenu(null); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
+            Reveal in Finder
+          </button>
+          {onToggleBookmark && (
+            <button type="button" onClick={() => { onToggleBookmark(ctxMenu.filename); setCtxMenu(null); }}
+              className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
+              {isBookmarked?.(ctxMenu.filename) ? 'Remove bookmark' : 'Bookmark'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

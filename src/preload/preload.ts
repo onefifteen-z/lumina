@@ -48,6 +48,10 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:readFile", filename);
   },
 
+  revealInFinder(filename: string) {
+    return ipcRenderer.invoke("wiki:revealInFinder", filename);
+  },
+
   // ── Search ───────────────────────────────────────────────────────
 
   search(query: string) {

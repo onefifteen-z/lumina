@@ -44,7 +44,7 @@ function makeArticle(overrides: Partial<ArticleMeta> = {}): ArticleMeta {
 
 const wikiArticle = makeArticle({
   title: "Wiki Page",
-  filename: "wiki-page.md",
+  filename: "wiki/wiki-page.md",
   tags: ["note"],
   created: "2024-01-01",
   modified: "2024-01-02",
@@ -52,7 +52,7 @@ const wikiArticle = makeArticle({
 
 const rawArticle = makeArticle({
   title: "",
-  filename: "raw-file.md",
+  filename: "raw/raw-file.md",
   tags: [],
 });
 
@@ -110,13 +110,13 @@ describe("Tab filtering integration", () => {
   it("wiki tab shows only wiki-classified articles", () => {
     const result = filterArticlesForTab(mixedArticles, "wiki");
     expect(result).toHaveLength(1);
-    expect(result[0].filename).toBe("wiki-page.md");
+    expect(result[0].filename).toBe("wiki/wiki-page.md");
   });
 
   it("raw tab shows only raw-classified articles", () => {
     const result = filterArticlesForTab(mixedArticles, "raw");
     expect(result).toHaveLength(1);
-    expect(result[0].filename).toBe("raw-file.md");
+    expect(result[0].filename).toBe("raw/raw-file.md");
   });
 
   it("config files are excluded from both tabs", () => {

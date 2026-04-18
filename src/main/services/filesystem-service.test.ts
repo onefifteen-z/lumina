@@ -96,7 +96,9 @@ describe("scanVault", () => {
       makeArticleRaw("Article", [], "Body"),
     );
     const result = await service.scanVault();
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
+    expect(result.find((a) => a.filename === "article.md")?.title).toBe("Article");
+    expect(result.find((a) => a.filename === "readme.txt")?.title).toBe("readme.txt");
   });
 });
 

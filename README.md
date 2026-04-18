@@ -1,8 +1,39 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="Lumina" width="120" />
+
 # Lumina
 
-A local-first Electron desktop app providing an AI-powered personal wiki with Obsidian-compatible Markdown storage. Features a modern Obsidian-inspired UI with amber theme, graph view, LLM chat, and full offline support.
+**A local-first, AI-powered personal wiki for your desktop**
 
-## Getting Started
+*Own your knowledge. Think with AI. Never leave your machine.*
+
+[![Electron](https://img.shields.io/badge/Electron-36.x-47848F?logo=electron&logoColor=white)](https://electronjs.org)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-D4731A)](LICENSE)
+
+</div>
+
+---
+
+Lumina is a desktop wiki that stores everything as plain Markdown files on your disk — fully compatible with Obsidian vaults — and layers AI assistance on top. Generate articles, chat with your notes, summarize or expand content, all through any LLM endpoint you control.
+
+## ✨ Highlights
+
+| | |
+|---|---|
+| **Obsidian-compatible vault** | Markdown + frontmatter, `[[wikilinks]]`, `![[embeds]]`, and tags — open your existing vault directly |
+| **LLM chat & assist** | Multi-turn chat with streaming, plus inline summarize / expand / refine on any selection |
+| **Instant full-text search** | FlexSearch-powered search with tag filtering, accessible via `⌘K` popup |
+| **Interactive graph** | D3 force-directed wikilink graph to explore connections visually |
+| **Multi-vault** | Switch between vaults instantly; each vault remembers its own settings |
+| **PDF & HTML viewer** | Browse PDFs and styled HTML files directly inside the app |
+| **Light & dark mode** | Amber-accented Obsidian-inspired theme with system preference support |
+| **100% local** | No cloud sync, no telemetry — your notes never leave your machine |
+
+## 🚀 Getting Started
 
 ```bash
 git clone <repository-url>
@@ -11,35 +42,43 @@ npm install
 npm run dev
 ```
 
-## Project Structure
+On first launch, select a folder as your vault. Lumina will watch it for changes and keep the file tree in sync.
 
-- `src/shared/` — Shared types and Markdown parser utilities
-- `src/main/` — Electron main process (services, IPC handlers)
-  - `src/main/services/filesystem-service.ts` — Vault filesystem operations (scan, read, write, delete, watch, folder creation)
-  - `src/main/services/search-index-service.ts` — Full-text search and tag-based filtering via FlexSearch
-  - `src/main/services/llm-service.ts` — LLM provider integration (streaming generation, summarize, expand, refine, chat)
-  - `src/main/services/chat-service.ts` — Multi-turn chat session management with system prompt loading
-  - `src/main/services/config-service.ts` — App configuration persistence (electron-store) and secure API key storage (safeStorage)
-- `src/renderer/` — React-based renderer UI
-  - `src/renderer/components/AppShell.tsx` — Main layout shell with sidebar, navigation context, theme support, and resizable panels
-  - `src/renderer/components/IconRail.tsx` — Narrow icon rail for view switching (files, search, bookmarks, chat, graph, settings)
-  - `src/renderer/components/FilesView.tsx` — File tree with Wiki/Raw tabs, toolbar (new MD, new folder, sort, expand/collapse)
-  - `src/renderer/components/SearchView.tsx` — Sidebar search with debounced full-text and tag-based search
-  - `src/renderer/components/BookmarksView.tsx` — Bookmarked articles view
-  - `src/renderer/components/GraphView.tsx` — Interactive wikilink graph visualization (D3 force-directed)
-  - `src/renderer/components/ChatView.tsx` — LLM chat page with streaming Markdown rendering
-  - `src/renderer/components/chat/` — Chat sub-components (MessageList, ChatInput, CodeBlock, FoxThinkingIndicator)
-  - `src/renderer/components/ArticleBrowser.tsx` — Article viewer with remark rendering, metadata header, and backlinks
-  - `src/renderer/components/ArticleEditor.tsx` — CodeMirror 6 editor with Obsidian syntax highlighting and wikilink autocomplete
-  - `src/renderer/components/SettingsPanel.tsx` — LLM config, vault folder selector, theme picker, connection testing
-  - `src/renderer/components/ContentToolbar.tsx` — Article action toolbar (edit, bookmark, delete)
-  - `src/renderer/components/VaultSwitcher.tsx` — Multi-vault switching with history
-  - `src/renderer/components/SearchPopup.tsx` — Global search popup (Cmd/Ctrl+K)
-  - `src/renderer/components/ConfigMenu.tsx` — Config file access dropdown
-  - `src/renderer/components/TocPanel.tsx` — Table of contents right panel
-  - `src/renderer/components/ui/` — Vendored shadcn/ui components (Button, Tooltip, Sidebar)
-- `src/main/ipc-handlers.ts` — IPC handler registration wiring services to renderer API
-- `src/preload/` — Typed preload script exposing WikiAPI via contextBridge
+To configure LLM features, open **Settings** and enter your endpoint URL, API key, and model name. Supports any OpenAI-compatible API including LiteLLM proxies, Gemini, and Claude.
+
+## 🏗 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Desktop shell | Electron |
+| UI | React 18 + TypeScript + Tailwind CSS v4 |
+| Editor | CodeMirror 6 with Obsidian syntax theme |
+| Graph | D3.js force-directed layout |
+| Search | FlexSearch |
+| Icons | Lucide React |
+| Components | shadcn/ui (vendored) |
+| Testing | Vitest + fast-check (242 tests) |
+
+## 📂 Project Layout
+
+```
+src/
+├── main/                   Electron main process
+│   └── services/           FileSystem · Search · LLM · Chat · Config
+├── renderer/               React UI
+│   └── components/         AppShell · FilesView · ArticleBrowser · ChatView · …
+├── preload/                contextBridge API surface (WikiAPI)
+└── shared/                 Types + Markdown parser
+assets/                     App icon (SVG + PNG)
+```
+
+## 🧪 Testing
+
+```bash
+npm test
+```
+
+242 tests across 16 suites — Markdown parser, filesystem service, search index, remark plugins, network status, file classification, chat components, and more.
 
 ## Features
 
@@ -78,25 +117,6 @@ npm run dev
 - File watcher integration for external change notifications
 - Fatal error dialogs, error logging to file, corrupted file fallback
 
-## Testing
-
-242 tests across 16 suites covering: markdown parser, filesystem service, search index service, remark plugins, network status, icon rail, file classification, chat components, and fox thinking indicator.
-
-```bash
-npm test
-```
-
-## Tech Stack
-
-- Electron (main + renderer + preload)
-- React 18 with TypeScript
-- Tailwind CSS v4 + shadcn/ui (vendored)
-- CodeMirror 6 (editor)
-- D3.js (graph visualization)
-- FlexSearch (full-text search)
-- Lucide React (icons)
-- Vitest + fast-check (testing)
-
-## License
+## 📄 License
 
 MIT

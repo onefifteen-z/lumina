@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, protocol, net } from "electron";
 import path from "path";
+import { pathToFileURL } from "url";
 import fs from "fs";
 import { registerIpcHandlers, hasUnsavedChanges } from "./ipc-handlers";
 import { FileSystemService } from "./services/filesystem-service";
@@ -79,6 +80,12 @@ function handleFatalError(error: unknown, context: string): never {
   process.exit(1);
 }
 
+// ── Custom protocol for serving vault files ────────────────────
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: "vault-file", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+
 // ── App startup ────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -140,6 +147,14 @@ app.whenReady().then(async () => {
     config: configService,
     mainWindow: mainWindow,
     chat: chatService,
+  });
+
+  // Register vault-file:// protocol to serve local vault files (e.g. PDFs).
+  // URL format: vault-file://local/abs/path/to/file (explicit host avoids standard-scheme empty-host normalization)
+  protocol.handle("vault-file", (request) => {
+    const { pathname } = new URL(request.url);
+    const filePath = decodeURIComponent(pathname);
+    return net.fetch(pathToFileURL(filePath).toString());
   });
 
   createWindow();

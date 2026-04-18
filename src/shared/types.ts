@@ -123,6 +123,8 @@ export interface WikiAPI {
   deleteArticle(title: string): Promise<void>;
   articleExists(title: string): Promise<boolean>;
   createFolder(relativePath: string): Promise<void>;
+  getAbsolutePath(filename: string): Promise<string>;
+  readFile(filename: string): Promise<string>;
 
   // Search
   search(query: string): Promise<SearchResult[]>;

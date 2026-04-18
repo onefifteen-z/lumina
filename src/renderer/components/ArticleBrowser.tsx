@@ -43,6 +43,119 @@ const formatDate = (iso: string): string => {
   }
 };
 
+// ── Simple Markdown inside HTML ────────────────────────────────
+
+/** Convert basic Markdown syntax within HTML string (for note content). */
+function simpleMarkdown(html: string): string {
+  // Process text inside XML/HTML tags: find text between > and <
+  return html.replace(/(>)([^<]+)(<)/gs, (_m, open, text, close) => {
+    const processed = processTextBlock(text);
+    return `${open}${processed}${close}`;
+  });
+}
+
+function processTextBlock(text: string): string {
+  // Normalize inline list patterns: "text: - a - b - c" → "text:\n- a\n- b\n- c"
+  const normalized = text.replace(/\s+-\s+/g, '\n- ');
+  const lines = normalized.split('\n');
+  const out: string[] = [];
+  let inList = false;
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push('<br/>');
+      continue;
+    }
+
+    // List item: - or •
+    const listMatch = trimmed.match(/^[-•]\s+(.+)/);
+    if (listMatch) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inlineFmt(listMatch[1])}</li>`);
+      continue;
+    }
+
+    // Numbered list: 1.
+    const olMatch = trimmed.match(/^\d+\.\s+(.+)/);
+    if (olMatch) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inlineFmt(olMatch[1])}</li>`);
+      continue;
+    }
+
+    if (inList) { out.push('</ul>'); inList = false; }
+    out.push(inlineFmt(trimmed));
+  }
+  if (inList) out.push('</ul>');
+  return out.join(' ');
+}
+
+function inlineFmt(t: string): string {
+  return t
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(128,128,128,0.15);padding:1px 5px;border-radius:3px;font-size:0.9em">$1</code>');
+}
+
+// ── FileViewer (PDF / HTML) ─────────────────────────────────────
+
+const FileViewer: React.FC<{ filename: string }> = ({ filename }) => {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const [pdfSrc, setPdfSrc] = useState<string | null>(null);
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPdfSrc(null);
+    setHtmlContent(null);
+    if (ext === 'pdf') {
+      window.api.getAbsolutePath(filename).then(setPdfSrc);
+    } else if (ext === 'html' || ext === 'htm') {
+      window.api.readFile(filename).then(setHtmlContent);
+    }
+  }, [filename, ext]);
+
+  if (ext === 'pdf') {
+    if (!pdfSrc) return <div className="article-browser__status">Loading PDF…</div>;
+    return (
+      <div className="flex-1 h-full -m-[32px_40px]" style={{ margin: '-32px -40px', height: 'calc(100% + 64px)' }}>
+        <embed src={`vault-file://local${pdfSrc.split('/').map(encodeURIComponent).join('/')}#navpanes=0`} type="application/pdf" className="w-full h-full" />
+      </div>
+    );
+  }
+
+  if (ext === 'html' || ext === 'htm') {
+    if (htmlContent === null) return <div className="article-browser__status">Loading…</div>;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg = isDark ? '#202020' : '#ffffff';
+    const fg = isDark ? '#dcddde' : '#1a1a1a';
+    const fgMuted = isDark ? '#888888' : '#666666';
+    const border = isDark ? '#3a3a3a' : '#e0e0e0';
+    const accent = isDark ? '#d4731a' : '#b85e10';
+    const accentBg = isDark ? 'rgba(212,115,26,0.12)' : 'rgba(184,94,16,0.08)';
+    const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+    const styledHtml = `<!DOCTYPE html><html><head><style>
+      body { font-family: -apple-system, system-ui, sans-serif; color: ${fg}; background: ${bg}; padding: 24px; line-height: 1.7; font-size: 14px; }
+      notes, note { display: block; }
+      critical { display: block; background: ${accentBg}; border-left: 3px solid ${accent}; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px; color: ${fgMuted}; }
+      note { background: ${cardBg}; border: 1px solid ${border}; border-radius: 8px; padding: 16px; margin-bottom: 6px; }
+      note[title]::before { content: attr(title); display: block; font-weight: 600; font-size: 15px; color: ${accent}; margin-bottom: 8px; }
+      b, strong { font-weight: 600; color: ${accent}; }
+      ul, ol { padding-left: 20px; margin: 8px 0; }
+      li { margin-bottom: 4px; }
+      p { margin: 6px 0; }
+    </style></head><body>${simpleMarkdown(htmlContent)}</body></html>`;
+    return (
+      <div className="flex-1 h-full">
+        <iframe srcDoc={styledHtml} className="w-full h-full border-0" sandbox="allow-same-origin" title={filename} />
+      </div>
+    );
+  }
+
+  return <div className="article-browser__status">Preview not available for this file type.</div>;
+};
+
 // ── ArticleBrowser (viewer-only) ───────────────────────────────
 
 interface ArticleBrowserProps {
@@ -201,9 +314,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
       )}
 
       {selectedFilename && !selectedFilename.toLowerCase().endsWith(".md") && !articleLoading && !articleError && !article && (
-        <div className="article-browser__status">
-          Preview not available for this file type.
-        </div>
+        <FileViewer filename={selectedFilename} />
       )}
 
       {selectedFilename && articleLoading && (

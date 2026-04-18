@@ -40,6 +40,14 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:createFolder", relativePath);
   },
 
+  getAbsolutePath(filename: string) {
+    return ipcRenderer.invoke("wiki:getAbsolutePath", filename);
+  },
+
+  readFile(filename: string) {
+    return ipcRenderer.invoke("wiki:readFile", filename);
+  },
+
   // ── Search ───────────────────────────────────────────────────────
 
   search(query: string) {

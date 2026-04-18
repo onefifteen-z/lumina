@@ -173,6 +173,22 @@ export function registerIpcHandlers(services: {
     },
   );
 
+  ipcMain.handle(
+    "wiki:getAbsolutePath",
+    async (_event, filename: string): Promise<string> => {
+      if (!fileSystem) throw new Error("No vault is open.");
+      return require("path").join(fileSystem.getVaultPath(), filename);
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:readFile",
+    async (_event, filename: string): Promise<string> => {
+      if (!fileSystem) throw new Error("No vault is open.");
+      return fileSystem.readRawFile(filename);
+    },
+  );
+
   // ── Bookmarks (vault JSON) ───────────────────────────────────────
 
   ipcMain.handle("wiki:getBookmarks", async (): Promise<string[]> => {

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useMemo, useCallback } from "react";
-import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
@@ -22,10 +22,10 @@ type FolderNode = {
 
 type TreeNode = FileNode | FolderNode;
 
-/** Derive the display label for a file leaf — always show the filename stem. */
+/** Derive the display label for a file leaf — strip .md extension only. */
 function fileDisplayName(article: ArticleMeta): string {
   const basename = article.filename.split("/").pop() ?? article.filename;
-  return basename.replace(/\.md$/i, "");
+  return basename.toLowerCase().endsWith(".md") ? basename.replace(/\.md$/i, "") : basename;
 }
 
 /** Build a nested tree from a flat list of ArticleMeta. */
@@ -131,6 +131,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
 
   if (node.type === "file") {
     const isSelected = node.article.filename === selectedFilename;
+    const isPdf = node.article.filename.toLowerCase().endsWith(".pdf");
     return (
       <button
         type="button"
@@ -138,14 +139,15 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         onClick={() => onSelectArticle(node.article.filename)}
         style={{ paddingLeft: `${indent + 18}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
-          "block w-full text-left truncate transition-colors",
+          "flex items-center gap-1.5 w-full text-left truncate transition-colors",
           "focus-visible:outline-none",
           isSelected
             ? "bg-primary-bg text-text-primary"
             : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
         )}
       >
-        {node.name}
+        {isPdf && <FileText size={13} className="shrink-0 text-red-400" />}
+        <span className="truncate">{node.name}</span>
       </button>
     );
   }

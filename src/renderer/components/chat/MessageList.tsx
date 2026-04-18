@@ -118,7 +118,11 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
           {/* Streaming partial assistant response */}
           {streamingContent != null && streamingContent.length > 0 && (
             <div className="w-full text-text-primary" data-testid="streaming-message">
-              <p className="text-sm whitespace-pre-wrap break-words">{streamingContent}<span className="streaming-cursor" data-testid="streaming-cursor">▍</span></p>
+              {renderAssistantContent ? (
+                <div className="text-sm">{renderAssistantContent(streamingContent)}<span className="streaming-cursor inline" data-testid="streaming-cursor">▍</span></div>
+              ) : (
+                <p className="text-sm whitespace-pre-wrap break-words">{streamingContent}<span className="streaming-cursor" data-testid="streaming-cursor">▍</span></p>
+              )}
             </div>
           )}
 

@@ -9,7 +9,7 @@ import type {
 import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
 import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
-import { LLMService } from "./services/llm-service";
+import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
 
@@ -232,11 +232,34 @@ export function registerIpcHandlers(services: {
     async (
       _event,
       target: string,
-    ): Promise<{ exists: boolean; title: string }> => {
+    ): Promise<{ exists: boolean; title: string; filename?: string }> => {
       if (!fileSystem) return { exists: false, title: target };
-      const filename = titleToFilename(target) + ".md";
-      const exists = await fileSystem.fileExists(filename);
-      return { exists, title: target };
+
+      // Obsidian-style: scan vault and find the file whose basename matches the
+      // link target, regardless of which subfolder it lives in.
+      try {
+        const articles = await fileSystem.scanVault();
+        const targetLower = target.toLowerCase();
+        const targetAsFilename = titleToFilename(target).toLowerCase();
+
+        const match = articles.find((a) => {
+          if (!a.filename.toLowerCase().endsWith(".md")) return false;
+          const basename = a.filename
+            .split("/")
+            .pop()!
+            .replace(/\.md$/i, "")
+            .toLowerCase();
+          return basename === targetLower || basename === targetAsFilename;
+        });
+
+        if (match) {
+          return { exists: true, title: match.title, filename: match.filename };
+        }
+      } catch {
+        // fall through
+      }
+
+      return { exists: false, title: target };
     },
   );
 
@@ -318,8 +341,9 @@ export function registerIpcHandlers(services: {
         }
         sender.send("wiki:chatEnd", { requestId });
       } catch (err) {
+        const code = err instanceof LLMError ? err.code : "unknown";
         const errorMessage = (err as Error).message || "Chat generation failed";
-        sender.send("wiki:chatEnd", { requestId, error: errorMessage });
+        sender.send("wiki:chatEnd", { requestId, error: `${code}:${errorMessage}` });
       }
     },
   );

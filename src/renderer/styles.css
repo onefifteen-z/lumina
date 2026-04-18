@@ -493,6 +493,14 @@ html.dark body {
   padding-left: 1.5em;
 }
 
+.article-view__content ul {
+  list-style-type: disc;
+}
+
+.article-view__content ol {
+  list-style-type: decimal;
+}
+
 .article-view__content li {
   margin-bottom: 0.3em;
 }
@@ -617,6 +625,16 @@ html.dark body {
 .article-view__content .wikilink:hover {
   text-decoration: underline;
   border-bottom: none;
+}
+
+.article-view__content .wikilink.wikilink--missing {
+  color: var(--color-text-muted, #9ca3af);
+  border-bottom-color: var(--color-text-muted, #9ca3af);
+  opacity: 0.6;
+}
+
+.article-view__content .wikilink.wikilink--missing:hover {
+  color: var(--color-text-muted, #9ca3af);
 }
 
 /* ── Embeds ─────────────────────────────────────────────────── */

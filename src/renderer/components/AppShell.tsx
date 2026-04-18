@@ -16,6 +16,7 @@ import { TocPanel, type TocHeading } from './TocPanel';
 import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
 import { VaultSwitcher } from './VaultSwitcher';
+import { VaultInitDialog } from './VaultInitDialog';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { TooltipProvider } from './ui/tooltip';
 import {
@@ -162,6 +163,7 @@ const SidebarLayout: React.FC<{
   onVaultSwitched: (newPath: string, newName: string) => void;
   bookmarks: Set<string>;
   onToggleBookmark: (filename: string) => void;
+  hasClaudeMd: boolean;
 }> = ({
   activeView,
   onViewChange,
@@ -182,6 +184,7 @@ const SidebarLayout: React.FC<{
   onVaultSwitched,
   bookmarks,
   onToggleBookmark,
+  hasClaudeMd,
 }) => {
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate } = useNavigation();
@@ -360,6 +363,7 @@ const SidebarLayout: React.FC<{
             onToggleTheme={onToggleTheme}
             configFiles={configFiles}
             onSelectConfigFile={selectArticleWithHistory}
+            hasClaudeMd={hasClaudeMd}
           />
 
           {/* Sidebar Panel */}
@@ -367,7 +371,7 @@ const SidebarLayout: React.FC<{
             <>
               <Sidebar panelWidth={leftWidth}>
                 <SidebarContent>
-                  {activeView === 'files' && (
+                  {(activeView === 'files' || activeView === 'graph') && (
                     <FilesView
                       articles={articles}
                       selectedFilename={selectedFilename}
@@ -456,6 +460,7 @@ const SidebarLayout: React.FC<{
                   <ArticleBrowser
                     selectedFilename={selectedFilename}
                     onHeadingsChange={onHeadingsChange}
+                    onNavigate={selectArticleWithHistory}
                   />
                 )}
                 {editingFilename !== null && <ArticleEditor />}
@@ -497,6 +502,10 @@ const AppShell: React.FC = () => {
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [articlesError, setArticlesError] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => new Set());
+  const [showVaultInit, setShowVaultInit] = useState(false);
+
+  const CLAUDE_CANDIDATES = ['.CLAUDE.md', 'CLAUDE.md', '.claude.md', 'claude.md'];
+  const hasClaudeMd = articles.some((a) => CLAUDE_CANDIDATES.includes(a.filename));
 
   const onToggleBookmark = useCallback((filename: string) => {
     setBookmarks((prev) => {
@@ -571,6 +580,11 @@ const AppShell: React.FC = () => {
         e.preventDefault();
         setSearchPopupOpen(o => !o);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setActiveView("settings");
+        setEditingFilename(null);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -589,6 +603,12 @@ const AppShell: React.FC = () => {
         const list = await window.api.listArticles();
         if (!cancelled) {
           setArticles(list);
+          // Check if vault has claude.md — if not, prompt initialization
+          const claudeCandidates = ['.CLAUDE.md', 'CLAUDE.md', '.claude.md', 'claude.md'];
+          const hasClaudeFile = list.some((a) =>
+            claudeCandidates.includes(a.filename),
+          );
+          if (!hasClaudeFile) setShowVaultInit(true);
         }
       } catch (err) {
         if (!cancelled) {
@@ -713,6 +733,25 @@ const AppShell: React.FC = () => {
     setGeneratedContent(null);
   }, []);
 
+  const handleVaultInit = useCallback(async () => {
+    const defaultContent = '# System Prompt\n\nYou are a helpful assistant for this vault.\n';
+    await window.api.saveArticle({
+      frontmatter: { title: 'claude', tags: [], created: new Date().toISOString(), modified: new Date().toISOString() },
+      content: defaultContent,
+      rawContent: '',
+    });
+    await window.api.createFolder('raw');
+    await window.api.createFolder('wiki');
+    const list = await window.api.listArticles();
+    setArticles(list);
+    setShowVaultInit(false);
+    const claudeFile = list.find((a) => a.filename.toLowerCase() === 'claude.md');
+    if (claudeFile) {
+      setSelectedFilename(claudeFile.filename);
+      setEditingFilename(claudeFile.filename);
+    }
+  }, []);
+
   const handleToggleTheme = useCallback(async () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
@@ -769,9 +808,13 @@ const AppShell: React.FC = () => {
               onVaultSwitched={(newPath, newName) => {
                 setVaultPath(newPath);
                 setVaultName(newName);
+                setSelectedFilename(null);
+                setEditingFilename(null);
+                setVaultReloadKey((k) => k + 1);
               }}
               bookmarks={bookmarks}
               onToggleBookmark={onToggleBookmark}
+              hasClaudeMd={hasClaudeMd}
             />
           </SidebarProvider>
         </TooltipProvider>
@@ -788,6 +831,13 @@ const AppShell: React.FC = () => {
           open={searchPopupOpen}
           onClose={() => setSearchPopupOpen(false)}
           onSelectArticle={handleSelectArticle}
+        />
+
+        {/* Vault Init Dialog */}
+        <VaultInitDialog
+          open={showVaultInit}
+          onConfirm={handleVaultInit}
+          onCancel={() => { setShowVaultInit(false); setActiveView('files'); }}
         />
       </NavContext.Provider>
     </NetworkStatusProvider>

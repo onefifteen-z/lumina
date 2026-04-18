@@ -51,23 +51,25 @@ export function BookmarksView({
                   title={isStale ? `${filename} (missing file)` : filename}
                   onClick={() => onOpenBookmark(filename)}
                   className={cn(
-                    "flex-1 min-w-0 text-left px-4 py-2.5 text-[12.5px] transition-colors",
+                    "flex-1 min-w-0 text-left px-4 py-2 transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:ring-inset",
                     isSelected
                       ? "text-text-primary"
                       : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer",
                   )}
                 >
-                  <span className="block truncate font-medium">{label}</span>
+                  <span className={cn("block truncate text-[12.5px]", isSelected ? "font-semibold" : "font-medium")}>
+                    {(filename.split("/").pop() ?? filename).replace(/\.md$/i, "")}
+                  </span>
                   {isStale ? (
-                    <span className="block truncate text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-0.5">
+                    <span className="block truncate text-[11px] text-amber-600/90 dark:text-amber-400/90 leading-tight mt-px">
                       File not in vault — remove if obsolete
                     </span>
-                  ) : (
-                    <span className="block truncate text-[11px] text-text-secondary/80 mt-0.5">
-                      {filename}
+                  ) : filename.includes("/") ? (
+                    <span className="block truncate text-[11px] text-text-secondary/60 leading-tight mt-px">
+                      {filename.substring(0, filename.lastIndexOf("/"))}
                     </span>
-                  )}
+                  ) : null}
                 </button>
                 <button
                   type="button"

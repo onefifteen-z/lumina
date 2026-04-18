@@ -97,6 +97,11 @@ export class FileSystemService {
     return fs.readFile(filePath, "utf-8");
   }
 
+  /** Absolute path to the vault root (used to scope shell commands). */
+  getVaultPath(): string {
+    return this.vaultPath;
+  }
+
   /**
    * Write an article to disk. Updates the `modified` timestamp before saving.
    */

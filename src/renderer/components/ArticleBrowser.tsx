@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
@@ -10,6 +10,7 @@ import type { ArticleFile } from '../../shared/types';
 import { titleToFilename } from '../../shared/markdown-parser';
 import { useNavigation } from './AppShell';
 import { extractHeadings, addHeadingIds, type TocHeading } from './TocPanel';
+import { AlignLeft, Calendar, List, Tag, X } from 'lucide-react';
 
 // ── Remark pipeline ────────────────────────────────────────────
 
@@ -28,15 +29,17 @@ const markdownToHtml = (markdown: string): string => {
 // ── Date formatting ────────────────────────────────────────────
 
 const formatDate = (iso: string): string => {
+  if (!iso) return '—';
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
     });
   } catch {
-    return iso;
+    return '—';
   }
 };
 
@@ -45,9 +48,10 @@ const formatDate = (iso: string): string => {
 interface ArticleBrowserProps {
   selectedFilename: string | null;
   onHeadingsChange?: (headings: TocHeading[]) => void;
+  onNavigate?: (filename: string) => void;
 }
 
-const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHeadingsChange }) => {
+const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHeadingsChange, onNavigate }) => {
   const { editArticle } = useNavigation();
 
   // Selected article state
@@ -57,6 +61,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
   const [backlinks, setBacklinks] = useState<{ title: string; filename: string }[]>([]);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Fetch article content + backlinks by vault-relative filename
   const selectArticle = useCallback(async (filename: string) => {
@@ -110,14 +115,38 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
     }
   }, [selectedFilename, selectArticle]);
 
+  // After each render, mark wikilinks whose target file doesn't exist
+  useEffect(() => {
+    if (!renderedHtml || !contentRef.current) return;
+    const container = contentRef.current;
+    const links = Array.from(container.querySelectorAll<HTMLElement>('.wikilink'));
+    if (links.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(
+      links.map(async (el) => {
+        const target = el.getAttribute('data-target');
+        if (!target) return;
+        const resolved = await window.api.resolveWikilink(target);
+        if (!cancelled) {
+          el.classList.toggle('wikilink--missing', !resolved.exists);
+        }
+      })
+    );
+    return () => { cancelled = true; };
+  }, [renderedHtml]);
+
   // Navigate to a backlinked article by its filename
   const handleBacklinkClick = useCallback((filename: string) => {
-    selectArticle(filename);
-  }, [selectArticle]);
+    if (onNavigate) onNavigate(filename);
+    else selectArticle(filename);
+  }, [selectArticle, onNavigate]);
 
   // Click handler for rendered content (wikilinks, tags, embeds)
   const handleContentClick = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
+
+    const navigateTo = onNavigate || selectArticle;
 
     // Handle wikilink clicks
     const wikilink = target.closest('.wikilink');
@@ -126,9 +155,8 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
       const articleTarget = wikilink.getAttribute('data-target');
       if (articleTarget) {
         const resolved = await window.api.resolveWikilink(articleTarget);
-        if (resolved.exists) {
-          // Wikilinks reference flat-vault files by title; derive filename the same way
-          selectArticle(titleToFilename(resolved.title) + '.md');
+        if (resolved.exists && resolved.filename) {
+          navigateTo(resolved.filename);
         } else {
           const create = window.confirm(`Article '${articleTarget}' doesn't exist. Create it?`);
           if (create) {
@@ -151,8 +179,8 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
       const embedTarget = embed.getAttribute('data-target');
       if (embedTarget) {
         const resolved = await window.api.resolveWikilink(embedTarget);
-        if (resolved.exists) {
-          selectArticle(titleToFilename(resolved.title) + '.md');
+        if (resolved.exists && resolved.filename) {
+          navigateTo(resolved.filename);
         } else {
           const create = window.confirm(`Article '${embedTarget}' doesn't exist. Create it?`);
           if (create) {
@@ -162,7 +190,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
       }
       return;
     }
-  }, [selectArticle, editArticle]);
+  }, [selectArticle, editArticle, onNavigate]);
 
   // ── Render ─────────────────────────────────────────────────────
 
@@ -197,36 +225,95 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
             </div>
           )}
 
-          {/* Metadata header */}
-          <header className="article-view__header">
-            <h1 className="article-view__title">{article.frontmatter.title}</h1>
+          {/* Filename */}
+          <h1 className="text-lg font-bold text-text-primary mb-4">{currentFilename?.split('/').pop()?.replace(/\.md$/i, '')}</h1>
 
-            <div className="article-view__meta">
-              <span className="article-view__date">
-                Created {formatDate(article.frontmatter.created)}
-              </span>
-              <span className="article-view__date">
-                Modified {formatDate(article.frontmatter.modified)}
-              </span>
-            </div>
-
-            {article.frontmatter.tags.length > 0 && (
-              <div className="article-view__tags">
-                {article.frontmatter.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="article-view__tag"
-                  >
-                    #{tag}
-                  </span>
-                ))}
+          {/* Properties panel */}
+          <div className="mb-6 pb-4 border-b border-border">
+            <h2 className="text-sm font-semibold text-text-primary mb-3">Properties</h2>
+            <div className="flex flex-col gap-2.5">
+              {/* title */}
+              <div className="flex items-start gap-3 text-[13px]">
+                <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
+                  <AlignLeft size={14} className="opacity-60" />
+                  <span>title</span>
+                </div>
+                <span className="text-text-primary">{article.frontmatter.title}</span>
               </div>
-            )}
 
-          </header>
+              {/* extra string fields */}
+              {Object.entries(article.frontmatter)
+                .filter(([k, v]) => !['title', 'tags', 'created', 'modified', '_corrupted'].includes(k) && typeof v === 'string')
+                .map(([k, v]) => (
+                  <div key={k} className="flex items-start gap-3 text-[13px]">
+                    <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
+                      <AlignLeft size={14} className="opacity-60" />
+                      <span>{k}</span>
+                    </div>
+                    <span className="text-text-primary">{v as string}</span>
+                  </div>
+                ))}
+
+              {/* created */}
+              <div className="flex items-start gap-3 text-[13px]">
+                <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
+                  <Calendar size={14} className="opacity-60" />
+                  <span>created</span>
+                </div>
+                <span className="text-text-primary">{formatDate(article.frontmatter.created)}</span>
+              </div>
+
+              {/* modified */}
+              <div className="flex items-start gap-3 text-[13px]">
+                <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
+                  <Calendar size={14} className="opacity-60" />
+                  <span>updated</span>
+                </div>
+                <span className="text-text-primary">{formatDate(article.frontmatter.modified)}</span>
+              </div>
+
+              {/* list fields (sources etc.) */}
+              {Object.entries(article.frontmatter)
+                .filter(([k, v]) => !['title', 'tags', 'created', 'modified', '_corrupted'].includes(k) && Array.isArray(v) && k !== 'tags')
+                .map(([k, v]) => (
+                  <div key={k} className="flex items-start gap-3 text-[13px]">
+                    <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
+                      <List size={14} className="opacity-60" />
+                      <span>{k}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(v as string[]).map((item, i) => (
+                        <span key={i} className="text-text-primary">{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+              {/* tags */}
+              {article.frontmatter.tags.length > 0 && (
+                <div className="flex items-start gap-3 text-[13px]">
+                  <div className="flex items-center gap-2 w-28 shrink-0 text-text-secondary">
+                    <Tag size={14} className="opacity-60" />
+                    <span>tags</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {article.frontmatter.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs rounded-full bg-primary-bg text-primary-text"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Rendered markdown body */}
           <div
+            ref={contentRef}
             className="article-view__content"
             onClick={handleContentClick}
             dangerouslySetInnerHTML={{ __html: renderedHtml }}

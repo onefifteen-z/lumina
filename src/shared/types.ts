@@ -130,7 +130,7 @@ export interface WikiAPI {
 
   // Link resolution
   getBacklinks(title: string): Promise<{ title: string; filename: string }[]>;
-  resolveWikilink(target: string): Promise<{ exists: boolean; title: string }>;
+  resolveWikilink(target: string): Promise<{ exists: boolean; title: string; filename?: string }>;
 
   // LLM
   generateArticle(prompt: string): Promise<AsyncIterable<string>>;

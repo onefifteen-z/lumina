@@ -141,11 +141,13 @@ export class LLMService {
   async *generateChat(
     messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }>,
     signal?: AbortSignal,
+    tools?: unknown[],
   ): AsyncGenerator<string> {
     const body = JSON.stringify({
       model: this.config.model,
       messages,
       stream: true,
+      ...(tools && tools.length > 0 ? { tools, tool_choice: "none" } : {}),
     });
 
     const response = await this.fetchWithSignal(body, signal);
@@ -312,7 +314,7 @@ export class LLMService {
     else clearTimeout(timer); // timeout only covers the initial connection
 
     if (!response.ok) {
-      this.handleHttpError(response);
+      await this.handleHttpError(response);
     }
 
     return response;
@@ -376,20 +378,30 @@ export class LLMService {
     }
 
     if (!response.ok) {
-      this.handleHttpError(response);
+      await this.handleHttpError(response);
     }
 
     return response;
   }
 
-  /** Classify HTTP error status codes into typed LLMErrors. */
-  private handleHttpError(response: Response): never {
+  /** Classify HTTP error status codes into typed LLMErrors (reads body for detail). */
+  private async handleHttpError(response: Response): Promise<never> {
     const status = response.status;
+    let detail = "";
+    try {
+      const body = await response.text();
+      // Extract the innermost "message" field if JSON, otherwise use raw text
+      const parsed = JSON.parse(body);
+      detail = parsed?.error?.message ?? parsed?.message ?? body;
+    } catch {
+      // non-JSON body — ignore
+    }
+    const suffix = detail ? `: ${detail}` : "";
 
     if (status === 401 || status === 403) {
       this.setAvailable(false);
       throw new LLMError(
-        `Authentication failed (${status}). Check your API key.`,
+        `Authentication failed (${status})${suffix}`,
         "auth",
         status,
       );
@@ -401,7 +413,7 @@ export class LLMService {
         10,
       );
       throw new LLMError(
-        "Rate limit exceeded. Please try again later.",
+        `Rate limit exceeded${suffix}`,
         "rate_limit",
         status,
         Number.isNaN(retryAfter) ? undefined : retryAfter,
@@ -409,7 +421,7 @@ export class LLMService {
     }
 
     throw new LLMError(
-      `LLM request failed with status ${status}`,
+      `LLM request failed with status ${status}${suffix}`,
       "unknown",
       status,
     );

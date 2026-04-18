@@ -51,7 +51,7 @@ export type LineType = 'heading' | 'ul' | 'ol' | 'hr' | 'paragraph';
 
 export interface ParsedLine {
   type: LineType;
-  level?: number;       // heading level 1-3
+  level?: number;       // heading level 1-6
   content: string;      // text content (stripped of markdown markers)
 }
 
@@ -67,8 +67,8 @@ export function classifyLine(line: string): ParsedLine {
     return { type: 'hr', content: '' };
   }
 
-  // Headings: # ## ###
-  const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/);
+  // Headings: # ## ### #### ##### ######
+  const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
   if (headingMatch) {
     return { type: 'heading', level: headingMatch[1].length, content: headingMatch[2] };
   }
@@ -97,7 +97,8 @@ export type MarkdownBlock =
   | { type: 'paragraph'; content: string }
   | { type: 'hr' }
   | { type: 'ul'; items: string[] }
-  | { type: 'ol'; items: string[] };
+  | { type: 'ol'; items: string[] }
+  | { type: 'table'; headers: string[]; rows: string[][] };
 
 export function parseMarkdownLines(text: string): MarkdownBlock[] {
   if (!text || !text.trim()) return [];
@@ -107,6 +108,30 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
   let i = 0;
 
   while (i < lines.length) {
+    // Table detection: line starts with |
+    if (lines[i].trimStart().startsWith('|')) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      // Need at least header + separator (2 lines)
+      if (tableLines.length >= 2 && /^\s*\|[\s:]*-+/.test(tableLines[1])) {
+        const parseCells = (line: string) =>
+          line.split('|').slice(1, -1).map((c) => c.trim());
+        const headers = parseCells(tableLines[0]);
+        const rows = tableLines.slice(2).map(parseCells);
+        blocks.push({ type: 'table', headers, rows });
+        continue;
+      }
+      // Not a valid table — fall through as paragraphs
+      for (const tl of tableLines) {
+        const joined = tl.trim();
+        if (joined) blocks.push({ type: 'paragraph', content: joined });
+      }
+      continue;
+    }
+
     const parsed = classifyLine(lines[i]);
 
     if (parsed.type === 'hr') {
@@ -162,8 +187,8 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
  */
 export function applyInlineFormatting(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  // Match **bold**, *italic* (not preceded/followed by *), or `code`
-  const inlineRegex = /(\*\*(.+?)\*\*|\*([^*]+)\*|`([^`]+)`)/g;
+  // Match **bold**, *italic* (not preceded/followed by *), `code`, [[wikilink]], or [ ]/[x] checkbox
+  const inlineRegex = /(\*\*(.+?)\*\*|\*([^*]+)\*|`([^`]+)`|\[\[([^\]]+)\]\]|\[([ xX])\])/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let key = 0;
@@ -185,6 +210,19 @@ export function applyInlineFormatting(text: string): React.ReactNode[] {
         >
           {match[4]}
         </code>,
+      );
+    } else if (match[5] !== undefined) {
+      // [[wikilink]]
+      nodes.push(
+        <span key={key++} className="text-accent font-medium">
+          {match[5]}
+        </span>,
+      );
+    } else if (match[6] !== undefined) {
+      // Checkbox [ ] or [x]
+      const checked = match[6].toLowerCase() === 'x';
+      nodes.push(
+        <input key={key++} type="checkbox" checked={checked} readOnly className="mr-1.5 align-middle pointer-events-none" />,
       );
     }
 
@@ -211,11 +249,12 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
           case 'hr':
             return <hr key={i} className="border-border" />;
           case 'heading': {
-            const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3';
+            const level = Math.min(block.level, 6) as 1 | 2 | 3 | 4 | 5 | 6;
+            const Tag = `h${level}` as keyof JSX.IntrinsicElements;
             const cls =
-              block.level === 1
+              level === 1
                 ? 'text-[1.05rem] font-bold leading-snug text-text-primary mt-1'
-                : block.level === 2
+                : level === 2
                   ? 'text-[0.95rem] font-semibold leading-snug text-text-primary mt-0.5'
                   : 'text-sm font-semibold leading-snug text-text-primary';
             return (
@@ -243,6 +282,33 @@ const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
                   </li>
                 ))}
               </ol>
+            );
+          case 'table':
+            return (
+              <div key={i} className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-[rgba(255,255,255,0.04)]">
+                      {block.headers.map((h, j) => (
+                        <th key={j} className="px-3 py-2 text-left font-semibold text-text-primary whitespace-nowrap">
+                          {applyInlineFormatting(h)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, ri) => (
+                      <tr key={ri} className="border-b border-border last:border-b-0">
+                        {row.map((cell, ci) => (
+                          <td key={ci} className="px-3 py-2 text-text-secondary break-words">
+                            {applyInlineFormatting(cell)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             );
           case 'paragraph':
             return (
@@ -528,7 +594,7 @@ const ChatView: React.FC = () => {
         <div className="border-t border-red-500/20 bg-red-500/5 shrink-0" style={colStyle}>
           <div className="flex items-center justify-between gap-3 py-2.5">
             <p className="text-sm text-red-600 dark:text-red-400">
-              {friendlyError(error.type)}
+              {ERROR_MESSAGES[error.type] ?? error.message}
             </p>
             <button
               type="button"

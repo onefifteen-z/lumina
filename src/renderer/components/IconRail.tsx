@@ -19,6 +19,7 @@ export interface IconRailProps {
   onToggleTheme: () => void;
   configFiles?: ArticleMeta[];
   onSelectConfigFile?: (filename: string) => void;
+  hasClaudeMd?: boolean;
 }
 
 
@@ -36,7 +37,9 @@ const bottomItems: { view: SidebarView; icon: React.ElementType; label: string }
 
 const allItems = [...topItems, ...bottomItems];
 
-export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile }: IconRailProps) {
+export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile, hasClaudeMd = true }: IconRailProps) {
+  const visibleTopItems = hasClaudeMd ? topItems : topItems.filter((i) => i.view !== "chat");
+  const allVisibleItems = [...visibleTopItems, ...bottomItems];
   const buttonRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -44,10 +47,10 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      nextIndex = (index + 1) % allItems.length;
+      nextIndex = (index + 1) % allVisibleItems.length;
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      nextIndex = (index - 1 + allItems.length) % allItems.length;
+      nextIndex = (index - 1 + allVisibleItems.length) % allVisibleItems.length;
     }
 
     if (nextIndex !== null) {
@@ -100,7 +103,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
     >
       {/* Top group */}
       <div className="flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        {topItems.map((item, i) => renderButton(item, i))}
+        {visibleTopItems.map((item, i) => renderButton(item, i))}
       </div>
 
       {/* Config button + Settings pushed to bottom */}
@@ -121,7 +124,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
           </Tooltip>
         )}
         {bottomItems.map((item, i) =>
-          renderButton(item, topItems.length + i)
+          renderButton(item, visibleTopItems.length + i)
         )}
       </div>
 

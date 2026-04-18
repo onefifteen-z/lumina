@@ -23,7 +23,7 @@ export function parseFrontmatter(raw: string): {
   if (!data.title) data.title = "";
   if (!Array.isArray(data.tags)) data.tags = [];
   if (!data.created) data.created = "";
-  if (!data.modified) data.modified = "";
+  if (!data.modified) data.modified = (data as Record<string, unknown>).updated as string ?? "";
 
   return { data, content: parsed.content };
 }

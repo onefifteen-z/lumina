@@ -205,6 +205,101 @@ describe("getBookmarks / setBookmarks", () => {
   });
 });
 
+// ─── moveVaultEntry / importExternalEntries ─────────────────────────────────
+
+describe("moveVaultEntry", () => {
+  it("moves a file into a subfolder", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "inbox"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "wiki", "Note.md"),
+      makeArticleRaw("Note", [], "Hi"),
+    );
+    await service.moveVaultEntry("wiki/Note.md", "wiki/inbox");
+    expect(
+      await fs.readFile(path.join(tmpDir, "wiki", "inbox", "Note.md"), "utf-8"),
+    ).toContain("Hi");
+    await expect(fs.access(path.join(tmpDir, "wiki", "Note.md"))).rejects.toThrow();
+  });
+
+  it("moves a folder with contents", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "old", "nested"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(tmpDir, "wiki", "old", "nested", "a.md"),
+      makeArticleRaw("A", [], "x"),
+    );
+    await service.moveVaultEntry("wiki/old", "wiki");
+    expect(
+      await fs.readFile(
+        path.join(tmpDir, "wiki", "old", "nested", "a.md"),
+        "utf-8",
+      ),
+    ).toContain("x");
+  });
+
+  it("rejects moving a folder into its own descendant", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "box", "inner"), {
+      recursive: true,
+    });
+    await expect(
+      service.moveVaultEntry("wiki/box", "wiki/box/inner"),
+    ).rejects.toThrow(/into itself/);
+  });
+
+  it("rejects path traversal", async () => {
+    await expect(
+      service.moveVaultEntry("../../../etc/passwd", "wiki"),
+    ).rejects.toThrow();
+  });
+
+  it("no-ops when source and destination are the same", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "wiki", "Same.md"),
+      makeArticleRaw("Same", [], "ok"),
+    );
+    await service.moveVaultEntry("wiki/Same.md", "wiki");
+    const raw = await fs.readFile(
+      path.join(tmpDir, "wiki", "Same.md"),
+      "utf-8",
+    );
+    expect(raw).toContain("ok");
+  });
+});
+
+describe("importExternalEntries", () => {
+  it("copies an external file into the vault", async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "lumina-ext-"));
+    const extFile = path.join(outside, "external-drop.txt");
+    await fs.writeFile(extFile, "hello");
+    await fs.mkdir(path.join(tmpDir, "wiki", "in"), { recursive: true });
+    await service.importExternalEntries([extFile], "wiki/in");
+    const got = await fs.readFile(
+      path.join(tmpDir, "wiki", "in", "external-drop.txt"),
+      "utf-8",
+    );
+    expect(got).toBe("hello");
+    expect(await fs.readFile(extFile, "utf-8")).toBe("hello");
+    await fs.rm(outside, { recursive: true, force: true });
+  });
+
+  it("moves a vault path when source is inside the vault", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "a"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "wiki", "a", "x.md"),
+      makeArticleRaw("X", [], "body"),
+    );
+    await fs.mkdir(path.join(tmpDir, "wiki", "b"), { recursive: true });
+    const absA = path.join(tmpDir, "wiki", "a", "x.md");
+    await service.importExternalEntries([absA], "wiki/b");
+    expect(
+      await fs.readFile(path.join(tmpDir, "wiki", "b", "x.md"), "utf-8"),
+    ).toContain("body");
+    await expect(fs.access(absA)).rejects.toThrow();
+  });
+});
+
 // ─── titleToFilename / filenameToTitle ──────────────────────────────────────
 
 describe("titleToFilename / filenameToTitle", () => {

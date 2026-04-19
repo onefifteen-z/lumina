@@ -2,15 +2,18 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Sparkles, Copy, RefreshCw, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
 import type { ChatMessage } from '../../../shared/types';
 import { FoxThinkingIndicator } from './FoxThinkingIndicator';
+import { ThinkingChip } from './ThinkingChip';
+import type { ThinkingEntry } from '../ChatView';
 
 export interface MessageListProps {
   messages: ChatMessage[];
   streamingContent?: string;
   isGenerating?: boolean;
-  /** Optional custom renderer for assistant message content (e.g. Markdown). Falls back to plain text. */
   renderAssistantContent?: (content: string) => React.ReactNode;
-  /** Called when the user clicks the Regenerate button on an assistant message action bar. */
   onRegenerate?: () => void;
+  thinkingMap?: Record<string, ThinkingEntry>;
+  activeThinkingMsgId?: string | null;
+  onThinkingChipClick?: (msgId: string) => void;
 }
 
 /**
@@ -49,7 +52,7 @@ const ScrollToBottomButton: React.FC<ScrollToBottomButtonProps> = ({ visible, on
   </button>
 );
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, isGenerating, renderAssistantContent, onRegenerate }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, isGenerating, renderAssistantContent, onRegenerate, thinkingMap, activeThinkingMsgId, onThinkingChipClick }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -105,23 +108,41 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
       >
         <div className="flex flex-col gap-6">
           {visibleMessages.map((message) => (
-            <MessageBubble key={message.id} message={message} renderAssistantContent={renderAssistantContent} onRegenerate={onRegenerate} />
+            <MessageBubble
+              key={message.id}
+              message={message}
+              renderAssistantContent={renderAssistantContent}
+              onRegenerate={onRegenerate}
+              thinking={thinkingMap?.[message.id]}
+              isThinkingActive={activeThinkingMsgId === message.id}
+              onThinkingChipClick={onThinkingChipClick ? () => onThinkingChipClick(message.id) : undefined}
+            />
           ))}
 
-          {/* Fox thinking indicator — shown when generating but no streaming content yet */}
-          {isGenerating && (!streamingContent || streamingContent.length === 0) && (
+          {/* Fox thinking indicator — shown when generating but no streaming content yet and no thinking */}
+          {isGenerating && (!streamingContent || streamingContent.length === 0) && !thinkingMap?.__streaming__ && (
             <div className="flex justify-start" data-testid="fox-thinking-container">
               <FoxThinkingIndicator size="large" />
             </div>
           )}
 
-          {/* Streaming partial assistant response */}
-          {streamingContent != null && streamingContent.length > 0 && (
+          {/* Streaming partial assistant response (with optional thinking chip) */}
+          {(streamingContent != null && streamingContent.length > 0 || thinkingMap?.__streaming__) && (
             <div className="w-full text-text-primary" data-testid="streaming-message">
-              {renderAssistantContent ? (
-                <div className="text-sm">{renderAssistantContent(streamingContent)}<span className="streaming-cursor inline" data-testid="streaming-cursor">▍</span></div>
-              ) : (
-                <p className="text-sm whitespace-pre-wrap break-words">{streamingContent}<span className="streaming-cursor" data-testid="streaming-cursor">▍</span></p>
+              {thinkingMap?.__streaming__ && onThinkingChipClick && (
+                <ThinkingChip
+                  isStreaming={thinkingMap.__streaming__.isStreaming}
+                  durationMs={thinkingMap.__streaming__.durationMs}
+                  isActive={activeThinkingMsgId === '__streaming__'}
+                  onClick={() => onThinkingChipClick('__streaming__')}
+                />
+              )}
+              {streamingContent != null && streamingContent.length > 0 && (
+                renderAssistantContent ? (
+                  <div className="text-sm">{renderAssistantContent(streamingContent)}<span className="streaming-cursor inline" data-testid="streaming-cursor">▍</span></div>
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap break-words">{streamingContent}<span className="streaming-cursor" data-testid="streaming-cursor">▍</span></p>
+                )
               )}
             </div>
           )}
@@ -137,15 +158,29 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
   );
 };
 
-const MessageBubble: React.FC<{ message: ChatMessage; renderAssistantContent?: (content: string) => React.ReactNode; onRegenerate?: () => void }> = ({ message, renderAssistantContent, onRegenerate }) => {
+const MessageBubble: React.FC<{
+  message: ChatMessage;
+  renderAssistantContent?: (content: string) => React.ReactNode;
+  onRegenerate?: () => void;
+  thinking?: ThinkingEntry;
+  isThinkingActive?: boolean;
+  onThinkingChipClick?: () => void;
+}> = ({ message, renderAssistantContent, onRegenerate, thinking, isThinkingActive, onThinkingChipClick }) => {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
   if (isAssistant) {
     return (
       <div className="group w-full" data-testid="assistant-message">
-        {/* Content */}
         <div className="flex-1 min-w-0">
+          {thinking && (thinking.content || (thinking.trace && thinking.trace.length > 0)) && onThinkingChipClick && (
+            <ThinkingChip
+              isStreaming={thinking.isStreaming}
+              durationMs={thinking.durationMs}
+              isActive={!!isThinkingActive}
+              onClick={onThinkingChipClick}
+            />
+          )}
           <div className="text-text-primary">
             {renderAssistantContent ? (
               renderAssistantContent(message.content)

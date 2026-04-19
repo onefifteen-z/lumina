@@ -245,7 +245,8 @@ export function applyInlineFormatting(text: string, onWikilinkClick?: (target: s
         <button
           key={key++}
           onClick={() => onWikilinkClick?.(target)}
-          className="text-primary font-medium hover:underline cursor-pointer focus:outline-none"
+          className="underline underline-offset-2 decoration-dotted text-primary hover:decoration-solid cursor-pointer focus:outline-none"
+          title={`Open: ${target}`}
         >
           {target}
         </button>,
@@ -395,7 +396,27 @@ interface ChatError {
   message: string;
 }
 
-const ChatView: React.FC = () => {
+export type TraceItem =
+  | { kind: 'narration'; content: string }
+  | { kind: 'tool_call'; id: string; name: string; args: string }
+  | { kind: 'tool_result'; id: string; output: string };
+
+export interface ThinkingEntry {
+  content: string;
+  trace: TraceItem[];
+  durationMs: number;
+  isStreaming: boolean;
+}
+
+export interface ChatViewProps {
+  onThinkingChange?: (data: ThinkingEntry | null) => void;
+  /** Ref that ChatView populates with a function to close the thinking sidebar */
+  closeThinkingRef?: React.MutableRefObject<(() => void) | null>;
+  /** Incremented by AppShell whenever the active vault changes */
+  vaultKey?: number;
+}
+
+const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef, vaultKey }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -409,6 +430,13 @@ const ChatView: React.FC = () => {
   const { viewArticle } = useNavigation();
   const sessionRef = useRef<ChatSession | null>(null);
   const streamBuf = useRef('');
+
+  // ── Thinking state ──────────────────────────────────────────
+  const [thinkingMap, setThinkingMap] = useState<Record<string, ThinkingEntry>>({});
+  const [activeThinkingMsgId, setActiveThinkingMsgId] = useState<string | null>(null);
+  const thinkingBuf = useRef('');
+  const thinkingStart = useRef<number>(0);
+  const traceBuf = useRef<TraceItem[]>([]);
 
   const handleWikilinkClick = useCallback(async (target: string) => {
     try {
@@ -467,6 +495,21 @@ const ChatView: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ── Re-initialize when vault changes ──────────────────────── */
+
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFirstMount.current) { isFirstMount.current = false; return; }
+    setMessages([]);
+    setStreamingContent('');
+    setError(null);
+    setShowWelcome(true);
+    sessionRef.current = null;
+    initSession();
+    refreshHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultKey]);
+
   /* ── Persist sidebar open state ────────────────────────────── */
 
   const toggleHistory = useCallback((open: boolean) => {
@@ -483,11 +526,44 @@ const ChatView: React.FC = () => {
       setStreamingContent(streamBuf.current);
     });
 
+    window.api.onChatThinkingChunk((chunk: string) => {
+      if (!thinkingBuf.current && traceBuf.current.length === 0) thinkingStart.current = Date.now();
+      thinkingBuf.current += chunk;
+      setThinkingMap((prev) => ({
+        ...prev,
+        __streaming__: {
+          content: thinkingBuf.current,
+          trace: [...traceBuf.current],
+          durationMs: Date.now() - thinkingStart.current,
+          isStreaming: true,
+        },
+      }));
+    });
+
+    window.api.onChatTraceChunk((chunk) => {
+      if (!thinkingBuf.current && traceBuf.current.length === 0) thinkingStart.current = Date.now();
+      if (chunk.type === 'narration') {
+        traceBuf.current.push({ kind: 'narration', content: chunk.content });
+      } else if (chunk.type === 'tool_call') {
+        traceBuf.current.push({ kind: 'tool_call', id: chunk.id, name: chunk.name, args: chunk.args });
+      } else if (chunk.type === 'tool_result') {
+        traceBuf.current.push({ kind: 'tool_result', id: chunk.id, output: chunk.output });
+      }
+      setThinkingMap((prev) => ({
+        ...prev,
+        __streaming__: {
+          content: thinkingBuf.current,
+          trace: [...traceBuf.current],
+          durationMs: Date.now() - thinkingStart.current,
+          isStreaming: true,
+        },
+      }));
+    });
+
     window.api.onChatEnd((err?: string) => {
       setIsGenerating(false);
 
       if (err) {
-        // Try to parse error type from the string (ChatService sends "type:message" or just a message)
         let errorType = 'unknown';
         let errorMessage = err;
         const colonIdx = err.indexOf(':');
@@ -497,19 +573,37 @@ const ChatView: React.FC = () => {
         }
         setError({ type: errorType, message: errorMessage });
       } else if (streamBuf.current) {
-        // Successful completion — add the assistant message to the list
         const assistantMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
           content: streamBuf.current,
           timestamp: new Date().toISOString(),
         };
+        if (thinkingBuf.current || traceBuf.current.length > 0) {
+          const finalDuration = Date.now() - thinkingStart.current;
+          const finalContent = thinkingBuf.current;
+          const finalTrace = [...traceBuf.current];
+          setThinkingMap((prev) => {
+            const { __streaming__, ...rest } = prev;
+            return {
+              ...rest,
+              [assistantMsg.id]: {
+                content: finalContent,
+                trace: finalTrace,
+                durationMs: finalDuration,
+                isStreaming: false,
+              },
+            };
+          });
+          setActiveThinkingMsgId((prev) => prev === '__streaming__' ? assistantMsg.id : prev);
+        }
         setMessages((prev) => [...prev, assistantMsg]);
       }
 
       setStreamingContent('');
       streamBuf.current = '';
-      // Auto-persist to history
+      thinkingBuf.current = '';
+      traceBuf.current = [];
       setTimeout(() => persistSession(), 100);
     });
 
@@ -547,6 +641,9 @@ const ChatView: React.FC = () => {
     setMessages([]);
     setStreamingContent('');
     streamBuf.current = '';
+    thinkingBuf.current = '';
+    setThinkingMap({});
+    setActiveThinkingMsgId(null);
     setError(null);
     setShowWelcome(true);
     await initSession();
@@ -561,6 +658,9 @@ const ChatView: React.FC = () => {
     setError(null);
     setStreamingContent('');
     streamBuf.current = '';
+    thinkingBuf.current = '';
+    setThinkingMap({});
+    setActiveThinkingMsgId(null);
     window.api.saveConfig({ lastChatSessionId: sessionId }).catch(() => {});
   }, []);
 
@@ -587,6 +687,7 @@ const ChatView: React.FC = () => {
       setIsGenerating(true);
       streamBuf.current = '';
       setStreamingContent('');
+      thinkingBuf.current = '';
 
       try {
         await window.api.sendChatMessage(content);
@@ -607,14 +708,21 @@ const ChatView: React.FC = () => {
   }, []);
 
   const handleRetry = useCallback(() => {
-    // Find the last user message and resend it
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
     if (!lastUserMsg) return;
+
+    // Remove thinking for the last assistant message being regenerated
+    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === 'assistant');
+    if (lastAssistantMsg) {
+      setThinkingMap((prev) => { const { [lastAssistantMsg.id]: _, ...rest } = prev; return rest; });
+      setActiveThinkingMsgId((prev) => prev === lastAssistantMsg.id ? null : prev);
+    }
 
     setError(null);
     setIsGenerating(true);
     streamBuf.current = '';
     setStreamingContent('');
+    thinkingBuf.current = '';
 
     window.api.sendChatMessage(lastUserMsg.content).catch(() => {
       setIsGenerating(false);
@@ -626,6 +734,27 @@ const ChatView: React.FC = () => {
 
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
   const displayWelcome = showWelcome && !hasMessages;
+
+  /* ── Thinking chip handler ──────────────────────────────────── */
+
+  const handleThinkingChipClick = useCallback((msgId: string) => {
+    setActiveThinkingMsgId((prev) => prev === msgId ? null : msgId);
+  }, []);
+
+  // Expose close function to parent via ref
+  useEffect(() => {
+    if (closeThinkingRef) closeThinkingRef.current = () => setActiveThinkingMsgId(null);
+    return () => { if (closeThinkingRef) closeThinkingRef.current = null; };
+  }, [closeThinkingRef]);
+
+  // Notify parent (AppShell) when active thinking changes
+  useEffect(() => {
+    if (!activeThinkingMsgId || !thinkingMap[activeThinkingMsgId]) {
+      onThinkingChange?.(null);
+    } else {
+      onThinkingChange?.(thinkingMap[activeThinkingMsgId]);
+    }
+  }, [activeThinkingMsgId, thinkingMap, onThinkingChange]);
 
   /* ── Render ─────────────────────────────────────────────────── */
 
@@ -736,6 +865,9 @@ const ChatView: React.FC = () => {
             isGenerating={isGenerating}
             renderAssistantContent={(content) => <AssistantContent content={content} onWikilinkClick={handleWikilinkClick} />}
             onRegenerate={handleRetry}
+            thinkingMap={thinkingMap}
+            activeThinkingMsgId={activeThinkingMsgId}
+            onThinkingChipClick={handleThinkingChipClick}
           />
         )}
       </div>

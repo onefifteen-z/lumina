@@ -2,8 +2,12 @@ import { randomUUID } from "crypto";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { ChatSession, ChatMessage } from "../../shared/types";
+import type { ChatChunk } from "../../shared/types";
 import { LLMService } from "./llm-service";
 import { FileSystemService } from "./filesystem-service";
+import { startSpan } from "../telemetry";
+import { context, trace, SpanStatusCode } from "@opentelemetry/api";
+import type { Context } from "@opentelemetry/api";
 
 const execAsync = promisify(exec);
 const SHELL_TIMEOUT_MS = 10_000;
@@ -86,15 +90,32 @@ export class ChatService {
    * then streams the final text response.
    * Appends both user and assistant messages to session history.
    */
-  async *sendMessage(content: string): AsyncGenerator<string> {
+  async *sendMessage(content: string): AsyncGenerator<ChatChunk> {
     if (!this.session) {
       throw new Error("No active chat session. Call startSession() first.");
     }
-
     if (!this.llm) {
       throw new Error("LLM service is not available.");
     }
 
+    const parentSpan = startSpan("chat.message", {
+      "openinference.span.kind": "CHAIN",
+      "session.id": this.session.id,
+      "input.value": content,
+    });
+
+    const ctx = parentSpan
+      ? trace.setSpan(context.active(), parentSpan)
+      : context.active();
+
+    yield* context.with(ctx, () => this.executeMessage(content, parentSpan, ctx));
+  }
+
+  private async *executeMessage(
+    content: string,
+    parentSpan: import("@opentelemetry/api").Span | null,
+    parentCtx?: Context,
+  ): AsyncGenerator<ChatChunk> {
     // Append user message to session
     const userMessage: ChatMessage = {
       id: randomUUID(),
@@ -102,79 +123,94 @@ export class ChatService {
       content,
       timestamp: new Date().toISOString(),
     };
-    this.session.messages.push(userMessage);
+    this.session!.messages.push(userMessage);
 
     // Create abort controller for this generation
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
-    // ── Tool-calling resolution loop ──────────────────────────────
-    // Use non-streaming calls to resolve any vault-scoped tool calls
-    // before switching to streaming for the final text response.
-    const tools = this.fileSystem ? [SHELL_TOOL] : undefined;
-    const extraMessages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }> = [];
-
-    for (let i = 0; i < 10; i++) {
-      if (signal.aborted) break;
-
-      const allMessages = [
-        { role: "system", content: this.session.systemPrompt },
-        ...this.session.messages.map((m) => ({ role: m.role, content: m.content })),
-        ...extraMessages,
-      ];
-
-      let result: Awaited<ReturnType<LLMService["callNonStreaming"]>>;
-      try {
-        result = await this.llm.callNonStreaming(allMessages, tools);
-      } catch {
-        break; // fall through to streaming attempt
-      }
-
-      if (!result.toolCalls || result.toolCalls.length === 0) break;
-
-      // Execute each tool call
-      const toolCallRecords = result.toolCalls;
-      extraMessages.push({ role: "assistant", content: null, tool_calls: toolCallRecords });
-
-      for (const tc of toolCallRecords) {
-        const output = await this.executeTool(tc.function.name, tc.function.arguments);
-        extraMessages.push({ role: "tool", tool_call_id: tc.id, content: output });
-      }
-    }
-
-    // ── Stream final text response ────────────────────────────────
-    const finalMessages = [
-      { role: "system", content: this.session.systemPrompt },
-      ...this.session.messages.map((m) => ({ role: m.role, content: m.content })),
-      ...extraMessages,
-    ];
-
     let accumulated = "";
 
     try {
-      const streamTools = extraMessages.length > 0 ? tools : undefined;
-      for await (const chunk of this.llm.generateChat(finalMessages, signal, streamTools)) {
-        accumulated += chunk;
-        yield chunk;
+      // ── Tool-calling resolution loop ────────────────────────────
+      const tools = this.fileSystem ? [SHELL_TOOL] : undefined;
+      const extraMessages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }> = [];
+
+      for (let i = 0; i < 10; i++) {
+        if (signal.aborted) break;
+
+        const allMessages = [
+          { role: "system", content: this.session!.systemPrompt },
+          ...this.session!.messages.map((m) => ({ role: m.role, content: m.content })),
+          ...extraMessages,
+        ];
+
+        let result: Awaited<ReturnType<LLMService["callNonStreaming"]>>;
+        try {
+          result = await this.llm!.callNonStreaming(allMessages, tools, parentCtx);
+        } catch {
+          break;
+        }
+
+        if (result.content) {
+          yield { type: 'narration', content: result.content };
+        }
+
+        if (!result.toolCalls || result.toolCalls.length === 0) break;
+
+        const toolCallRecords = result.toolCalls;
+        extraMessages.push({ role: "assistant", content: result.content, tool_calls: toolCallRecords });
+
+        for (const tc of toolCallRecords) {
+          yield {
+            type: 'tool_call',
+            id: tc.id,
+            name: tc.function.name,
+            args: tc.function.arguments,
+          };
+          const output = await this.executeTool(tc.function.name, tc.function.arguments);
+          yield { type: 'tool_result', id: tc.id, output };
+          extraMessages.push({ role: "tool", tool_call_id: tc.id, content: output });
+        }
       }
-    } catch (streamErr: unknown) {
-      if (signal.aborted) {
-        this.appendAssistantMessage(accumulated);
-        this.abortController = null;
-        return;
-      }
-      // Streaming failed (e.g. provider doesn't support stream:true).
-      // Fall back to a single non-streaming call.
+
+      // ── Stream final text response ──────────────────────────────
+      const finalMessages = [
+        { role: "system", content: this.session!.systemPrompt },
+        ...this.session!.messages.map((m) => ({ role: m.role, content: m.content })),
+        ...extraMessages,
+      ];
+
       try {
-        const fallback = await this.llm.callNonStreaming(finalMessages);
-        accumulated = fallback.content ?? "";
-        if (accumulated) yield accumulated;
-      } catch {
-        // Both streaming and non-streaming failed — surface the original error.
-        this.appendAssistantMessage(accumulated);
-        this.abortController = null;
-        throw streamErr;
+        const streamTools = extraMessages.length > 0 ? tools : undefined;
+        for await (const chunk of this.llm!.generateChat(finalMessages, signal, streamTools, parentCtx)) {
+          if (chunk.type === 'text') accumulated += chunk.content;
+          yield chunk;
+        }
+      } catch (streamErr: unknown) {
+        if (signal.aborted) {
+          this.appendAssistantMessage(accumulated);
+          this.abortController = null;
+          return;
+        }
+        try {
+          const fallback = await this.llm!.callNonStreaming(finalMessages);
+          accumulated = fallback.content ?? "";
+          if (accumulated) yield { type: 'text', content: accumulated };
+        } catch {
+          this.appendAssistantMessage(accumulated);
+          this.abortController = null;
+          throw streamErr;
+        }
       }
+
+      parentSpan?.setAttribute("output.value", accumulated);
+      parentSpan?.setStatus({ code: SpanStatusCode.OK });
+    } catch (err) {
+      parentSpan?.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      throw err;
+    } finally {
+      parentSpan?.end();
     }
 
     this.appendAssistantMessage(accumulated);

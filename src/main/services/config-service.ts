@@ -2,7 +2,7 @@ import { app, dialog, safeStorage, BrowserWindow } from "electron";
 import Store from "electron-store";
 import path from "path";
 import fs from "fs";
-import { AppConfig, LLMProviderConfig, VaultEntry } from "../../shared/types";
+import { AppConfig, LLMProviderConfig, PhoenixConfig, VaultEntry } from "../../shared/types";
 
 const API_KEY_BUFFER_ENCODING = "latin1";
 const API_KEY_FILE = "llm-api-key.enc";
@@ -12,6 +12,7 @@ interface StoreSchema {
   vaultPath: string;
   vaultHistory: VaultEntry[];
   llmProvider: LLMProviderConfig | null;
+  phoenix: PhoenixConfig;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -28,6 +29,7 @@ export class ConfigService {
         vaultPath: "",
         vaultHistory: [],
         llmProvider: null,
+        phoenix: { enabled: false, scheme: "http", host: "localhost", port: 6006 },
         theme: "system",
         chatHistorySidebarOpen: false,
         lastChatSessionId: "",
@@ -42,6 +44,7 @@ export class ConfigService {
     return {
       vaultPath: this.store.get("vaultPath"),
       llmProvider: this.store.get("llmProvider"),
+      phoenix: this.store.get("phoenix"),
       theme: this.store.get("theme"),
       chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
       lastChatSessionId: this.store.get("lastChatSessionId"),
@@ -55,6 +58,9 @@ export class ConfigService {
     }
     if (partial.llmProvider !== undefined) {
       this.store.set("llmProvider", partial.llmProvider);
+    }
+    if (partial.phoenix !== undefined) {
+      this.store.set("phoenix", partial.phoenix);
     }
     if (partial.theme !== undefined) {
       this.store.set("theme", partial.theme);

@@ -1,151 +1,135 @@
-/* Fox Thinking Indicator — CSS Keyframe Animations
- * All animations use transform and opacity only (GPU-accelerated, no layout recalculations).
- * All animations use animation-iteration-count: infinite.
- */
+/* Fox Thinking Indicator — keyframe animations from lumina_loading.html.
+ * All animations use transform/opacity (GPU-accelerated). */
 
-/* Breathing: subtle scale pulse on the fox body */
+.fox-thinking-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.fox-thinking-indicator--sm {
+  gap: 8px;
+}
+
+/* ── Fox container ── */
+.fox-wrap {
+  position: relative;
+}
+
+.fox-svg {
+  width: 100%;
+  height: 100%;
+  animation: fox-breathe 2.8s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
 @keyframes fox-breathe {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.03);
-  }
-  100% {
-    transform: scale(1);
-  }
+  0%, 100% { transform: scaleY(1) scaleX(1); }
+  45%      { transform: scaleY(1.03) scaleX(0.98); }
 }
 
-/* Ear wiggle: gentle rotation on ear elements */
-@keyframes fox-ear-wiggle {
-  0% {
-    transform: rotate(-3deg);
-  }
-  50% {
-    transform: rotate(3deg);
-  }
-  100% {
-    transform: rotate(-3deg);
-  }
+/* Ears wiggle */
+.fox-ear-left {
+  transform-origin: 248px 254px;
+  animation: fox-ear-l 3.4s ease-in-out infinite;
+}
+.fox-ear-right {
+  transform-origin: 432px 254px;
+  animation: fox-ear-r 3.4s ease-in-out infinite;
+}
+@keyframes fox-ear-l {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  20%           { transform: rotate(-5deg); }
+  40%           { transform: rotate(3deg); }
+}
+@keyframes fox-ear-r {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  20%           { transform: rotate(5deg); }
+  40%           { transform: rotate(-3deg); }
 }
 
-/* Eye blink: brief scaleY collapse at midpoint, open for majority */
-@keyframes fox-eye-blink {
-  0% {
-    transform: scaleY(1);
-  }
-  45% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.1);
-  }
-  55% {
-    transform: scaleY(1);
-  }
-  100% {
-    transform: scaleY(1);
-  }
+/* Blink */
+.fox-eye-left, .fox-eye-right {
+  animation: fox-blink 4s ease-in-out infinite;
+}
+.fox-eye-right { animation-delay: 0.05s; }
+.fox-eye-left  { transform-origin: 255px 287px; }
+.fox-eye-right { transform-origin: 425px 287px; }
+@keyframes fox-blink {
+  0%, 88%, 96%, 100% { transform: scaleY(1); }
+  92%                 { transform: scaleY(0.08); }
 }
 
-/* Eye shine: horizontal drift on highlight elements */
-@keyframes fox-eye-shine {
-  0% {
-    transform: translateX(-1px);
-  }
-  50% {
-    transform: translateX(1px);
-  }
-  100% {
-    transform: translateX(-1px);
-  }
+/* Shine drift */
+.fox-shine-l { animation: fox-shine-drift 2.8s ease-in-out infinite; transform-origin: 257px 274px; }
+.fox-shine-r { animation: fox-shine-drift 2.8s ease-in-out infinite 0.1s; transform-origin: 423px 274px; }
+@keyframes fox-shine-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50%       { transform: translate(1px, -1px); }
 }
 
-/* Facet shimmer: opacity pulse across polygon facets */
-@keyframes fox-facet-shimmer {
-  0% {
-    opacity: 0.7;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.7;
-  }
+/* Facet shimmer — sequenced amber pulses */
+.fox-facet-top    { animation: fox-shimmer 2.6s ease-in-out infinite 0s; }
+.fox-facet-center { animation: fox-shimmer 2.6s ease-in-out infinite 0.3s; }
+.fox-facet-lower  { animation: fox-shimmer 2.6s ease-in-out infinite 0.6s; }
+.fox-facet-muzzle { animation: fox-shimmer 2.6s ease-in-out infinite 0.9s; }
+@keyframes fox-shimmer {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.78; }
 }
 
-/* Glow pulse: ambient glow ring opacity */
+/* Tail glow pulse underneath fox */
+.fox-glow-ring {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 65%;
+  height: 10px;
+  border-radius: 50%;
+  background: #D4731A;
+  filter: blur(8px);
+  animation: fox-glow-pulse 2.8s ease-in-out infinite;
+  opacity: 0.5;
+}
 @keyframes fox-glow-pulse {
-  0% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.6;
-  }
-  100% {
-    opacity: 0.3;
-  }
+  0%, 100% { opacity: 0.35; transform: translateX(-50%) scaleX(0.85); }
+  45%       { opacity: 0.6;  transform: translateX(-50%) scaleX(1.1); }
 }
 
-/* Dot bounce: vertical wave on thinking dots */
-@keyframes fox-dot-bounce {
-  0% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-  100% {
-    transform: translateY(0);
-  }
+/* ── Thinking dots ── */
+.fox-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.fox-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #D4731A;
+  animation: fox-dot-wave 1.4s ease-in-out infinite;
+  opacity: 0.7;
+}
+.fox-dot:nth-child(2) { animation-delay: 0.18s; }
+.fox-dot:nth-child(3) { animation-delay: 0.36s; }
+@keyframes fox-dot-wave {
+  0%, 80%, 100% { transform: translateY(0);    opacity: 0.45; }
+  40%            { transform: translateY(-5px); opacity: 1; }
 }
 
-/* Label fade: opacity pulse on "Thinking" text */
+/* ── Label ── */
+.fox-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary, #6E6E73);
+  text-transform: uppercase;
+  animation: fox-label-fade 2.8s ease-in-out infinite;
+}
 @keyframes fox-label-fade {
-  0% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.5;
-  }
-}
-
-/* Animation utility classes */
-
-.fox-breathe {
-  animation: fox-breathe 3s ease-in-out infinite;
-  transform-origin: center;
-}
-
-.fox-ear-wiggle {
-  animation: fox-ear-wiggle 2.5s ease-in-out infinite;
-}
-
-.fox-eye-blink {
-  animation: fox-eye-blink 4s ease-in-out infinite;
-}
-
-.fox-eye-shine {
-  animation: fox-eye-shine 3s ease-in-out infinite;
-}
-
-.fox-facet-shimmer {
-  animation: fox-facet-shimmer 2s ease-in-out infinite;
-}
-
-.fox-glow-pulse {
-  animation: fox-glow-pulse 3s ease-in-out infinite;
-}
-
-.fox-dot-bounce {
-  animation: fox-dot-bounce 1.2s ease-in-out infinite;
-}
-
-.fox-label-fade {
-  animation: fox-label-fade 2s ease-in-out infinite;
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 0.85; }
 }
 
 /* Accessibility: disable all animations for users who prefer reduced motion */

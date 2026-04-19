@@ -1,3 +1,5 @@
+import { initTelemetry, shutdownTelemetry } from "./telemetry";
+
 import { app, BrowserWindow, dialog, protocol, net } from "electron";
 import path from "path";
 import { pathToFileURL } from "url";
@@ -103,6 +105,8 @@ app.whenReady().then(async () => {
   } catch (err) {
     handleFatalError(err, "Failed to read application configuration");
   }
+
+  initTelemetry(appConfig.phoenix);
 
   const vaultPath = appConfig.vaultPath;
   let fileSystemService: FileSystemService | null = null;
@@ -217,6 +221,10 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  shutdownTelemetry().catch(() => {});
 });
 
 // ── Uncaught exception safety net ──────────────────────────────

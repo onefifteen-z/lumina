@@ -6,6 +6,7 @@ import type {
   LLMAssistParams,
   VaultEntry,
   WikiAPI,
+  ChatTraceChunk,
 } from "../shared/types";
 
 /**
@@ -38,6 +39,14 @@ const api: WikiAPI = {
 
   createFolder(relativePath: string) {
     return ipcRenderer.invoke("wiki:createFolder", relativePath);
+  },
+
+  moveVaultEntry(from: string, toDir: string) {
+    return ipcRenderer.invoke("wiki:moveVaultEntry", from, toDir);
+  },
+
+  importExternalPaths(absolutePaths: string[], toDir: string) {
+    return ipcRenderer.invoke("wiki:importExternalPaths", absolutePaths, toDir);
   },
 
   getAbsolutePath(filename: string) {
@@ -272,6 +281,30 @@ const api: WikiAPI = {
     );
   },
 
+  onChatThinkingChunk(callback: (chunk: string) => void) {
+    ipcRenderer.on(
+      "wiki:chatThinkingChunk",
+      (
+        _event: Electron.IpcRendererEvent,
+        { chunk }: { requestId: string; chunk: string },
+      ) => {
+        callback(chunk);
+      },
+    );
+  },
+
+  onChatTraceChunk(callback: (chunk: ChatTraceChunk) => void) {
+    ipcRenderer.on(
+      "wiki:chatTraceChunk",
+      (
+        _event: Electron.IpcRendererEvent,
+        { chunk }: { requestId: string; chunk: ChatTraceChunk },
+      ) => {
+        callback(chunk);
+      },
+    );
+  },
+
   onChatEnd(callback: (error?: string) => void) {
     ipcRenderer.on(
       "wiki:chatEnd",
@@ -295,6 +328,8 @@ const api: WikiAPI = {
 
   removeChatListeners() {
     ipcRenderer.removeAllListeners("wiki:chatChunk");
+    ipcRenderer.removeAllListeners("wiki:chatThinkingChunk");
+    ipcRenderer.removeAllListeners("wiki:chatTraceChunk");
     ipcRenderer.removeAllListeners("wiki:chatEnd");
     ipcRenderer.removeAllListeners("wiki:chatWarning");
   },

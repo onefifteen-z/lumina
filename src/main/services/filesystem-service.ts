@@ -238,6 +238,151 @@ export class FileSystemService {
   }
 
   /**
+   * Move a file or folder to another folder inside the vault (basename preserved).
+   * Paths are vault-relative POSIX (`wiki/Note.md`, `wiki/notes`).
+   */
+  async moveVaultEntry(fromRelative: string, toDirRelative: string): Promise<void> {
+    const fromNorm = fromRelative.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!fromNorm) throw new Error("Invalid source path");
+    if (fromNorm.split("/").some((s) => s === "..")) {
+      throw new Error("Invalid source path");
+    }
+
+    const toDirNorm = toDirRelative
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "")
+      .replace(/\/+$/, "");
+    if (toDirNorm.split("/").some((s) => s === "..")) {
+      throw new Error("Invalid target folder");
+    }
+
+    if (this.pathTouchesReserved(fromNorm) || this.pathTouchesReserved(toDirNorm)) {
+      throw new Error("Cannot move items into or from reserved paths");
+    }
+
+    const fromAbs = this.resolveUnderVault(fromNorm);
+    const toDirAbs =
+      toDirNorm === ""
+        ? path.resolve(this.vaultPath)
+        : this.resolveUnderVault(toDirNorm);
+
+    const base = path.basename(fromNorm);
+    const destAbs = path.join(toDirAbs, base);
+
+    if (path.resolve(fromAbs) === path.resolve(destAbs)) return;
+
+    const fromResolved = path.resolve(fromAbs);
+    const destResolved = path.resolve(destAbs);
+    if (destResolved.startsWith(fromResolved + path.sep)) {
+      throw new Error("Cannot move a folder into itself");
+    }
+
+    await fs.mkdir(toDirAbs, { recursive: true });
+
+    try {
+      await fs.access(destAbs);
+      throw new Error("A file or folder with that name already exists here");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+
+    try {
+      await fs.rename(fromAbs, destAbs);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EXDEV") {
+        await fs.cp(fromAbs, destAbs, { recursive: true });
+        await fs.rm(fromAbs, { recursive: true, force: true });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Copy files or folders from absolute OS paths into a vault folder.
+   * Sources already inside the vault are moved instead.
+   */
+  async importExternalEntries(
+    absolutePaths: string[],
+    toDirRelative: string,
+  ): Promise<void> {
+    const toDirNorm = toDirRelative
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "")
+      .replace(/\/+$/, "");
+    if (!toDirNorm) throw new Error("Choose a folder inside the vault");
+    if (toDirNorm.split("/").some((s) => s === "..")) {
+      throw new Error("Invalid target folder");
+    }
+    if (this.pathTouchesReserved(toDirNorm)) {
+      throw new Error("Cannot import into reserved paths");
+    }
+
+    const toDirAbs = this.resolveUnderVault(toDirNorm);
+    await fs.mkdir(toDirAbs, { recursive: true });
+    const vaultRoot = path.resolve(this.vaultPath);
+
+    for (const rawSrc of absolutePaths) {
+      const srcAbs = path.resolve(rawSrc);
+      if (srcAbs === vaultRoot) continue;
+
+      if (srcAbs.startsWith(vaultRoot + path.sep)) {
+        const inner = path.relative(vaultRoot, srcAbs).replace(/\\/g, "/");
+        if (!inner || inner.startsWith("..")) continue;
+        if (this.pathTouchesReserved(inner)) continue;
+        await this.moveVaultEntry(inner, toDirNorm);
+        continue;
+      }
+
+      const base = path.basename(srcAbs);
+      const destAbs = await this.uniqueDestPath(toDirAbs, base);
+      const st = await fs.stat(srcAbs);
+      if (st.isDirectory()) {
+        await fs.cp(srcAbs, destAbs, { recursive: true, errorOnExist: true });
+      } else if (st.isFile()) {
+        await fs.copyFile(srcAbs, destAbs);
+      }
+    }
+  }
+
+  private pathTouchesReserved(rel: string): boolean {
+    return rel.split("/").some(
+      (s) => s === ".lumina" || s === ".lumina-vault",
+    );
+  }
+
+  private resolveUnderVault(rel: string): string {
+    const norm = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (norm.split("/").some((s) => s === "..")) {
+      throw new Error("Invalid path");
+    }
+    const abs = path.resolve(path.join(this.vaultPath, norm));
+    const root = path.resolve(this.vaultPath);
+    if (abs !== root && !abs.startsWith(root + path.sep)) {
+      throw new Error("Path escapes vault");
+    }
+    return abs;
+  }
+
+  private async uniqueDestPath(destDir: string, base: string): Promise<string> {
+    const ext = path.extname(base);
+    const stem = path.basename(base, ext);
+    let candidate = path.join(destDir, base);
+    let i = 1;
+    for (;;) {
+      try {
+        await fs.access(candidate);
+        candidate = path.join(destDir, `${stem} (${i})${ext}`);
+        i++;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return candidate;
+        throw err;
+      }
+    }
+  }
+
+  /**
    * Recursively find all files under a directory (any extension).
    * Skips the .lumina-vault marker file only.
    */

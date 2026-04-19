@@ -79,10 +79,19 @@ export interface LLMProviderConfig {
   // API key stored separately in OS keychain, referenced by provider ID
 }
 
+/** Configuration for the Phoenix observability backend. */
+export interface PhoenixConfig {
+  enabled: boolean;
+  scheme: "http" | "https";
+  host: string;
+  port: number;
+}
+
 /** Application-level configuration persisted via electron-store. */
 export interface AppConfig {
   vaultPath: string;
   llmProvider: LLMProviderConfig | null;
+  phoenix: PhoenixConfig;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -99,6 +108,20 @@ export interface VaultChangeEvent {
   type: "add" | "change" | "unlink";
   filename: string;
 }
+
+/** A tagged chunk yielded during LLM streaming. */
+export type ChatChunk =
+  | { type: 'text'; content: string }
+  | { type: 'thinking'; content: string }
+  | { type: 'narration'; content: string }
+  | { type: 'tool_call'; id: string; name: string; args: string }
+  | { type: 'tool_result'; id: string; output: string };
+
+/** A chunk carrying one trace entry (narration / tool_call / tool_result). */
+export type ChatTraceChunk =
+  | { type: 'narration'; content: string }
+  | { type: 'tool_call'; id: string; name: string; args: string }
+  | { type: 'tool_result'; id: string; output: string };
 
 /** A single message in a chat conversation. */
 export interface ChatMessage {
@@ -133,6 +156,10 @@ export interface WikiAPI {
   deleteArticle(title: string): Promise<void>;
   articleExists(title: string): Promise<boolean>;
   createFolder(relativePath: string): Promise<void>;
+  /** Move a vault file or folder into another folder (vault-relative paths). */
+  moveVaultEntry(from: string, toDir: string): Promise<void>;
+  /** Copy or move OS paths into a vault folder (`toDir` vault-relative). */
+  importExternalPaths(absolutePaths: string[], toDir: string): Promise<void>;
   getAbsolutePath(filename: string): Promise<string>;
   readFile(filename: string): Promise<string>;
   revealInFinder(filename: string): Promise<void>;
@@ -179,6 +206,8 @@ export interface WikiAPI {
   stopChatGeneration(): Promise<void>;
   getChatSession(): Promise<ChatSession | null>;
   onChatChunk(callback: (chunk: string) => void): void;
+  onChatThinkingChunk(callback: (chunk: string) => void): void;
+  onChatTraceChunk(callback: (chunk: ChatTraceChunk) => void): void;
   onChatEnd(callback: (error?: string) => void): void;
   onChatWarning(callback: (message: string) => void): void;
   removeChatListeners(): void;

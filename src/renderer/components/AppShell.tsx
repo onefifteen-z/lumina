@@ -5,6 +5,7 @@ import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
 import SettingsPanel from './SettingsPanel';
 import ChatView from './ChatView';
+import type { ThinkingEntry } from './ChatView';
 import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStatus';
 import GenerateArticleDialog from './GenerateArticleDialog';
 import { IconRail, type SidebarView } from './IconRail';
@@ -13,6 +14,7 @@ import { SearchView } from './SearchView';
 import { SearchPopup } from './SearchPopup';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
+import { ThinkingSidebar } from './chat/ThinkingSidebar';
 import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
 import { VaultSwitcher } from './VaultSwitcher';
@@ -190,6 +192,7 @@ const SidebarLayout: React.FC<{
   bookmarks: Set<string>;
   onToggleBookmark: (filename: string) => void;
   hasClaudeMd: boolean;
+  vaultReloadKey: number;
 }> = ({
   activeView,
   onViewChange,
@@ -216,6 +219,7 @@ const SidebarLayout: React.FC<{
   bookmarks,
   onToggleBookmark,
   hasClaudeMd,
+  vaultReloadKey,
 }) => {
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate, viewArticle } = useNavigation();
@@ -228,6 +232,8 @@ const SidebarLayout: React.FC<{
     const [rightWidth, setRightWidth] = useState(260);
     const [isLeftResizing, setIsLeftResizing] = useState(false);
     const [isRightResizing, setIsRightResizing] = useState(false);
+    const [chatThinkingData, setChatThinkingData] = useState<ThinkingEntry | null>(null);
+    const closeThinkingRef = React.useRef<(() => void) | null>(null);
 
     // ── Tabs ──────────────────────────────────────────────────
     const [tabs, setTabs] = useState<string[]>(() => selectedFilename ? [selectedFilename] : []);
@@ -322,6 +328,8 @@ const SidebarLayout: React.FC<{
         } else {
           // Switching to a different view
           onViewChange(view);
+          // Clear thinking sidebar when leaving chat
+          if (activeView === 'chat' && view !== 'chat') setChatThinkingData(null);
           // Settings/chat don't use the sidebar panel, so collapse it
           if (view === 'settings' || view === 'chat') {
             setOpen(false);
@@ -560,7 +568,7 @@ const SidebarLayout: React.FC<{
               <main className="flex flex-col flex-1 overflow-hidden bg-main-bg">
                 <OfflineBanner />
                 {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
-                {activeView === 'chat' && editingFilename === null && <ChatView />}
+                {activeView === 'chat' && editingFilename === null && <ChatView onThinkingChange={setChatThinkingData} closeThinkingRef={closeThinkingRef} vaultKey={vaultReloadKey} />}
                 {activeView === 'graph' && editingFilename === null && (
                   <GraphView articles={articles} onSelectArticle={(f) => { selectWithHistory(f); onViewChange('files'); }} />
                 )}
@@ -583,8 +591,23 @@ const SidebarLayout: React.FC<{
                 onMouseDown={handleRightResizeStart}
               />
             )}
+            {activeView === 'chat' && editingFilename === null && chatThinkingData && (
+              <div
+                className={`lumina-resize-handle${isRightResizing ? ' is-dragging' : ''}`}
+                onMouseDown={handleRightResizeStart}
+              />
+            )}
             {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
               <TocPanel headings={headings} collapsed={rightCollapsed} width={rightWidth} />
+            )}
+            {activeView === 'chat' && editingFilename === null && chatThinkingData && (
+              <ThinkingSidebar
+                content={chatThinkingData.content}
+                durationMs={chatThinkingData.durationMs}
+                isStreaming={chatThinkingData.isStreaming}
+                onClose={() => closeThinkingRef.current?.()}
+                width={rightWidth}
+              />
             )}
           </div>
         </div>
@@ -839,6 +862,7 @@ const AppShell: React.FC = () => {
   }, []);
 
   // ── Navigation history ────────────────────────────────────────
+  // Stack entries are either vault-relative filenames or '__view:<viewName>' markers.
   const navStackRef = React.useRef<string[]>([]);
   const navIndexRef = React.useRef(-1);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -861,21 +885,38 @@ const AppShell: React.FC = () => {
     if (navIndexRef.current <= 0) return;
     navIndexRef.current--;
     syncNavButtons();
-    handleSelectArticle(navStackRef.current[navIndexRef.current]);
+    const entry = navStackRef.current[navIndexRef.current];
+    if (entry.startsWith('__view:')) {
+      setActiveView(entry.slice(7) as SidebarView);
+    } else {
+      handleSelectArticle(entry);
+    }
   }, [handleSelectArticle]);
 
   const handleHistoryForward = useCallback(() => {
     if (navIndexRef.current >= navStackRef.current.length - 1) return;
     navIndexRef.current++;
     syncNavButtons();
-    handleSelectArticle(navStackRef.current[navIndexRef.current]);
+    const entry = navStackRef.current[navIndexRef.current];
+    if (entry.startsWith('__view:')) {
+      setActiveView(entry.slice(7) as SidebarView);
+    } else {
+      handleSelectArticle(entry);
+    }
   }, [handleSelectArticle]);
 
   const viewArticle = useCallback((filename: string) => {
+    // If navigating from chat (or any non-files view), record the source view so
+    // the back button can return there.
+    if (activeView !== 'files') {
+      navStackRef.current = navStackRef.current.slice(0, navIndexRef.current + 1);
+      navStackRef.current.push(`__view:${activeView}`);
+      navIndexRef.current = navStackRef.current.length - 1;
+    }
     selectArticleWithHistory(filename);
     setEditingFilename(null);
     setActiveView('files');
-  }, [selectArticleWithHistory]);
+  }, [activeView, selectArticleWithHistory]);
 
   const handleAcceptGenerated = useCallback((content: string) => {
     setGenerateOpen(false);
@@ -975,6 +1016,7 @@ const AppShell: React.FC = () => {
               bookmarks={bookmarks}
               onToggleBookmark={onToggleBookmark}
               hasClaudeMd={hasClaudeMd}
+              vaultReloadKey={vaultReloadKey}
             />
           </SidebarProvider>
         </TooltipProvider>

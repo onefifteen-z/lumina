@@ -1,6 +1,79 @@
 import React from 'react';
 import './FoxThinkingIndicator.css';
 
+function animClass(names: string, animated: boolean): string | undefined {
+  return animated ? names : undefined;
+}
+
+/** Shared low-poly fox face; `animated` toggles CSS keyframes from FoxThinkingIndicator.css */
+export const FoxFaceGraphic: React.FC<{ animated: boolean }> = ({ animated }) => (
+  <>
+    {/* HEAD BASE */}
+    <polygon className={animClass('fox-facet-top', animated)} points="216,156 340,172 464,156 490,320 432,462 340,486 248,462 190,320" fill="#D4731A" />
+
+    {/* FOREHEAD */}
+    <polygon className={animClass('fox-facet-top fox-ear-left', animated)} points="216,156 248,254 294,244 340,172" fill="#EFA03C" />
+    <polygon className={animClass('fox-facet-top fox-ear-right', animated)} points="464,156 432,254 386,244 340,172" fill="#EFA03C" />
+    <polygon className={animClass('fox-facet-top', animated)} points="248,254 432,254 386,244 340,172 294,244" fill="#EFA03C" />
+
+    {/* EAR INNERS */}
+    <polygon className={animClass('fox-ear-left', animated)} points="224,164 252,248 294,244" fill="#F2C898" />
+    <polygon className={animClass('fox-ear-right', animated)} points="456,164 428,248 386,244" fill="#F2C898" />
+
+    {/* GOLDEN SLIVER */}
+    <polygon className={animClass('fox-facet-top', animated)} points="324,172 356,172 350,252 340,282 330,252" fill="#F8CA52" fillOpacity="0.52" />
+
+    {/* DARK MASKS */}
+    <polygon points="190,320 248,254 292,312 266,428 248,462" fill="#180A02" />
+    <polygon points="490,320 432,254 388,312 414,428 432,462" fill="#180A02" />
+
+    {/* CENTER FACE */}
+    <polygon className={animClass('fox-facet-center', animated)} points="248,254 432,254 388,312 292,312" fill="#EFA03C" />
+
+    {/* LOWER CENTER */}
+    <polygon className={animClass('fox-facet-lower', animated)} points="292,312 388,312 398,384 282,384" fill="#E09030" />
+
+    {/* MUZZLE */}
+    <polygon className={animClass('fox-facet-muzzle', animated)} points="282,384 398,384 408,452 340,474 272,452" fill="#F2E0C6" />
+
+    {/* EYES */}
+    <g className={animClass('fox-eye-left', animated)}>
+      <polygon points="248,254 292,278 254,300 218,278" fill="#0E0502" />
+    </g>
+    <g className={animClass('fox-eye-right', animated)}>
+      <polygon points="432,254 388,278 426,300 462,278" fill="#0E0502" />
+    </g>
+
+    {/* EYE SHINES */}
+    <g className={animClass('fox-shine-l', animated)}>
+      <circle cx="257" cy="274" r="7" fill="#FFFFFF" fillOpacity="0.88" />
+      <circle cx="254" cy="271" r="2.5" fill="#FFFFFF" />
+    </g>
+    <g className={animClass('fox-shine-r', animated)}>
+      <circle cx="423" cy="274" r="7" fill="#FFFFFF" fillOpacity="0.88" />
+      <circle cx="420" cy="271" r="2.5" fill="#FFFFFF" />
+    </g>
+
+    {/* NOSE */}
+    <ellipse cx="340" cy="416" rx="12" ry="8" fill="#140804" />
+    <ellipse cx="337" cy="413" rx="4" ry="2.8" fill="#FFFFFF" fillOpacity="0.28" />
+  </>
+);
+
+/** Static fox mark for thinking chips; default 10px matches prior text-[10px] sparkle */
+export const FoxChipIcon: React.FC<{ size?: number; className?: string }> = ({ size = 10, className }) => (
+  <svg
+    className={className}
+    width={size}
+    height={size}
+    viewBox="0 0 680 680"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <FoxFaceGraphic animated={false} />
+  </svg>
+);
+
 export interface FoxThinkingIndicatorProps {
   size?: 'large' | 'small';
 }
@@ -8,168 +81,36 @@ export interface FoxThinkingIndicatorProps {
 export const FoxThinkingIndicator: React.FC<FoxThinkingIndicatorProps> = ({ size = 'large' }) => {
   const isLarge = size === 'large';
   const svgSize = isLarge ? 80 : 44;
-  const dotSize = isLarge ? 6 : 4;
 
   return (
     <div
-      className="fox-thinking-indicator"
+      className={`fox-thinking-indicator ${isLarge ? '' : 'fox-thinking-indicator--sm'}`}
       aria-label="Thinking"
       role="status"
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}
     >
-      {/* SVG wrapper for glow ring positioning */}
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {/* Glow ring — large variant only */}
-        {isLarge && (
-          <div
-            className="fox-glow-pulse"
-            style={{
-              position: 'absolute',
-              width: svgSize * 1.5,
-              height: svgSize * 1.5,
-              borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(212,115,26,0.4) 0%, rgba(212,115,26,0) 70%)',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-            }}
-          />
-        )}
+      <div className="fox-wrap" style={{ width: svgSize, height: svgSize }}>
+        {isLarge && <div className="fox-glow-ring" />}
         <svg
+          className="fox-svg"
           width={svgSize}
           height={svgSize}
-          viewBox="0 0 200 200"
+          viewBox="0 0 680 680"
+          xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
         >
-          {/* Main body group with breathing animation */}
-          <g className="fox-breathe">
-
-            {/* --- Head facets (shimmer groups with staggered delays) --- */}
-
-            {/* Group 1: Base head shape — primary fur */}
-            <g className="fox-facet-shimmer" style={{ animationDelay: '0s' }}>
-              {/* Left head */}
-              <polygon points="60,90 100,55 100,130" fill="#D4731A" />
-              {/* Right head */}
-              <polygon points="140,90 100,55 100,130" fill="#D4731A" />
-              {/* Lower left jaw */}
-              <polygon points="60,90 100,130 75,135" fill="#D4731A" />
-              {/* Lower right jaw */}
-              <polygon points="140,90 100,130 125,135" fill="#D4731A" />
-            </g>
-
-            {/* Group 2: Secondary highlight facets */}
-            <g className="fox-facet-shimmer" style={{ animationDelay: '0.4s' }}>
-              {/* Left cheek highlight */}
-              <polygon points="65,95 100,70 85,115" fill="#EFA03C" />
-              {/* Right cheek highlight */}
-              <polygon points="135,95 100,70 115,115" fill="#EFA03C" />
-            </g>
-
-            {/* Group 3: Tertiary light accent facets */}
-            <g className="fox-facet-shimmer" style={{ animationDelay: '0.8s' }}>
-              {/* Forehead accent */}
-              <polygon points="85,68 100,55 115,68 100,80" fill="#F2C898" />
-              {/* Left muzzle */}
-              <polygon points="85,115 100,130 92,135" fill="#F2C898" />
-              {/* Right muzzle */}
-              <polygon points="115,115 100,130 108,135" fill="#F2C898" />
-            </g>
-
-            {/* Group 4: Additional primary facets */}
-            <g className="fox-facet-shimmer" style={{ animationDelay: '1.2s' }}>
-              {/* Left temple */}
-              <polygon points="60,90 75,70 85,90" fill="#D4731A" />
-              {/* Right temple */}
-              <polygon points="140,90 125,70 115,90" fill="#D4731A" />
-            </g>
-
-            {/* Group 5: Secondary lower facets */}
-            <g className="fox-facet-shimmer" style={{ animationDelay: '1.6s' }}>
-              {/* Chin */}
-              <polygon points="92,135 100,145 108,135" fill="#EFA03C" />
-            </g>
-
-            {/* --- Ears --- */}
-
-            {/* Left ear */}
-            <g className="fox-ear-wiggle" style={{ animationDelay: '0s', transformOrigin: '75px 70px' }}>
-              <polygon points="60,90 50,40 80,65" fill="#D4731A" />
-              <polygon points="58,75 53,45 75,63" fill="#EFA03C" />
-              <polygon points="56,60 55,48 68,58" fill="#F2C898" />
-            </g>
-
-            {/* Right ear */}
-            <g className="fox-ear-wiggle" style={{ animationDelay: '0.3s', transformOrigin: '125px 70px' }}>
-              <polygon points="140,90 150,40 120,65" fill="#D4731A" />
-              <polygon points="142,75 147,45 125,63" fill="#EFA03C" />
-              <polygon points="144,60 145,48 132,58" fill="#F2C898" />
-            </g>
-
-            {/* --- Eyes --- */}
-
-            {/* Left eye */}
-            <g className="fox-eye-blink" style={{ transformOrigin: '82px 98px' }}>
-              {/* Eye white */}
-              <ellipse cx="82" cy="98" rx="8" ry="6" fill="#FFFFFF" />
-              {/* Pupil */}
-              <ellipse cx="83" cy="98" rx="4" ry="5" fill="#1a1a1a" />
-              {/* Shine highlight */}
-              <ellipse className="fox-eye-shine" cx="85" cy="96" rx="2" ry="1.5" fill="#F2C898" />
-            </g>
-
-            {/* Right eye */}
-            <g className="fox-eye-blink" style={{ transformOrigin: '118px 98px' }}>
-              {/* Eye white */}
-              <ellipse cx="118" cy="98" rx="8" ry="6" fill="#FFFFFF" />
-              {/* Pupil */}
-              <ellipse cx="117" cy="98" rx="4" ry="5" fill="#1a1a1a" />
-              {/* Shine highlight */}
-              <ellipse className="fox-eye-shine" cx="115" cy="96" rx="2" ry="1.5" fill="#F2C898" />
-            </g>
-
-            {/* --- Nose --- */}
-            <polygon points="96,120 100,115 104,120 100,123" fill="#1a1a1a" />
-
-            {/* --- Mouth line --- */}
-            <line x1="100" y1="123" x2="100" y2="130" stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round" />
-            <line x1="95" y1="130" x2="100" y2="130" stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round" />
-            <line x1="100" y1="130" x2="105" y2="130" stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round" />
-          </g>
+          <FoxFaceGraphic animated />
         </svg>
       </div>
 
       {/* Thinking dots */}
-      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-        {[0, 0.15, 0.3].map((delay, i) => (
-          <div
-            key={i}
-            className="fox-dot-bounce"
-            style={{
-              width: dotSize,
-              height: dotSize,
-              borderRadius: '50%',
-              backgroundColor: '#D4731A',
-              animationDelay: `${delay}s`,
-            }}
-          />
-        ))}
+      <div className="fox-dots">
+        <div className="fox-dot" />
+        <div className="fox-dot" />
+        <div className="fox-dot" />
       </div>
 
       {/* Thinking label — large variant only */}
-      {isLarge && (
-        <span
-          className="fox-label-fade"
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            color: 'var(--color-text-secondary)',
-            marginTop: 4,
-          }}
-        >
-          Thinking
-        </span>
-      )}
+      {isLarge && <span className="fox-label">Thinking</span>}
     </div>
   );
 };

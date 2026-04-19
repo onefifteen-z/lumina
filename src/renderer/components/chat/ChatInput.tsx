@@ -49,7 +49,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         send();
       }
@@ -118,7 +118,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       </div>
 
       <p className="mt-1.5 text-center text-[11px] text-text-secondary opacity-60">
-        Enter to send · Shift+Enter for newline
+        {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter to send
       </p>
     </div>
   );

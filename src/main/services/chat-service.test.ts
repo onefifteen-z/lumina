@@ -19,7 +19,7 @@ function mockLLMService(chunks: string[]): LLMService {
   return {
     generateChat: vi.fn().mockImplementation(async function* () {
       for (const chunk of chunks) {
-        yield chunk;
+        yield { type: 'text', content: chunk };
       }
     }),
   } as unknown as LLMService;
@@ -37,7 +37,7 @@ function mockLLMServiceCapture(
       messages: Array<{ role: string; content: string }>,
     ) {
       capturedMessages.push([...messages]);
-      yield "";
+      yield { type: 'text', content: '' };
     }),
   } as unknown as LLMService;
 }
@@ -51,8 +51,8 @@ const chatMessageArb: fc.Arbitrary<ChatMessage> = fc.record({
 });
 
 /** Drain an async generator, collecting all yielded values. */
-async function drainGenerator(gen: AsyncGenerator<string>): Promise<string[]> {
-  const results: string[] = [];
+async function drainGenerator(gen: AsyncGenerator<any>): Promise<any[]> {
+  const results: any[] = [];
   for await (const chunk of gen) {
     results.push(chunk);
   }
@@ -150,8 +150,8 @@ describe("ChatService property-based tests", () => {
             service.sendMessage("test message"),
           );
 
-          // Yielded chunks should match input chunks
-          expect(yielded).toEqual(chunks);
+          // Yielded chunks should match input chunks (as ChatChunk objects)
+          expect(yielded.map((c: any) => c.content)).toEqual(chunks);
 
           // The assistant message content should be the concatenation
           const session = service.getSession()!;

@@ -23,7 +23,7 @@ export const VaultInitDialog: React.FC<VaultInitDialogProps> = ({ open, onConfir
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
-      <div className="bg-surface rounded-xl border border-border shadow-2xl p-6 max-w-sm w-full mx-4">
+      <div className="bg-[var(--color-bg-secondary)] rounded-xl border border-[var(--color-border)] shadow-2xl p-6 max-w-sm w-full mx-4">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg bg-primary-bg flex items-center justify-center">
             <FolderOpen size={20} className="text-primary" />

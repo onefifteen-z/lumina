@@ -5,6 +5,19 @@ import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
 
+/** Custom data type for drags that start inside the file tree. */
+const LUMINA_DRAG_PATH = "application/x-lumina-vault-path";
+
+function vaultParentDir(filename: string): string {
+  const n = filename.replace(/\\/g, "/");
+  const i = n.lastIndexOf("/");
+  return i === -1 ? "" : n.slice(0, i);
+}
+
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
 // ── Tree data model ────────────────────────────────────────────
 
 type FileNode = {
@@ -117,6 +130,12 @@ interface TreeNodeProps {
   onSelectArticle: (filename: string) => void;
   onToggleFolder: (path: string) => void;
   onContextMenu?: (e: React.MouseEvent, filename: string) => void;
+  dropTargetPath: string | null;
+  dragSourcePath: string | null;
+  onDragStartRow: (e: React.DragEvent, path: string) => void;
+  onDragEndRow: () => void;
+  onDragOverTarget: (e: React.DragEvent, targetFolderPath: string) => void;
+  onDropOnTarget: (e: React.DragEvent, targetFolderPath: string) => void;
 }
 
 const TreeNodeRow: React.FC<TreeNodeProps> = ({
@@ -128,25 +147,39 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   onSelectArticle,
   onToggleFolder,
   onContextMenu,
+  dropTargetPath,
+  dragSourcePath,
+  onDragStartRow,
+  onDragEndRow,
+  onDragOverTarget,
+  onDropOnTarget,
 }) => {
   const indent = 6 + depth * 16;
 
   if (node.type === "file") {
     const isSelected = node.article.filename === selectedFilename;
     const isPdf = node.article.filename.toLowerCase().endsWith(".pdf");
+    const dropInto = vaultParentDir(node.article.filename);
+    const isDropHighlight = dropTargetPath !== null && normPath(dropTargetPath) === normPath(dropInto);
     return (
       <button
         type="button"
         title={node.article.title}
+        draggable
+        onDragStart={(e) => onDragStartRow(e, node.article.filename)}
+        onDragEnd={onDragEndRow}
+        onDragOver={(e) => onDragOverTarget(e, dropInto)}
+        onDrop={(e) => onDropOnTarget(e, dropInto)}
         onClick={() => onSelectArticle(node.article.filename)}
         onContextMenu={(e) => onContextMenu?.(e, node.article.filename)}
         style={{ paddingLeft: `${indent + 18}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
           "flex items-center gap-1.5 w-full text-left truncate transition-colors",
-          "focus-visible:outline-none",
+          "focus-visible:outline-none cursor-grab active:cursor-grabbing",
+          isDropHighlight && "bg-primary-bg/40",
           isSelected
             ? "bg-primary-bg text-text-primary"
-            : "text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+            : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
         )}
       >
         {isPdf && <FileText size={13} className="shrink-0 text-red-400" />}
@@ -157,22 +190,29 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
 
   // Folder node
   const isExpanded = expandedFolders.has(node.path);
+  const isDropHighlight = dropTargetPath !== null && normPath(dropTargetPath) === normPath(node.path);
   return (
     <div>
       <button
         type="button"
+        draggable
+        onDragStart={(e) => onDragStartRow(e, node.path)}
+        onDragEnd={onDragEndRow}
+        onDragOver={(e) => onDragOverTarget(e, node.path)}
+        onDrop={(e) => onDropOnTarget(e, node.path)}
         onClick={() => onToggleFolder(node.path)}
         style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
           "flex items-center gap-1 w-full",
-          "text-text-primary hover:bg-surface-hover transition-colors cursor-pointer",
-          "focus-visible:outline-none"
+          "text-text-primary hover:bg-surface-hover transition-colors cursor-grab active:cursor-grabbing",
+          "focus-visible:outline-none",
+          isDropHighlight && "bg-primary-bg/40"
         )}
       >
         <ChevronRight
           size={11}
           className={cn(
-            "shrink-0 text-text-secondary transition-transform duration-150",
+            "shrink-0 text-text-secondary transition-transform duration-150 pointer-events-none",
             isExpanded && "rotate-90"
           )}
         />
@@ -196,6 +236,12 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
               onSelectArticle={onSelectArticle}
               onToggleFolder={onToggleFolder}
               onContextMenu={onContextMenu}
+              dropTargetPath={dropTargetPath}
+              dragSourcePath={dragSourcePath}
+              onDragStartRow={onDragStartRow}
+              onDragEndRow={onDragEndRow}
+              onDragOverTarget={onDragOverTarget}
+              onDropOnTarget={onDropOnTarget}
             />
           ))}
         </div>
@@ -306,6 +352,8 @@ export function FilesView({
   isBookmarked,
 }: FilesViewProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; filename: string } | null>(null);
+  const [treeDropTarget, setTreeDropTarget] = useState<string | null>(null);
+  const [dragSourcePath, setDragSourcePath] = useState<string | null>(null);
 
   const handleCtx = useCallback((e: React.MouseEvent, filename: string) => {
     e.preventDefault();
@@ -319,6 +367,13 @@ export function FilesView({
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
   }, [ctxMenu]);
+
+  React.useEffect(() => {
+    const clear = () => setTreeDropTarget(null);
+    window.addEventListener("dragend", clear);
+    return () => window.removeEventListener("dragend", clear);
+  }, []);
+
   const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
   const [sortMode, setSortMode] = useState<"modified" | "alpha">("modified");
 
@@ -343,6 +398,115 @@ export function FilesView({
   const wikiTree = useMemo(() => buildTree(wikiArticles, sortMode), [wikiArticles, sortMode]);
   const rawTree = useMemo(() => buildTree(rawArticles, sortMode), [rawArticles, sortMode]);
   const tree = activeTab === "wiki" ? wikiTree : rawTree;
+
+  const tabRootPrefix = useMemo(() => {
+    const list = activeTab === "wiki" ? wikiArticles : rawArticles;
+    const first = list[0]?.filename;
+    if (first) return first.split("/")[0];
+    return activeTab === "wiki" ? "wiki" : "raw";
+  }, [activeTab, wikiArticles, rawArticles]);
+
+  const onDragStartRow = useCallback((e: React.DragEvent, path: string) => {
+    e.dataTransfer.setData(LUMINA_DRAG_PATH, path);
+    e.dataTransfer.effectAllowed = "copyMove";
+    setDragSourcePath(path);
+  }, []);
+
+  const onDragEndRow = useCallback(() => {
+    setDragSourcePath(null);
+  }, []);
+
+  const onDragOverTarget = useCallback(
+    (e: React.DragEvent, targetFolderPath: string) => {
+      const hasFiles = e.dataTransfer.types.includes("Files");
+      const fromTree = dragSourcePath !== null;
+      if (!hasFiles && !fromTree) return;
+
+      if (dragSourcePath) {
+        const n = normPath(dragSourcePath);
+        const t = normPath(targetFolderPath);
+        if (t === n || t.startsWith(`${n}/`)) {
+          e.dataTransfer.dropEffect = "none";
+          return;
+        }
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      setTreeDropTarget(targetFolderPath);
+      e.dataTransfer.dropEffect = hasFiles ? "copy" : "move";
+    },
+    [dragSourcePath],
+  );
+
+  const onDropOnTarget = useCallback(
+    async (e: React.DragEvent, targetFolderPath: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const fromData = e.dataTransfer.getData(LUMINA_DRAG_PATH);
+      const src = fromData || dragSourcePath;
+      setTreeDropTarget(null);
+      setDragSourcePath(null);
+
+      const expandTarget = () => {
+        setPerTabExpanded((prev) => {
+          const cur = new Set(prev[activeTab]);
+          cur.add(targetFolderPath);
+          return { ...prev, [activeTab]: cur };
+        });
+      };
+
+      try {
+        if (src) {
+          if (normPath(vaultParentDir(src)) === normPath(targetFolderPath)) return;
+          await window.api.moveVaultEntry(src, targetFolderPath);
+          expandTarget();
+        } else if (e.dataTransfer.files?.length) {
+          const paths: string[] = [];
+          for (let i = 0; i < e.dataTransfer.files.length; i++) {
+            const f = e.dataTransfer.files[i] as File & { path?: string };
+            if (f.path) paths.push(f.path);
+          }
+          if (paths.length) {
+            await window.api.importExternalPaths(paths, targetFolderPath);
+            expandTarget();
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        window.alert(err instanceof Error ? err.message : "Operation failed");
+      }
+    },
+    [dragSourcePath, activeTab],
+  );
+
+  const onTreePaneDragOver = useCallback(
+    (e: React.DragEvent) => {
+      const hasFiles = e.dataTransfer.types.includes("Files");
+      const fromTree = dragSourcePath !== null;
+      if (!hasFiles && !fromTree) return;
+
+      if (dragSourcePath) {
+        const n = normPath(dragSourcePath);
+        const t = normPath(tabRootPrefix);
+        if (t === n || t.startsWith(`${n}/`)) {
+          e.dataTransfer.dropEffect = "none";
+          return;
+        }
+      }
+      e.preventDefault();
+      setTreeDropTarget(tabRootPrefix);
+      e.dataTransfer.dropEffect = hasFiles ? "copy" : "move";
+    },
+    [dragSourcePath, tabRootPrefix],
+  );
+
+  const onTreePaneDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      await onDropOnTarget(e, tabRootPrefix);
+    },
+    [onDropOnTarget, tabRootPrefix],
+  );
 
   // Per-tab folder expansion state — each tab remembers its own expanded folders
   const [perTabExpanded, setPerTabExpanded] = useState<{
@@ -459,7 +623,16 @@ export function FilesView({
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div
+        className={cn(
+          "flex-1 overflow-y-auto py-1 min-h-[120px]",
+          treeDropTarget !== null &&
+            normPath(treeDropTarget) === normPath(tabRootPrefix) &&
+            "bg-primary-bg/25 rounded-md",
+        )}
+        onDragOver={onTreePaneDragOver}
+        onDrop={onTreePaneDrop}
+      >
         {loading && (
           <p className="px-4 py-6 text-sm text-text-secondary">Loading…</p>
         )}
@@ -467,7 +640,7 @@ export function FilesView({
           <p className="px-4 py-6 text-sm text-red-400">{error}</p>
         )}
         {!loading && !error && tree.length === 0 && (
-          <p className="px-4 py-6 text-sm text-text-secondary">No articles yet</p>
+          <p className="px-4 py-6 text-sm text-text-secondary">No articles yet — drop files here</p>
         )}
         {!loading &&
           !error &&
@@ -482,6 +655,12 @@ export function FilesView({
               onSelectArticle={handleSelectArticle}
               onToggleFolder={toggleFolder}
               onContextMenu={handleCtx}
+              dropTargetPath={treeDropTarget}
+              dragSourcePath={dragSourcePath}
+              onDragStartRow={onDragStartRow}
+              onDragEndRow={onDragEndRow}
+              onDragOverTarget={onDragOverTarget}
+              onDropOnTarget={onDropOnTarget}
             />
           ))}
       </div>

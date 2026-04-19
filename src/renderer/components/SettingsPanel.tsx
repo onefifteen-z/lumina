@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { LLMProviderConfig } from '../../shared/types';
+import type { LLMProviderConfig, PhoenixConfig } from '../../shared/types';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
+
+const DEFAULT_PHOENIX: PhoenixConfig = { enabled: false, host: 'localhost', port: 6006 };
 
 const SettingsPanel: React.FC = () => {
   // LLM provider fields
@@ -11,6 +13,12 @@ const SettingsPanel: React.FC = () => {
 
   // Vault
   const [vaultPath, setVaultPath] = useState('');
+
+  // Phoenix
+  const [phoenixEnabled, setPhoenixEnabled] = useState(false);
+  const [phoenixScheme, setPhoenixScheme] = useState<'http' | 'https'>('http');
+  const [phoenixHost, setPhoenixHost] = useState('localhost');
+  const [phoenixPort, setPhoenixPort] = useState('6006');
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -33,6 +41,11 @@ const SettingsPanel: React.FC = () => {
         setEndpointUrl(config.llmProvider?.endpointUrl ?? '');
         setModel(config.llmProvider?.model ?? '');
         setApiKey(storedKey);
+        const ph = config.phoenix ?? DEFAULT_PHOENIX;
+        setPhoenixEnabled(ph.enabled);
+        setPhoenixScheme(ph.scheme ?? 'http');
+        setPhoenixHost(ph.host || 'localhost');
+        setPhoenixPort(String(ph.port || 6006));
       } catch {
         // Defaults are fine
       } finally {
@@ -50,7 +63,15 @@ const SettingsPanel: React.FC = () => {
       const llmProvider: LLMProviderConfig | null =
         endpointUrl && model ? { endpointUrl, model } : null;
 
-      await window.api.saveConfig({ vaultPath, llmProvider });
+      const port = parseInt(phoenixPort, 10);
+      const phoenix: PhoenixConfig = {
+        enabled: phoenixEnabled,
+        scheme: phoenixScheme,
+        host: phoenixHost.trim() || 'localhost',
+        port: Number.isNaN(port) || port <= 0 ? 6006 : port,
+      };
+
+      await window.api.saveConfig({ vaultPath, llmProvider, phoenix });
       await window.api.saveApiKey(apiKey);
 
       setSaveMsg('Settings saved');
@@ -60,7 +81,7 @@ const SettingsPanel: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [endpointUrl, apiKey, model, vaultPath]);
+  }, [endpointUrl, apiKey, model, vaultPath, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort]);
 
   // Test LLM connection
   const handleTestConnection = useCallback(async () => {
@@ -91,6 +112,7 @@ const SettingsPanel: React.FC = () => {
 
   return (
     <div className="settings-panel">
+      <div className="settings-panel__content">
       <h2 className="settings-panel__title">Settings</h2>
 
       {/* ── Vault Section ─────────────────────────────── */}
@@ -174,6 +196,70 @@ const SettingsPanel: React.FC = () => {
         </div>
       </section>
 
+      {/* ── Phoenix Observability Section ────────────── */}
+      <section className="settings-section">
+        <div className="settings-section__header-row">
+          <h3 className="settings-section__heading">Phoenix Observability</h3>
+          <button
+            type="button"
+            className={`phoenix-toggle ${phoenixEnabled ? 'phoenix-toggle--on' : ''}`}
+            onClick={() => {
+              const next = !phoenixEnabled;
+              setPhoenixEnabled(next);
+              if (!next) {
+                setPhoenixScheme('http');
+                setPhoenixHost('localhost');
+                setPhoenixPort('6006');
+              }
+            }}
+            aria-pressed={phoenixEnabled}
+          >
+            <span className="phoenix-toggle__track">
+              <span className="phoenix-toggle__thumb" />
+            </span>
+            <span className="phoenix-toggle__label">{phoenixEnabled ? 'Enabled' : 'Disabled'}</span>
+          </button>
+        </div>
+
+        {phoenixEnabled && (
+          <>
+            <label className="settings-field">
+              <span className="settings-field__label">Host</span>
+              <div className="settings-field__input-group">
+                <button
+                  type="button"
+                  className="settings-field__scheme-btn"
+                  onClick={() => setPhoenixScheme(s => s === 'http' ? 'https' : 'http')}
+                  title="Click to toggle http / https"
+                >
+                  {phoenixScheme}://
+                </button>
+                <input
+                  className="settings-field__input settings-field__input--grouped"
+                  type="text"
+                  value={phoenixHost}
+                  onChange={(e) => setPhoenixHost(e.target.value)}
+                  placeholder="localhost"
+                />
+              </div>
+            </label>
+
+            <label className="settings-field">
+              <span className="settings-field__label">Port</span>
+              <input
+                className="settings-field__input settings-field__input--short"
+                type="number"
+                min={1}
+                max={65535}
+                value={phoenixPort}
+                onChange={(e) => setPhoenixPort(e.target.value)}
+                placeholder="6006"
+              />
+            </label>
+          </>
+        )}
+      </section>
+
       {/* ── Save ──────────────────────────────────────── */}
       <div className="settings-panel__footer">
         <button
@@ -191,6 +277,7 @@ const SettingsPanel: React.FC = () => {
             {saveMsg}
           </span>
         )}
+      </div>
       </div>
     </div>
   );

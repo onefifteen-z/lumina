@@ -7,6 +7,7 @@ import type {
   LLMProviderConfig,
   LLMAssistParams,
 } from "../shared/types";
+import { reconfigureTelemetry } from "./telemetry";
 import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
 import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
@@ -88,6 +89,12 @@ export function registerIpcHandlers(services: {
       chatHistory?.open(vaultPath);
     } catch (err) {
       console.warn("Failed to open chat history DB:", err);
+    }
+    // Reset chat session so the new vault's CLAUDE.md is loaded
+    try {
+      await chat?.startSession();
+    } catch (err) {
+      console.warn("Failed to reset chat session after vault switch:", err);
     }
   }
 
@@ -179,6 +186,37 @@ export function registerIpcHandlers(services: {
     async (_event, relativePath: string): Promise<void> => {
       if (!fileSystem) return;
       await fileSystem.createFolder(relativePath);
+    },
+  );
+
+  async function refreshArticlesIndex(): Promise<void> {
+    if (!fileSystem) return;
+    const articles = await fileSystem.scanVault();
+    if (searchIndex) await searchIndex.buildIndex(articles);
+    cachedArticles = articles;
+  }
+
+  ipcMain.handle(
+    "wiki:moveVaultEntry",
+    async (_event, from: string, toDir: string): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
+      await fileSystem.moveVaultEntry(from, toDir);
+      await refreshArticlesIndex();
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:importExternalPaths",
+    async (_event, absolutePaths: string[], toDir: string): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
+      await fileSystem.importExternalEntries(absolutePaths, toDir);
+      await refreshArticlesIndex();
     },
   );
 
@@ -371,7 +409,17 @@ export function registerIpcHandlers(services: {
       const sender = event.sender;
       try {
         for await (const chunk of chat.sendMessage(content)) {
-          sender.send("wiki:chatChunk", { requestId, chunk });
+          if (chunk.type === 'thinking') {
+            sender.send("wiki:chatThinkingChunk", { requestId, chunk: chunk.content });
+          } else if (
+            chunk.type === 'narration' ||
+            chunk.type === 'tool_call' ||
+            chunk.type === 'tool_result'
+          ) {
+            sender.send("wiki:chatTraceChunk", { requestId, chunk });
+          } else {
+            sender.send("wiki:chatChunk", { requestId, chunk: chunk.content });
+          }
         }
         sender.send("wiki:chatEnd", { requestId });
       } catch (err) {
@@ -438,6 +486,10 @@ export function registerIpcHandlers(services: {
       // If the provider config changed, rebuild the LLM service immediately.
       if (partial.llmProvider !== undefined) {
         rebuildLLMService();
+      }
+      // If the Phoenix config changed, reconfigure telemetry immediately.
+      if (partial.phoenix !== undefined) {
+        reconfigureTelemetry(partial.phoenix).catch(() => {});
       }
     },
   );

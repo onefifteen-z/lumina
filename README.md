@@ -8,6 +8,8 @@
 
 *Own your knowledge. Think with AI. Never leave your machine.*
 
+[![CI](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml)
+[![Last commit](https://img.shields.io/github/last-commit/McK-Playground/prj-lumina/main?color=D4731A)](https://github.com/McK-Playground/prj-lumina/commits/main)
 [![Electron](https://img.shields.io/badge/Electron-36.x-47848F?logo=electron&logoColor=white)](https://electronjs.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
@@ -57,7 +59,7 @@ To configure LLM features, open **Settings** and enter your endpoint URL, API ke
 | Search | FlexSearch |
 | Icons | Lucide React |
 | Components | shadcn/ui (vendored) |
-| Testing | Vitest + fast-check (242 tests) |
+| Testing | Vitest + fast-check (248 tests) |
 
 ## 📂 Project Layout
 
@@ -78,7 +80,7 @@ assets/                     App icon (SVG + PNG)
 npm test
 ```
 
-242 tests across 16 suites — Markdown parser, filesystem service, search index, remark plugins, network status, file classification, chat components, and more.
+248 tests across 16 suites — Markdown parser, filesystem service (incl. move/import), search index, remark plugins, network status, file classification, chat components, and more.
 
 ## Features
 
@@ -93,6 +95,9 @@ npm test
 - Obsidian-inspired two-part navigation: narrow Icon Rail + collapsible Sidebar Panel
 - File tree with Wiki/Raw tab classification and config file exclusion
 - Toolbar with new MD, new folder, sort (alpha/modified), expand level, collapse all
+- Drag-and-drop in the file tree: reorganize files/folders inside the vault and
+  drop external files from Finder/Explorer to import them; drop targets are
+  highlighted as you hover
 - Bookmarks, search, chat, graph, and settings views
 - Vault switcher with history and multi-vault support
 
@@ -100,7 +105,8 @@ npm test
 - AI-powered article generation with streaming preview
 - LLM assist panel for summarize/expand/refine on selected text with diff view
 - Multi-turn chat with streaming responses, Markdown rendering, and code syntax highlighting
-- Fox thinking animation while waiting for LLM responses
+- Fox thinking animation while waiting for LLM responses, plus a matching
+  fox mark on each "Thinking… / Thought for Xs" chip
 - Action bar on assistant messages (copy, regenerate, thumbs up/down)
 - Configurable LLM endpoint, API key (secure storage), and model selection
 
@@ -116,6 +122,12 @@ npm test
 - Offline mode handling with network status context and offline banner
 - File watcher integration for external change notifications
 - Fatal error dialogs, error logging to file, corrupted file fallback
+
+## 🤝 Contributing
+
+Bug reports, feature ideas, and pull requests are welcome. Please read
+[`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR — it covers the dev
+loop, code conventions, IPC/preload boundaries, and the test expectations.
 
 ## 📄 License
 

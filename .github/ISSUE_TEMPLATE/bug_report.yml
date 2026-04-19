@@ -1,0 +1,79 @@
+name: "Bug report"
+description: "Something is broken or behaves unexpectedly in Lumina."
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please fill in as much of the
+        following as you can — concrete repro steps make fixes 10× faster.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug.
+      placeholder: "When I drag a folder onto another folder, …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Numbered steps so we can reproduce locally.
+      placeholder: |
+        1. Open vault X
+        2. Drag `wiki/Foo.md` onto `wiki/inbox`
+        3. Observe …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / version
+      placeholder: "macOS 15.4 (Apple Silicon)"
+    validations:
+      required: true
+
+  - type: input
+    id: lumina-version
+    attributes:
+      label: Lumina version / commit
+      placeholder: "0.1.0 or git SHA"
+    validations:
+      required: true
+
+  - type: input
+    id: vault-size
+    attributes:
+      label: Approximate vault size
+      placeholder: "~250 files"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / console output
+      description: |
+        Renderer DevTools console + main process stdout. Wrap long output in a
+        `<details>` block.
+      render: shell
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm able to reproduce this on the latest `main`.
+          required: false

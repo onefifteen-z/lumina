@@ -12,6 +12,7 @@ import { IconRail, type SidebarView } from './IconRail';
 import { FilesView } from './FilesView';
 import { SearchView } from './SearchView';
 import { SearchPopup } from './SearchPopup';
+import { DebugLogPanel } from './DebugLogPanel';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
 import { ThinkingSidebar } from './chat/ThinkingSidebar';
@@ -234,6 +235,15 @@ const SidebarLayout: React.FC<{
     const [isRightResizing, setIsRightResizing] = useState(false);
     const [chatThinkingData, setChatThinkingData] = useState<ThinkingEntry | null>(null);
     const closeThinkingRef = React.useRef<(() => void) | null>(null);
+
+    // Auto-expand the right panel when a Thinking entry first becomes available,
+    // so opening the chip in ChatView reveals the panel even if the user had
+    // collapsed the right side previously.
+    const prevThinkingRef = React.useRef<ThinkingEntry | null>(null);
+    React.useEffect(() => {
+      if (!prevThinkingRef.current && chatThinkingData) setRightCollapsed(false);
+      prevThinkingRef.current = chatThinkingData;
+    }, [chatThinkingData]);
 
     // ── Tabs ──────────────────────────────────────────────────
     const [tabs, setTabs] = useState<string[]>(() => selectedFilename ? [selectedFilename] : []);
@@ -465,6 +475,28 @@ const SidebarLayout: React.FC<{
               </button>
             </div>
           )}
+
+          {/* Right Thinking panel toggle (chat view) */}
+          {activeView === 'chat' && editingFilename === null && chatThinkingData && (
+            <div
+              style={{
+                position: "absolute",
+                right: "16px",
+                top: 0, bottom: 0,
+                display: "flex", alignItems: "center",
+                WebkitAppRegion: "no-drag",
+              } as React.CSSProperties}
+            >
+              <button
+                type="button"
+                onClick={() => setRightCollapsed(c => !c)}
+                className="flex items-center justify-center w-8 h-8 rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer focus-visible:outline-none"
+                aria-label={rightCollapsed ? "Expand thinking panel" : "Collapse thinking panel"}
+              >
+                {rightCollapsed ? <PanelRightOpen size={20} /> : <PanelRightClose size={20} />}
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex flex-1 overflow-hidden">
           {/* Icon Rail — always visible */}
@@ -591,7 +623,7 @@ const SidebarLayout: React.FC<{
                 onMouseDown={handleRightResizeStart}
               />
             )}
-            {activeView === 'chat' && editingFilename === null && chatThinkingData && (
+            {activeView === 'chat' && editingFilename === null && chatThinkingData && !rightCollapsed && (
               <div
                 className={`lumina-resize-handle${isRightResizing ? ' is-dragging' : ''}`}
                 onMouseDown={handleRightResizeStart}
@@ -600,13 +632,15 @@ const SidebarLayout: React.FC<{
             {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
               <TocPanel headings={headings} collapsed={rightCollapsed} width={rightWidth} />
             )}
-            {activeView === 'chat' && editingFilename === null && chatThinkingData && (
+            {activeView === 'chat' && editingFilename === null && chatThinkingData && !rightCollapsed && (
               <ThinkingSidebar
                 content={chatThinkingData.content}
+                trace={chatThinkingData.trace}
                 durationMs={chatThinkingData.durationMs}
                 isStreaming={chatThinkingData.isStreaming}
                 onClose={() => closeThinkingRef.current?.()}
                 width={rightWidth}
+                onWikilinkClick={chatThinkingData.onWikilinkClick}
               />
             )}
           </div>
@@ -623,6 +657,7 @@ const AppShell: React.FC = () => {
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
   const [generateOpen, setGenerateOpen] = useState(false);
   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
   const [headings, setHeadings] = useState<TocHeading[]>([]);
@@ -722,6 +757,11 @@ const AppShell: React.FC = () => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
         e.preventDefault();
         setSearchPopupOpen(true);
+      }
+      // ⌘⇧D — toggle the bottom debug log panel.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        setDebugPanelOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", handler);
@@ -1040,6 +1080,12 @@ const AppShell: React.FC = () => {
           open={showVaultInit}
           onConfirm={handleVaultInit}
           onCancel={() => { setShowVaultInit(false); setActiveView('files'); }}
+        />
+
+        {/* Debug log overlay (⌘⇧D) */}
+        <DebugLogPanel
+          open={debugPanelOpen}
+          onClose={() => setDebugPanelOpen(false)}
         />
       </NavContext.Provider>
     </NetworkStatusProvider>

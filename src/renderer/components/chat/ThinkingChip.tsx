@@ -31,7 +31,7 @@ export const ThinkingChip: React.FC<ThinkingChipProps> = ({ isStreaming, duratio
           : 'text-text-secondary hover:bg-surface-hover border border-transparent'
       } ${isStreaming ? 'thinking-chip-pulse' : ''}`}
     >
-      <FoxChipIcon size={10} className="shrink-0" />
+      <FoxChipIcon size={14} solid className="shrink-0" />
       {isStreaming ? (
         <span>Thinking… {seconds}s</span>
       ) : (

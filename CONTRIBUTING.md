@@ -36,12 +36,17 @@ Useful scripts:
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Full dev loop: Vite + TS watchers + Electron with hot reload |
+| `npm run dev` | Full dev loop: Vite HMR + `tsc --watch` for main & preload + `electronmon` auto-restart on `dist/main/**` and `dist/preload/**` changes |
 | `npm test` | Run the Vitest suite once |
 | `npm test -- --watch` | TDD loop |
 | `npx tsc --noEmit` | Type-check the whole project (CI gate) |
 | `npm run build` | Build renderer, main, and preload bundles |
 | `npm run build:mac` | Produce a `.dmg` via `electron-builder` |
+
+> Saving any file under `src/main/**` or `src/preload/**` is enough — the
+> watcher recompiles into `dist/**` and `electronmon` restarts the Electron
+> process automatically. Renderer changes hot-reload through Vite. You should
+> not need to run `build:renderer` / `build:main` manually during development.
 
 ## Project Layout
 

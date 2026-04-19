@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SquarePen, RefreshCw, WifiOff, History, Trash2 } from 'lucide-react';
-import type { ChatMessage, ChatSession, ChatHistoryEntry } from '../../shared/types';
+import { SquarePen, RefreshCw, WifiOff, History, Trash2, FileText } from 'lucide-react';
+import type { ChatMessage, ChatSession, ChatHistoryEntry, ArticleMeta } from '../../shared/types';
 import { MessageList } from './chat/MessageList';
 import { ChatInput } from './chat/ChatInput';
 import { CodeBlock } from './chat/CodeBlock';
@@ -214,8 +214,11 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
  */
 export function applyInlineFormatting(text: string, onWikilinkClick?: (target: string) => void): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  // Match **bold**, *italic* (not preceded/followed by *), `code`, [[wikilink]], or [ ]/[x] checkbox
-  const inlineRegex = /(\*\*(.+?)\*\*|\*([^*]+)\*|`([^`]+)`|\[\[([^\]]+)\]\]|\[([ xX])\])/g;
+  // Order matters: [[wikilink]] and `code` come BEFORE bold/italic so that
+  // wikilinks wrapped in *...* or **...** (e.g. "*Sources: [[a]], [[b]]*")
+  // are still recognised. Bold/italic inner content is then recursively
+  // re-processed so wikilinks inside them stay clickable.
+  const inlineRegex = /(\[\[([^\]]+)\]\]|`([^`]+)`|\*\*([\s\S]+?)\*\*|\*([^*\n]+)\*|\[([ xX])\])/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let key = 0;
@@ -226,21 +229,8 @@ export function applyInlineFormatting(text: string, onWikilinkClick?: (target: s
     }
 
     if (match[2] !== undefined) {
-      nodes.push(<strong key={key++} className="font-semibold">{match[2]}</strong>);
-    } else if (match[3] !== undefined) {
-      nodes.push(<em key={key++}>{match[3]}</em>);
-    } else if (match[4] !== undefined) {
-      nodes.push(
-        <code
-          key={key++}
-          className="px-[5px] py-[2px] rounded-md bg-[rgba(255,255,255,0.08)] font-mono text-[0.85em] text-text-primary"
-        >
-          {match[4]}
-        </code>,
-      );
-    } else if (match[5] !== undefined) {
       // [[wikilink]]
-      const target = match[5];
+      const target = match[2];
       nodes.push(
         <button
           key={key++}
@@ -251,8 +241,26 @@ export function applyInlineFormatting(text: string, onWikilinkClick?: (target: s
           {target}
         </button>,
       );
+    } else if (match[3] !== undefined) {
+      nodes.push(
+        <code
+          key={key++}
+          className="px-[5px] py-[2px] rounded-md bg-[rgba(255,255,255,0.08)] font-mono text-[0.85em] text-text-primary"
+        >
+          {match[3]}
+        </code>,
+      );
+    } else if (match[4] !== undefined) {
+      nodes.push(
+        <strong key={key++} className="font-semibold">
+          {applyInlineFormatting(match[4], onWikilinkClick)}
+        </strong>,
+      );
+    } else if (match[5] !== undefined) {
+      nodes.push(
+        <em key={key++}>{applyInlineFormatting(match[5], onWikilinkClick)}</em>,
+      );
     } else if (match[6] !== undefined) {
-      // Checkbox [ ] or [x]
       const checked = match[6].toLowerCase() === 'x';
       nodes.push(
         <input key={key++} type="checkbox" checked={checked} readOnly className="mr-1.5 align-middle pointer-events-none" />,
@@ -406,6 +414,8 @@ export interface ThinkingEntry {
   trace: TraceItem[];
   durationMs: number;
   isStreaming: boolean;
+  /** Optional: handler so the right-rail sidebar can open notes when wikilinks are clicked. */
+  onWikilinkClick?: (target: string) => void;
 }
 
 export interface ChatViewProps {
@@ -425,6 +435,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   const [warning, setWarning] = useState<string | null>(null);
   const [historyList, setHistoryList] = useState<ChatHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [articleIndex, setArticleIndex] = useState<Map<string, ArticleMeta>>(new Map());
 
   const { isOffline } = useNetworkStatus();
   const { viewArticle } = useNavigation();
@@ -437,6 +448,115 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   const thinkingBuf = useRef('');
   const thinkingStart = useRef<number>(0);
   const traceBuf = useRef<TraceItem[]>([]);
+  // Tracks whether the user has explicitly closed the streaming thinking panel.
+  // We auto-open when a streaming entry first appears, but won't reopen after a manual close.
+  const userClosedStreamingRef = useRef(false);
+
+  // ── Stream update batching via rAF ──────────────────────────
+  // Token-level setState during SSE causes React to re-render the
+  // entire markdown tree per token; on slow models that produces
+  // visible "stutter then big drop" behavior. We coalesce updates
+  // into one frame so the UI keeps up regardless of token rate.
+  const rafHandle = useRef<number | null>(null);
+  const pendingTextUpdate = useRef(false);
+  const pendingThinkingUpdate = useRef(false);
+  // Tracks whether the very first text/thinking chunk of the current
+  // generation has been committed yet. The first chunk flushes synchronously
+  // so users get immediate feedback (no blank ~1 frame delay), and only
+  // subsequent chunks are coalesced via rAF.
+  const firstTextFlushed = useRef(false);
+  const firstThinkingFlushed = useRef(false);
+
+  const flushNow = useCallback(() => {
+    if (rafHandle.current !== null) {
+      cancelAnimationFrame(rafHandle.current);
+      rafHandle.current = null;
+    }
+    if (pendingTextUpdate.current) {
+      pendingTextUpdate.current = false;
+      setStreamingContent(streamBuf.current);
+    }
+    if (pendingThinkingUpdate.current) {
+      pendingThinkingUpdate.current = false;
+      const snapshot: ThinkingEntry = {
+        content: thinkingBuf.current,
+        trace: traceBuf.current.slice(),
+        durationMs: Date.now() - thinkingStart.current,
+        isStreaming: true,
+      };
+      setThinkingMap((prev) => ({ ...prev, __streaming__: snapshot }));
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (rafHandle.current !== null) return;
+    rafHandle.current = requestAnimationFrame(() => {
+      rafHandle.current = null;
+      if (pendingTextUpdate.current) {
+        pendingTextUpdate.current = false;
+        setStreamingContent(streamBuf.current);
+      }
+      if (pendingThinkingUpdate.current) {
+        pendingThinkingUpdate.current = false;
+        const snapshot: ThinkingEntry = {
+          content: thinkingBuf.current,
+          trace: traceBuf.current.slice(),
+          durationMs: Date.now() - thinkingStart.current,
+          isStreaming: true,
+        };
+        setThinkingMap((prev) => ({ ...prev, __streaming__: snapshot }));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (rafHandle.current !== null) {
+        cancelAnimationFrame(rafHandle.current);
+        rafHandle.current = null;
+      }
+    };
+  }, []);
+
+  /**
+   * Render user message text, replacing recognized `@filename` tokens with
+   * inline file chips. A token is recognized only if its filename matches a
+   * known vault article — this avoids turning stray emails or `@user`
+   * mentions into broken file pills.
+   */
+  const renderUserContent = useCallback((content: string): React.ReactNode => {
+    const nodes: React.ReactNode[] = [];
+    const re = /(^|\s)@(\S+)/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let key = 0;
+    while ((match = re.exec(content)) !== null) {
+      const [full, lead, token] = match;
+      const article = articleIndex.get(token);
+      if (!article) continue;
+      const tokenStart = match.index + lead.length;
+      if (tokenStart > lastIndex) {
+        nodes.push(content.slice(lastIndex, tokenStart));
+      }
+      nodes.push(
+        <button
+          key={`m-${key++}`}
+          type="button"
+          onClick={() => viewArticle(article.filename)}
+          title={article.filename}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-[rgba(124,58,237,0.25)] hover:bg-[rgba(124,58,237,0.4)] text-text-primary text-xs font-medium align-baseline cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-primary-border"
+        >
+          <FileText size={11} className="opacity-80" />
+          <span>{article.title}</span>
+        </button>,
+      );
+      lastIndex = match.index + full.length;
+    }
+    if (lastIndex < content.length) {
+      nodes.push(content.slice(lastIndex));
+    }
+    return nodes.length > 0 ? nodes : content;
+  }, [articleIndex, viewArticle]);
 
   const handleWikilinkClick = useCallback(async (target: string) => {
     try {
@@ -451,12 +571,28 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     try { setHistoryList(await window.api.listChatSessions()); } catch { /* ignore */ }
   }, []);
 
+  const refreshArticleIndex = useCallback(async () => {
+    try {
+      const list = await window.api.listArticles();
+      const map = new Map<string, ArticleMeta>();
+      for (const a of list) map.set(a.filename, a);
+      setArticleIndex(map);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    refreshArticleIndex();
+  }, [refreshArticleIndex, vaultKey]);
+
   const persistSession = useCallback(async () => {
     try {
       const s = await window.api.getChatSession();
       if (!s || s.messages.length === 0) return;
       sessionRef.current = s;
       await window.api.saveChatSession(s);
+      // Remember which session is active so the next app launch reopens it
+      // instead of spinning up a fresh empty session that orphans this one.
+      window.api.saveConfig({ lastChatSessionId: s.id }).catch(() => {});
     } catch (err) {
       console.warn('Failed to persist chat session:', err);
     }
@@ -475,6 +611,10 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       setStreamingContent('');
       streamBuf.current = '';
       setWarning(null);
+      // Drop any stale "last session" pointer — until this fresh session has
+      // content it isn't worth resuming, and keeping the old id around would
+      // cause restarts to reopen an unrelated conversation.
+      window.api.saveConfig({ lastChatSessionId: '' }).catch(() => {});
     } catch {
       // If session init fails, we still show the welcome screen
     }
@@ -522,45 +662,62 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   useEffect(() => {
 
     window.api.onChatChunk((chunk: string) => {
+      if (!chunk) return;
       streamBuf.current += chunk;
-      setStreamingContent(streamBuf.current);
+      pendingTextUpdate.current = true;
+      if (!firstTextFlushed.current) {
+        firstTextFlushed.current = true;
+        flushNow();
+      } else {
+        scheduleFlush();
+      }
     });
 
     window.api.onChatThinkingChunk((chunk: string) => {
+      if (typeof chunk !== 'string' || chunk.length === 0) return;
       if (!thinkingBuf.current && traceBuf.current.length === 0) thinkingStart.current = Date.now();
       thinkingBuf.current += chunk;
-      setThinkingMap((prev) => ({
-        ...prev,
-        __streaming__: {
-          content: thinkingBuf.current,
-          trace: [...traceBuf.current],
-          durationMs: Date.now() - thinkingStart.current,
-          isStreaming: true,
-        },
-      }));
+      pendingThinkingUpdate.current = true;
+      if (!firstThinkingFlushed.current) {
+        firstThinkingFlushed.current = true;
+        flushNow();
+      } else {
+        scheduleFlush();
+      }
     });
 
     window.api.onChatTraceChunk((chunk) => {
+      if (!chunk) return;
       if (!thinkingBuf.current && traceBuf.current.length === 0) thinkingStart.current = Date.now();
       if (chunk.type === 'narration') {
-        traceBuf.current.push({ kind: 'narration', content: chunk.content });
+        if (chunk.content) traceBuf.current.push({ kind: 'narration', content: chunk.content });
       } else if (chunk.type === 'tool_call') {
         traceBuf.current.push({ kind: 'tool_call', id: chunk.id, name: chunk.name, args: chunk.args });
       } else if (chunk.type === 'tool_result') {
         traceBuf.current.push({ kind: 'tool_result', id: chunk.id, output: chunk.output });
       }
-      setThinkingMap((prev) => ({
-        ...prev,
-        __streaming__: {
-          content: thinkingBuf.current,
-          trace: [...traceBuf.current],
-          durationMs: Date.now() - thinkingStart.current,
-          isStreaming: true,
-        },
-      }));
+      pendingThinkingUpdate.current = true;
+      // tool_call/tool_result events are infrequent and important — flush them
+      // immediately so the sidebar reflects the current step without delay.
+      if (chunk.type !== 'narration' || !firstThinkingFlushed.current) {
+        firstThinkingFlushed.current = true;
+        flushNow();
+      } else {
+        scheduleFlush();
+      }
     });
 
     window.api.onChatEnd((err?: string) => {
+      // Cancel any pending rAF flush — we'll commit the final state
+      // synchronously below so onChatEnd never races a half-flushed buffer.
+      if (rafHandle.current !== null) {
+        cancelAnimationFrame(rafHandle.current);
+        rafHandle.current = null;
+      }
+      pendingTextUpdate.current = false;
+      pendingThinkingUpdate.current = false;
+      firstTextFlushed.current = false;
+      firstThinkingFlushed.current = false;
       setIsGenerating(false);
 
       if (err) {
@@ -572,7 +729,14 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
           errorMessage = err.slice(colonIdx + 1).trim();
         }
         setError({ type: errorType, message: errorMessage });
-      } else if (streamBuf.current) {
+        // Drop the streaming thinking entry on error — it's incomplete and
+        // would otherwise persist as a "Working…" sidebar that never resolves.
+        setThinkingMap((prev) => { const { __streaming__: _drop, ...rest } = prev; return rest; });
+        setActiveThinkingMsgId((prev) => prev === '__streaming__' ? null : prev);
+      } else if (streamBuf.current || thinkingBuf.current || traceBuf.current.length > 0) {
+        // Always persist a final assistant message when *any* signal arrived,
+        // even if the text body is empty. Otherwise the thinking trace
+        // (e.g. tool calls) is silently dropped on the floor.
         const assistantMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
@@ -584,7 +748,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
           const finalContent = thinkingBuf.current;
           const finalTrace = [...traceBuf.current];
           setThinkingMap((prev) => {
-            const { __streaming__, ...rest } = prev;
+            const { __streaming__: _drop, ...rest } = prev;
             return {
               ...rest,
               [assistantMsg.id]: {
@@ -597,7 +761,11 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
           });
           setActiveThinkingMsgId((prev) => prev === '__streaming__' ? assistantMsg.id : prev);
         }
-        setMessages((prev) => [...prev, assistantMsg]);
+        // Only show a bubble in the message list if there's actual text;
+        // pure tool-call turns are visible only via the thinking chip.
+        if (streamBuf.current) {
+          setMessages((prev) => [...prev, assistantMsg]);
+        }
       }
 
       setStreamingContent('');
@@ -642,6 +810,10 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     setStreamingContent('');
     streamBuf.current = '';
     thinkingBuf.current = '';
+    traceBuf.current = [];
+    firstTextFlushed.current = false;
+    firstThinkingFlushed.current = false;
+    userClosedStreamingRef.current = false;
     setThinkingMap({});
     setActiveThinkingMsgId(null);
     setError(null);
@@ -650,10 +822,14 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   }, [isGenerating, initSession]);
 
   const loadSession = useCallback(async (sessionId: string) => {
-    const data = await window.api.getChatHistory(sessionId);
-    if (!data) return;
-    sessionRef.current = { id: data.id, systemPrompt: data.systemPrompt, messages: data.messages, createdAt: data.createdAt };
-    setMessages(data.messages.filter((m) => m.role !== 'system'));
+    // Critical: sync the *main-process* chat session too. Without this, the
+    // ChatService keeps appending to whatever session it auto-created at
+    // startup (or after the previous turn), so the next message gets persisted
+    // under that orphan id and shows up as a brand-new entry in history.
+    const session = await window.api.loadChatSession(sessionId);
+    if (!session) return;
+    sessionRef.current = session;
+    setMessages(session.messages.filter((m) => m.role !== 'system'));
     setShowWelcome(false);
     setError(null);
     setStreamingContent('');
@@ -671,11 +847,13 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   }, [refreshHistory]);
 
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, mentions: string[] = []) => {
       setError(null);
       setShowWelcome(false);
 
-      // Optimistically add user message to the list
+      // Optimistically add user message to the list. Display the user's
+      // original text — the @filename tokens are rendered as chips by the
+      // message renderer; the full file payload only goes to the LLM.
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'user',
@@ -688,9 +866,37 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       streamBuf.current = '';
       setStreamingContent('');
       thinkingBuf.current = '';
+      traceBuf.current = [];
+      firstTextFlushed.current = false;
+      firstThinkingFlushed.current = false;
+      userClosedStreamingRef.current = false;
+
+      // Build the actual payload: prepend a "Referenced files" block so the
+      // LLM has the file contents in context. Read each mentioned file and
+      // skip any that fail (network / missing file shouldn't block the send).
+      let payload = content;
+      if (mentions.length > 0) {
+        const reads = await Promise.all(
+          mentions.map(async (filename) => {
+            try {
+              const text = await window.api.readFile(filename);
+              return { filename, text, ok: true as const };
+            } catch {
+              return { filename, text: '', ok: false as const };
+            }
+          }),
+        );
+        const blocks = reads
+          .filter((r) => r.ok)
+          .map((r) => `<file path="${r.filename}">\n${r.text}\n</file>`)
+          .join('\n\n');
+        if (blocks) {
+          payload = `The user has attached the following file(s) for context:\n\n${blocks}\n\n---\n\n${content}`;
+        }
+      }
 
       try {
-        await window.api.sendChatMessage(content);
+        await window.api.sendChatMessage(payload);
       } catch {
         setIsGenerating(false);
         setError({ type: 'network', message: 'Failed to send message.' });
@@ -707,7 +913,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     }
   }, []);
 
-  const handleRetry = useCallback(() => {
+  const handleRetry = useCallback(async () => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
     if (!lastUserMsg) return;
 
@@ -723,8 +929,40 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     streamBuf.current = '';
     setStreamingContent('');
     thinkingBuf.current = '';
+    traceBuf.current = [];
+    firstTextFlushed.current = false;
+    firstThinkingFlushed.current = false;
+    userClosedStreamingRef.current = false;
 
-    window.api.sendChatMessage(lastUserMsg.content).catch(() => {
+    // Re-attach any file mentions present in the original user text.
+    let payload = lastUserMsg.content;
+    const mentionRe = /(?:^|\s)@(\S+)/g;
+    const mentioned: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = mentionRe.exec(lastUserMsg.content)) !== null) {
+      mentioned.push(m[1]);
+    }
+    if (mentioned.length > 0) {
+      const reads = await Promise.all(
+        mentioned.map(async (filename) => {
+          try {
+            const text = await window.api.readFile(filename);
+            return { filename, text, ok: true as const };
+          } catch {
+            return { filename, text: '', ok: false as const };
+          }
+        }),
+      );
+      const blocks = reads
+        .filter((r) => r.ok)
+        .map((r) => `<file path="${r.filename}">\n${r.text}\n</file>`)
+        .join('\n\n');
+      if (blocks) {
+        payload = `The user has attached the following file(s) for context:\n\n${blocks}\n\n---\n\n${lastUserMsg.content}`;
+      }
+    }
+
+    window.api.sendChatMessage(payload).catch(() => {
       setIsGenerating(false);
       setError({ type: 'network', message: 'Failed to send message.' });
     });
@@ -738,23 +976,67 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   /* ── Thinking chip handler ──────────────────────────────────── */
 
   const handleThinkingChipClick = useCallback((msgId: string) => {
-    setActiveThinkingMsgId((prev) => prev === msgId ? null : msgId);
+    setActiveThinkingMsgId((prev) => {
+      const next = prev === msgId ? null : msgId;
+      if (msgId === '__streaming__' && next === null) {
+        userClosedStreamingRef.current = true;
+      }
+      return next;
+    });
   }, []);
 
   // Expose close function to parent via ref
   useEffect(() => {
-    if (closeThinkingRef) closeThinkingRef.current = () => setActiveThinkingMsgId(null);
+    if (closeThinkingRef) {
+      closeThinkingRef.current = () => {
+        setActiveThinkingMsgId((prev) => {
+          if (prev === '__streaming__') userClosedStreamingRef.current = true;
+          return null;
+        });
+      };
+    }
     return () => { if (closeThinkingRef) closeThinkingRef.current = null; };
   }, [closeThinkingRef]);
 
+  // Auto-open the thinking sidebar the first time a streaming entry appears,
+  // so users see what the model is doing without having to click the chip.
+  // We only auto-open once per generation, and respect explicit user closes.
+  useEffect(() => {
+    if (
+      thinkingMap.__streaming__ &&
+      activeThinkingMsgId === null &&
+      !userClosedStreamingRef.current
+    ) {
+      setActiveThinkingMsgId('__streaming__');
+    }
+  }, [thinkingMap, activeThinkingMsgId]);
+
   // Notify parent (AppShell) when active thinking changes
   useEffect(() => {
-    if (!activeThinkingMsgId || !thinkingMap[activeThinkingMsgId]) {
+    const entry = activeThinkingMsgId ? thinkingMap[activeThinkingMsgId] : null;
+    // Diagnostic: surface the active thinking entry into the debug panel so
+    // we can see what the sidebar is being asked to render.
+    try {
+      window.api.notifyDebug?.("thinking", "active entry changed", {
+        activeId: activeThinkingMsgId,
+        keys: Object.keys(thinkingMap),
+        entrySummary: entry
+          ? {
+              contentLen: entry.content.length,
+              traceLen: entry.trace.length,
+              isStreaming: entry.isStreaming,
+              durationMs: entry.durationMs,
+            }
+          : null,
+      });
+    } catch { /* ignore */ }
+
+    if (!entry) {
       onThinkingChange?.(null);
     } else {
-      onThinkingChange?.(thinkingMap[activeThinkingMsgId]);
+      onThinkingChange?.({ ...entry, onWikilinkClick: handleWikilinkClick });
     }
-  }, [activeThinkingMsgId, thinkingMap, onThinkingChange]);
+  }, [activeThinkingMsgId, thinkingMap, onThinkingChange, handleWikilinkClick]);
 
   /* ── Render ─────────────────────────────────────────────────── */
 
@@ -864,6 +1146,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
             streamingContent={streamingContent}
             isGenerating={isGenerating}
             renderAssistantContent={(content) => <AssistantContent content={content} onWikilinkClick={handleWikilinkClick} />}
+            renderUserContent={renderUserContent}
             onRegenerate={handleRetry}
             thinkingMap={thinkingMap}
             activeThinkingMsgId={activeThinkingMsgId}

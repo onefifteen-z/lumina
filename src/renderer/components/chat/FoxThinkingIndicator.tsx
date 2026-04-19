@@ -60,19 +60,53 @@ export const FoxFaceGraphic: React.FC<{ animated: boolean }> = ({ animated }) =>
   </>
 );
 
-/** Static fox mark for thinking chips; default 10px matches prior text-[10px] sparkle */
-export const FoxChipIcon: React.FC<{ size?: number; className?: string }> = ({ size = 10, className }) => (
+/**
+ * Static fox mark used in inline UI like the Thinking chip.
+ * - `solid`: render as a single-color silhouette (defaults to currentColor) so
+ *   it can pick up surrounding text color, matching other inline icons.
+ */
+export const FoxChipIcon: React.FC<{
+  size?: number;
+  className?: string;
+  solid?: boolean;
+  color?: string;
+}> = ({ size = 14, className, solid = false, color }) => (
+  // The full FoxFaceGraphic only occupies x:[190..490], y:[156..486] of a
+  // 680x680 viewBox, so a tight viewBox makes the head fill the requested
+  // pixel size instead of being lost in whitespace at chip dimensions.
   <svg
     className={className}
     width={size}
     height={size}
-    viewBox="0 0 680 680"
+    viewBox="178 144 324 354"
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"
   >
-    <FoxFaceGraphic animated={false} />
+    {solid ? <FoxSolidSilhouette color={color} /> : <FoxFaceGraphic animated={false} />}
   </svg>
 );
+
+/**
+ * Single-color (solid) version of the fox face. Uses outline of the head plus
+ * negative-space cutouts (eyes + nose) for legibility at small sizes.
+ */
+const FoxSolidSilhouette: React.FC<{ color?: string }> = ({ color }) => {
+  const fill = color ?? 'currentColor';
+  return (
+    <g fill={fill}>
+      {/* Head outline (same hull as the colored version) */}
+      <polygon points="216,156 340,172 464,156 490,320 432,462 340,486 248,462 190,320" />
+      {/* Eye cutouts: punch through with the parent background by drawing
+          inverse via a subtractive mask. SVG can't do CSS blend reliably
+          everywhere, so use opacity-0 placeholders and overlay shapes in
+          the page background color via fill-opacity. We approximate with
+          contrasting shapes instead — small enough to read as a fox. */}
+      <polygon points="248,254 292,278 254,300 218,278" fill="#0E0502" />
+      <polygon points="432,254 388,278 426,300 462,278" fill="#0E0502" />
+      <ellipse cx="340" cy="416" rx="14" ry="10" fill="#0E0502" />
+    </g>
+  );
+};
 
 export interface FoxThinkingIndicatorProps {
   size?: 'large' | 'small';

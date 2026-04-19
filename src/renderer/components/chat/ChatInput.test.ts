@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { detectMention, segmentInput } from "./ChatInput";
 
 /**
  * Unit tests for ChatInput component logic.
@@ -178,6 +179,97 @@ describe("ChatInput button visibility", () => {
 
   it("shows send button when not generating", () => {
     expect(shouldShowStopButton(false)).toBe(false);
+  });
+});
+
+describe("ChatInput @-mention detection", () => {
+  it("detects an @ at the start of input", () => {
+    expect(detectMention("@foo", 4)).toEqual({ start: 0, query: "foo" });
+  });
+
+  it("detects an @ after whitespace", () => {
+    expect(detectMention("hi @bar", 7)).toEqual({ start: 3, query: "bar" });
+  });
+
+  it("returns empty query right after typing @", () => {
+    expect(detectMention("hi @", 4)).toEqual({ start: 3, query: "" });
+  });
+
+  it("returns null for @ glued to a non-space char (e.g. email)", () => {
+    expect(detectMention("user@host.com", 13)).toBeNull();
+  });
+
+  it("returns null when caret has moved past whitespace", () => {
+    expect(detectMention("@foo bar", 8)).toBeNull();
+  });
+
+  it("returns null when there is no @ before caret", () => {
+    expect(detectMention("hello world", 5)).toBeNull();
+  });
+
+  it("uses the @ closest to the caret", () => {
+    expect(detectMention("@one @two", 9)).toEqual({ start: 5, query: "two" });
+  });
+
+  it("supports paths with slashes in the query", () => {
+    expect(detectMention("see @notes/sub", 14)).toEqual({ start: 4, query: "notes/sub" });
+  });
+});
+
+describe("ChatInput segmentInput (highlight overlay)", () => {
+  const known = new Set(["foo.md", "notes/bar.md"]);
+
+  it("returns nothing for empty input", () => {
+    expect(segmentInput("", known)).toEqual([]);
+  });
+
+  it("treats text without @-mentions as a single text segment", () => {
+    expect(segmentInput("hello world", known)).toEqual([
+      { type: "text", content: "hello world" },
+    ]);
+  });
+
+  it("marks a single recognised mention", () => {
+    expect(segmentInput("see @foo.md please", known)).toEqual([
+      { type: "text", content: "see " },
+      { type: "mention", content: "@foo.md", filename: "foo.md" },
+      { type: "text", content: " please" },
+    ]);
+  });
+
+  it("does not mark unknown @-tokens", () => {
+    expect(segmentInput("hi @stranger.md", known)).toEqual([
+      { type: "text", content: "hi @stranger.md" },
+    ]);
+  });
+
+  it("does not mark @ glued to a non-space char (e.g. emails)", () => {
+    expect(segmentInput("write me at user@foo.md ok", known)).toEqual([
+      { type: "text", content: "write me at user@foo.md ok" },
+    ]);
+  });
+
+  it("handles a mention at the very start of input", () => {
+    expect(segmentInput("@foo.md hi", known)).toEqual([
+      { type: "mention", content: "@foo.md", filename: "foo.md" },
+      { type: "text", content: " hi" },
+    ]);
+  });
+
+  it("recognises multiple mentions in one message", () => {
+    expect(segmentInput("@foo.md and @notes/bar.md", known)).toEqual([
+      { type: "mention", content: "@foo.md", filename: "foo.md" },
+      { type: "text", content: " and " },
+      { type: "mention", content: "@notes/bar.md", filename: "notes/bar.md" },
+    ]);
+  });
+
+  it("preserves whitespace and newlines in surrounding text", () => {
+    expect(segmentInput("line one\n@foo.md\nline three", known)).toEqual([
+      { type: "text", content: "line one\n" },
+      { type: "mention", content: "@foo.md", filename: "foo.md" },
+      { type: "text", content: "\nline three" },
+    ]);
   });
 });
 

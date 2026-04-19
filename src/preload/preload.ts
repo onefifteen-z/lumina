@@ -7,6 +7,7 @@ import type {
   VaultEntry,
   WikiAPI,
   ChatTraceChunk,
+  DebugLogEntry,
 } from "../shared/types";
 
 /**
@@ -344,6 +345,10 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:getChatHistory", sessionId);
   },
 
+  loadChatSession(sessionId: string) {
+    return ipcRenderer.invoke("wiki:loadChatSession", sessionId);
+  },
+
   saveChatSession(session: any, title?: string) {
     return ipcRenderer.invoke("wiki:saveChatSession", session, title);
   },
@@ -366,6 +371,27 @@ const api: WikiAPI = {
 
   confirmClose() {
     return ipcRenderer.invoke("wiki:confirmClose");
+  },
+
+  // ── Debug log ────────────────────────────────────────────────────
+
+  getDebugLogBacklog() {
+    return ipcRenderer.invoke("wiki:getDebugLogBacklog");
+  },
+
+  onDebugLog(callback: (entry: DebugLogEntry) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, entry: DebugLogEntry) => {
+      callback(entry);
+    };
+    ipcRenderer.on("wiki:debugLog", handler);
+  },
+
+  removeDebugLogListeners() {
+    ipcRenderer.removeAllListeners("wiki:debugLog");
+  },
+
+  notifyDebug(tag: string, message: string, data?: unknown) {
+    ipcRenderer.send("wiki:rendererDebugLog", { tag, message, data });
   },
 };
 

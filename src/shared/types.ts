@@ -215,6 +215,7 @@ export interface WikiAPI {
   // Chat history
   listChatSessions(): Promise<ChatHistoryEntry[]>;
   getChatHistory(sessionId: string): Promise<(ChatSession & { title: string }) | null>;
+  loadChatSession(sessionId: string): Promise<ChatSession | null>;
   saveChatSession(session: ChatSession, title?: string): Promise<void>;
   deleteChatSession(sessionId: string): Promise<void>;
 
@@ -223,4 +224,21 @@ export interface WikiAPI {
   notifyUnsavedChanges(isDirty: boolean): void;
   confirmClose(): Promise<boolean>;
 
+  // Debug log
+  getDebugLogBacklog(): Promise<DebugLogEntry[]>;
+  onDebugLog(callback: (entry: DebugLogEntry) => void): void;
+  removeDebugLogListeners(): void;
+  notifyDebug(tag: string, message: string, data?: unknown): void;
+}
+
+/** Severity / category tag for a debug log entry. */
+export type DebugLogLevel = "info" | "warn" | "error" | "debug" | "stream";
+
+/** A single line of structured debug output emitted by the main process. */
+export interface DebugLogEntry {
+  ts: number;
+  level: DebugLogLevel;
+  tag: string;
+  message: string;
+  data?: unknown;
 }

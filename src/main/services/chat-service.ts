@@ -8,6 +8,7 @@ import { FileSystemService } from "./filesystem-service";
 import { startSpan } from "../telemetry";
 import { context, trace, SpanStatusCode } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
+import { debugLog } from "../debug-log";
 
 const execAsync = promisify(exec);
 const SHELL_TIMEOUT_MS = 10_000;
@@ -85,6 +86,22 @@ export class ChatService {
   }
 
   /**
+   * Replace the in-memory session with one loaded from history. Use this when
+   * the user picks a saved conversation in the sidebar — without it, subsequent
+   * `sendMessage` calls would append to the wrong (auto-created) session and
+   * the history sidebar would grow a new entry per send.
+   */
+  loadSession(session: ChatSession): ChatSession {
+    this.session = {
+      id: session.id,
+      systemPrompt: session.systemPrompt,
+      messages: session.messages.map((m) => ({ ...m })),
+      createdAt: session.createdAt,
+    };
+    return { ...this.session, messages: this.session.messages.map((m) => ({ ...m })) };
+  }
+
+  /**
    * Send a user message and stream the assistant response.
    * Runs a tool-calling loop first (reads vault files as requested by the LLM),
    * then streams the final text response.
@@ -138,6 +155,9 @@ export class ChatService {
 
       for (let i = 0; i < 10; i++) {
         if (signal.aborted) break;
+        debugLog("debug", "chat", `tool-loop iter ${i}`, {
+          extraMessages: extraMessages.length,
+        });
 
         const allMessages = [
           { role: "system", content: this.session!.systemPrompt },
@@ -148,19 +168,43 @@ export class ChatService {
         let result: Awaited<ReturnType<LLMService["callNonStreaming"]>>;
         try {
           result = await this.llm!.callNonStreaming(allMessages, tools, parentCtx);
-        } catch {
+        } catch (err) {
+          debugLog("warn", "chat", "tool-loop callNonStreaming threw — breaking loop", {
+            message: (err as Error)?.message,
+          });
           break;
         }
 
+        const toolCallRecords = result.toolCalls && result.toolCalls.length > 0
+          ? result.toolCalls
+          : null;
+
         if (result.content) {
-          yield { type: 'narration', content: result.content };
+          if (toolCallRecords) {
+            // Intermediate "thinking aloud" before issuing more tool calls —
+            // belongs in the thinking sidebar, not the final answer.
+            yield { type: 'narration', content: result.content };
+          } else {
+            // The model has finished and returned the final answer in the
+            // tool-loop reply itself. Emit it as text so it shows in the
+            // chat bubble, accumulate it locally, and short-circuit out of
+            // the loop *without* re-issuing a streaming request that would
+            // otherwise regenerate the same answer (wasted ~5s TTFB +
+            // duplicate tokens billed + duplicated content in the sidebar).
+            debugLog("info", "chat", "tool-loop produced final answer — short-circuiting stream", {
+              contentChars: result.content.length,
+            });
+            accumulated += result.content;
+            yield { type: 'text', content: result.content };
+          }
         }
 
-        if (!result.toolCalls || result.toolCalls.length === 0) break;
-
-        const toolCallRecords = result.toolCalls;
+        if (!toolCallRecords) break;
         extraMessages.push({ role: "assistant", content: result.content, tool_calls: toolCallRecords });
 
+        // 1) Announce all tool calls up-front so the thinking sidebar
+        //    populates immediately — without this users see a blank
+        //    sidebar for the entire duration of the slowest call.
         for (const tc of toolCallRecords) {
           yield {
             type: 'tool_call',
@@ -168,13 +212,68 @@ export class ChatService {
             name: tc.function.name,
             args: tc.function.arguments,
           };
-          const output = await this.executeTool(tc.function.name, tc.function.arguments);
-          yield { type: 'tool_result', id: tc.id, output };
-          extraMessages.push({ role: "tool", tool_call_id: tc.id, content: output });
+        }
+
+        // 2) Execute the calls concurrently and yield each result as it
+        //    completes (rather than serialising on the slowest one).
+        //    Note: we still append `role:'tool'` messages to extraMessages
+        //    in the original tool_call order, since most providers expect
+        //    tool replies to appear in the same order as the tool_calls
+        //    on the preceding assistant turn.
+        const outputs: string[] = new Array(toolCallRecords.length).fill("");
+        for (const tc of toolCallRecords) {
+          debugLog("info", "tool", `▶ ${tc.function.name}`, {
+            id: tc.id,
+            args: tc.function.arguments.slice(0, 300),
+          });
+        }
+        const toolStarts = toolCallRecords.map(() => Date.now());
+        const tracked = toolCallRecords.map((tc, i) =>
+          this.executeTool(tc.function.name, tc.function.arguments).then(
+            (output) => {
+              debugLog("info", "tool", `■ ${tc.function.name} (${Date.now() - toolStarts[i]}ms)`, {
+                id: tc.id,
+                outputLen: output.length,
+                outputPreview: output.slice(0, 200),
+              });
+              return { index: i, id: tc.id, output };
+            },
+          ),
+        );
+        const live: Array<Promise<{ index: number; id: string; output: string }> | null> = tracked.slice();
+        for (let done = 0; done < tracked.length; done++) {
+          if (signal.aborted) break;
+          const stillLive = live.filter(
+            (p): p is Promise<{ index: number; id: string; output: string }> => p !== null,
+          );
+          const winner = await Promise.race(stillLive);
+          live[winner.index] = null;
+          outputs[winner.index] = winner.output;
+          yield { type: 'tool_result', id: winner.id, output: winner.output };
+        }
+        for (let i = 0; i < toolCallRecords.length; i++) {
+          extraMessages.push({
+            role: "tool",
+            tool_call_id: toolCallRecords[i].id,
+            content: outputs[i],
+          });
         }
       }
 
       // ── Stream final text response ──────────────────────────────
+      // Skip the streaming round-trip entirely if the tool-loop already
+      // produced the final answer in its terminating non-streaming reply.
+      if (accumulated) {
+        debugLog("info", "chat", "skipping generateChat — final answer already emitted in tool loop", {
+          accumulatedChars: accumulated.length,
+        });
+        parentSpan?.setAttribute("output.value", accumulated);
+        parentSpan?.setStatus({ code: SpanStatusCode.OK });
+        this.appendAssistantMessage(accumulated);
+        this.abortController = null;
+        return;
+      }
+
       const finalMessages = [
         { role: "system", content: this.session!.systemPrompt },
         ...this.session!.messages.map((m) => ({ role: m.role, content: m.content })),

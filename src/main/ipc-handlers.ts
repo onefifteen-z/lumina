@@ -15,6 +15,7 @@ import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
 import { ChatHistoryService } from "./services/chat-history-service";
+import { debugLog, getDebugLogBacklog } from "./debug-log";
 
 // Track whether the renderer has unsaved changes
 let rendererHasUnsavedChanges = false;
@@ -407,24 +408,60 @@ export function registerIpcHandlers(services: {
       if (!chat) throw new Error("Chat service is not available.");
       const { requestId, content } = payload;
       const sender = event.sender;
+
+      const startedAt = Date.now();
+      let textChars = 0;
+      let thinkingChars = 0;
+      let traceCount = 0;
+      debugLog("info", "chat", `→ sendChatMessage`, {
+        requestId,
+        contentPreview: content.slice(0, 200),
+        contentLen: content.length,
+      });
+
       try {
         for await (const chunk of chat.sendMessage(content)) {
           if (chunk.type === 'thinking') {
+            thinkingChars += chunk.content.length;
+            debugLog("stream", "chat", `thinking +${chunk.content.length}c`, {
+              requestId,
+              preview: chunk.content.slice(0, 120),
+            });
             sender.send("wiki:chatThinkingChunk", { requestId, chunk: chunk.content });
           } else if (
             chunk.type === 'narration' ||
             chunk.type === 'tool_call' ||
             chunk.type === 'tool_result'
           ) {
+            traceCount += 1;
+            debugLog("info", "chat", `trace ${chunk.type}`, { requestId, chunk });
             sender.send("wiki:chatTraceChunk", { requestId, chunk });
           } else {
+            textChars += chunk.content.length;
+            debugLog("stream", "chat", `text +${chunk.content.length}c`, {
+              requestId,
+              preview: chunk.content.slice(0, 120),
+            });
             sender.send("wiki:chatChunk", { requestId, chunk: chunk.content });
           }
         }
+        debugLog("info", "chat", `← chatEnd ok`, {
+          requestId,
+          ms: Date.now() - startedAt,
+          textChars,
+          thinkingChars,
+          traceCount,
+        });
         sender.send("wiki:chatEnd", { requestId });
       } catch (err) {
         const code = err instanceof LLMError ? err.code : "unknown";
         const errorMessage = (err as Error).message || "Chat generation failed";
+        debugLog("error", "chat", `← chatEnd error`, {
+          requestId,
+          ms: Date.now() - startedAt,
+          code,
+          errorMessage,
+        });
         sender.send("wiki:chatEnd", { requestId, error: `${code}:${errorMessage}` });
       }
     },
@@ -448,6 +485,20 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("wiki:getChatHistory", async (_event, sessionId: string) => {
     return chatHistory?.getSession(sessionId) ?? null;
+  });
+
+  ipcMain.handle("wiki:loadChatSession", async (_event, sessionId: string) => {
+    if (!chat) throw new Error("Chat service is not available.");
+    const stored = chatHistory?.getSession(sessionId);
+    if (!stored) return null;
+    // Strip the `title` field — it lives only in the history DB, not in the
+    // in-memory ChatSession.
+    return chat.loadSession({
+      id: stored.id,
+      systemPrompt: stored.systemPrompt,
+      messages: stored.messages,
+      createdAt: stored.createdAt,
+    });
   });
 
   ipcMain.handle("wiki:saveChatSession", async (_event, session: any, title?: string) => {
@@ -547,4 +598,20 @@ export function registerIpcHandlers(services: {
     // acknowledgement channel.
     return true;
   });
+
+  // ── Debug log ────────────────────────────────────────────────────
+
+  ipcMain.handle("wiki:getDebugLogBacklog", () => {
+    return getDebugLogBacklog();
+  });
+
+  ipcMain.on(
+    "wiki:rendererDebugLog",
+    (
+      _event,
+      payload: { tag: string; message: string; data?: unknown },
+    ) => {
+      debugLog("debug", `ui:${payload.tag}`, payload.message, payload.data);
+    },
+  );
 }

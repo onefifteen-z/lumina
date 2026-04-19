@@ -3,6 +3,7 @@ import type { ChatChunk } from "../../shared/types";
 import { startSpan } from "../telemetry";
 import { SpanStatusCode } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
+import { debugLog } from "../debug-log";
 
 /** Error thrown for LLM-specific failures with categorized error types. */
 export class LLMError extends Error {
@@ -122,6 +123,13 @@ export class LLMService {
       "input.value": JSON.stringify(messages),
     });
 
+    const t0 = Date.now();
+    debugLog("info", "llm", "→ POST /chat/completions (non-stream)", {
+      model: this.config.model,
+      messages: summariseMessages(messages),
+      tools: tools?.length ?? 0,
+    });
+
     try {
       const body = JSON.stringify({
         model: this.config.model,
@@ -136,11 +144,27 @@ export class LLMService {
       try {
         json = await response.json();
       } catch {
+        debugLog("error", "llm", "non-stream: response was not JSON");
         throw new LLMError("Failed to parse LLM response as JSON", "malformed_response");
       }
 
       const message = (json as any)?.choices?.[0]?.message;
       const usage = (json as any)?.usage;
+      debugLog("info", "llm", `← non-stream ${response.status} (${Date.now() - t0}ms)`, {
+        contentPreview: typeof message?.content === "string"
+          ? message.content.slice(0, 200)
+          : message?.content,
+        toolCalls: Array.isArray(message?.tool_calls)
+          ? message.tool_calls.map((tc: any) => ({
+              id: tc?.id,
+              name: tc?.function?.name,
+              args: typeof tc?.function?.arguments === "string"
+                ? tc.function.arguments.slice(0, 300)
+                : tc?.function?.arguments,
+            }))
+          : null,
+        usage,
+      });
       if (span && usage) {
         span.setAttributes({
           "llm.token_count.prompt": usage.prompt_tokens ?? 0,
@@ -181,6 +205,16 @@ export class LLMService {
     });
 
     let accumulated = "";
+    const t0 = Date.now();
+    let firstByteAt = 0;
+    let firstDeltaAt = 0;
+    let textDeltas = 0;
+    let thinkingDeltas = 0;
+    debugLog("info", "llm", "→ POST /chat/completions (stream)", {
+      model: this.config.model,
+      messages: summariseMessages(messages),
+      tools: tools?.length ?? 0,
+    });
 
     try {
       const body = JSON.stringify({
@@ -192,6 +226,8 @@ export class LLMService {
 
       const response = await this.fetchWithSignal(body, signal);
       this.setAvailable(true);
+      firstByteAt = Date.now();
+      debugLog("info", "llm", `← stream connected ${response.status} (${firstByteAt - t0}ms TTFB)`);
 
       if (!response.body) {
         throw new LLMError("Response body is empty", "malformed_response");
@@ -215,7 +251,14 @@ export class LLMService {
             const trimmed = line.trim();
             if (!trimmed || !trimmed.startsWith("data: ")) continue;
             const data = trimmed.slice(6);
-            if (data === "[DONE]") return;
+            if (data === "[DONE]") {
+              debugLog("info", "llm", `← stream [DONE] (${Date.now() - t0}ms)`, {
+                textDeltas,
+                thinkingDeltas,
+                accumulatedChars: accumulated.length,
+              });
+              return;
+            }
 
             try {
               const parsed = JSON.parse(data);
@@ -225,9 +268,21 @@ export class LLMService {
                 delta?.reasoning ??
                 delta?.thinking ??
                 (typeof delta?.reasoning === "object" ? delta.reasoning?.content : undefined);
-              if (reasoning) yield { type: 'thinking' as const, content: reasoning };
+              if (reasoning) {
+                if (!firstDeltaAt) {
+                  firstDeltaAt = Date.now();
+                  debugLog("debug", "llm", `first thinking delta (+${firstDeltaAt - firstByteAt}ms)`);
+                }
+                thinkingDeltas++;
+                yield { type: 'thinking' as const, content: reasoning };
+              }
               const content = delta?.content;
               if (content) {
+                if (!firstDeltaAt) {
+                  firstDeltaAt = Date.now();
+                  debugLog("debug", "llm", `first text delta (+${firstDeltaAt - firstByteAt}ms)`);
+                }
+                textDeltas++;
                 accumulated += content;
                 yield { type: 'text' as const, content };
               }
@@ -243,6 +298,11 @@ export class LLMService {
       if (accumulated) span?.setAttribute("output.value", accumulated);
       span?.setStatus({ code: SpanStatusCode.OK });
     } catch (err) {
+      debugLog("error", "llm", `stream error after ${Date.now() - t0}ms`, {
+        textDeltas,
+        thinkingDeltas,
+        message: (err as Error)?.message,
+      });
       span?.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       throw err;
     } finally {
@@ -493,4 +553,42 @@ export class LLMService {
     if (base.endsWith("/v1")) return `${base}/chat/completions`;
     return `${base}/v1/chat/completions`;
   }
+}
+
+/**
+ * Render a compact one-line-per-message summary suitable for the debug log.
+ * Drops nothing structural but truncates long string content so the panel
+ * stays readable.
+ */
+function summariseMessages(
+  messages: Array<{
+    role: string;
+    content: string | null;
+    tool_calls?: unknown[];
+    tool_call_id?: string;
+  }>,
+): Array<Record<string, unknown>> {
+  return messages.map((m) => {
+    const out: Record<string, unknown> = { role: m.role };
+    if (typeof m.content === "string") {
+      out.content =
+        m.content.length > 240 ? `${m.content.slice(0, 240)}…(${m.content.length})` : m.content;
+    } else if (m.content === null) {
+      out.content = null;
+    }
+    if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+    if (m.tool_calls) {
+      out.tool_calls = (m.tool_calls as Array<{ id?: string; function?: { name?: string; arguments?: string } }>).map(
+        (tc) => ({
+          id: tc?.id,
+          name: tc?.function?.name,
+          args:
+            typeof tc?.function?.arguments === "string" && tc.function.arguments.length > 200
+              ? `${tc.function.arguments.slice(0, 200)}…`
+              : tc?.function?.arguments,
+        }),
+      );
+    }
+    return out;
+  });
 }

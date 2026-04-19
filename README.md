@@ -44,6 +44,18 @@ npm install
 npm run dev
 ```
 
+`npm run dev` runs the full loop:
+
+- **renderer** — Vite dev server with HMR (no rebuild needed on save).
+- **main** — `tsc --watch` recompiles into `dist/main/**`.
+- **preload** — `tsc --watch` recompiles into `dist/preload/**`.
+- **electron** — waits for Vite + the first compile, then `electronmon` watches
+  `dist/main/**` and `dist/preload/**` and restarts the Electron app whenever
+  they change.
+
+You should not need to run `build:renderer` / `build:main` separately during
+development — saving any source file is enough.
+
 On first launch, select a folder as your vault. Lumina will watch it for changes and keep the file tree in sync.
 
 To configure LLM features, open **Settings** and enter your endpoint URL, API key, and model name. Supports any OpenAI-compatible API including LiteLLM proxies, Gemini, and Claude.

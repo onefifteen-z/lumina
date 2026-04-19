@@ -1,20 +1,18 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Copy, Terminal, FileText, ChevronRight, ChevronDown } from 'lucide-react';
+import { Copy, ChevronRight, ChevronDown } from 'lucide-react';
 import { AssistantContent } from '../ChatView';
 import type { TraceItem } from '../ChatView';
+import { FoxThinkingIndicator, FoxChipIcon } from './FoxThinkingIndicator';
 
 export interface ThinkingSidebarProps {
   content: string;
   trace?: TraceItem[];
   durationMs: number;
   isStreaming: boolean;
-  onClose: () => void;
+  /** Optional: lets parent close the panel via Escape; titlebar owns the toggle button. */
+  onClose?: () => void;
   width: number;
-}
-
-function truncate(text: string, max: number): { text: string; truncated: boolean } {
-  if (text.length <= max) return { text, truncated: false };
-  return { text: text.slice(0, max), truncated: true };
+  onWikilinkClick?: (target: string) => void;
 }
 
 function formatArgs(argsJson: string): string {
@@ -32,15 +30,44 @@ function formatArgs(argsJson: string): string {
   }
 }
 
-const TraceEntry: React.FC<{ item: TraceItem }> = ({ item }) => {
+/** Claude-style mono shell prompt glyph: `>_` */
+const ShellPromptGlyph: React.FC = () => (
+  <span
+    className="font-mono text-primary text-[13px] leading-none shrink-0"
+    aria-hidden="true"
+  >
+    {'>_'}
+  </span>
+);
+
+/** Document glyph for tool outputs, mirroring the screenshot's 📄 affordance. */
+const OutputGlyph: React.FC = () => (
+  <svg
+    width={14}
+    height={14}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.6}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="text-text-secondary shrink-0"
+    aria-hidden="true"
+  >
+    <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+    <polyline points="14 3 14 9 20 9" />
+  </svg>
+);
+
+const TraceEntry: React.FC<{ item: TraceItem; onWikilinkClick?: (target: string) => void }> = ({ item, onWikilinkClick }) => {
   const [expanded, setExpanded] = useState(false);
 
   if (item.kind === 'narration') {
     return (
-      <div className="flex gap-2 py-1.5 text-sm text-text-primary">
-        <span className="text-text-secondary shrink-0 mt-0.5">💭</span>
-        <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">
-          <AssistantContent content={item.content} />
+      <div className="flex items-start gap-2 py-1.5 text-sm text-text-primary">
+        <FoxChipIcon size={14} solid className="text-text-secondary shrink-0 mt-[2px]" />
+        <div className="min-w-0 flex-1 break-words">
+          <AssistantContent content={item.content} onWikilinkClick={onWikilinkClick} />
         </div>
       </div>
     );
@@ -48,56 +75,44 @@ const TraceEntry: React.FC<{ item: TraceItem }> = ({ item }) => {
 
   if (item.kind === 'tool_call') {
     const argSummary = formatArgs(item.args);
-    const { text: shown, truncated } = truncate(argSummary, 120);
+    const isShell = item.name === 'shell';
     return (
-      <div className="flex gap-2 py-1.5 text-sm">
-        <Terminal size={14} className="text-primary shrink-0 mt-1" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-text-secondary uppercase tracking-wide mb-0.5">
-            {item.name}
-          </div>
-          <code className="block text-xs font-mono text-text-primary bg-[rgba(255,255,255,0.04)] rounded px-2 py-1 whitespace-pre-wrap break-words">
-            {expanded || !truncated ? argSummary : shown + '…'}
-          </code>
-          {truncated && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="text-[11px] text-text-secondary hover:text-text-primary mt-0.5 cursor-pointer"
-            >
-              {expanded ? 'Show less' : 'Show more'}
-            </button>
-          )}
+      <div className="py-1.5 text-sm">
+        <div className="flex items-center gap-2 mb-1">
+          {isShell ? <ShellPromptGlyph /> : <FoxChipIcon size={14} solid className="text-text-secondary shrink-0" />}
+          <span className="text-[11px] font-medium uppercase tracking-wider text-text-secondary">
+            {isShell ? 'Shell' : item.name}
+          </span>
         </div>
+        <pre className="ml-6 text-[12.5px] font-mono leading-relaxed text-text-primary bg-[rgba(255,255,255,0.04)] border border-border/60 rounded-md px-2.5 py-1.5 whitespace-pre-wrap break-words">
+          {argSummary}
+        </pre>
       </div>
     );
   }
 
   // tool_result
-  const { text: shownOutput, truncated } = truncate(item.output, 400);
   return (
-    <div className="flex gap-2 py-1.5 text-sm">
-      <FileText size={14} className="text-text-secondary shrink-0 mt-1" />
-      <div className="min-w-0 flex-1">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary cursor-pointer mb-0.5"
-        >
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span>Output ({item.output.length.toLocaleString()} chars)</span>
-        </button>
-        {(expanded || !truncated) && (
-          <pre className="text-xs font-mono text-text-secondary bg-[rgba(255,255,255,0.04)] rounded px-2 py-1 whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
-            {expanded ? item.output : shownOutput}
-          </pre>
-        )}
-      </div>
+    <div className="py-1.5 text-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-2 text-text-secondary hover:text-text-primary cursor-pointer w-full text-left"
+      >
+        <OutputGlyph />
+        {expanded ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+        <span className="text-[12.5px]">Output ({item.output.length.toLocaleString()} chars)</span>
+      </button>
+      {expanded && (
+        <pre className="ml-6 mt-1.5 text-[12.5px] font-mono leading-relaxed text-text-secondary bg-[rgba(255,255,255,0.04)] border border-border/60 rounded-md px-2.5 py-1.5 whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
+          {item.output}
+        </pre>
+      )}
     </div>
   );
 };
 
-export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace, durationMs, isStreaming, onClose, width }) => {
+export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace, durationMs, isStreaming, onClose, width, onWikilinkClick }) => {
   const bodyRef = useRef<HTMLDivElement>(null);
   const prevKeyRef = useRef<string>('');
   const [copied, setCopied] = useState(false);
@@ -119,6 +134,7 @@ export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace
   }, [content, trace, isStreaming]);
 
   useEffect(() => {
+    if (!onClose) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -147,31 +163,24 @@ export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace
   const hasThinking = content.length > 0;
   const hasTrace = (trace?.length ?? 0) > 0;
 
+  useEffect(() => {
+    try {
+      window.api.notifyDebug?.("sidebar", "render", {
+        hasThinking,
+        contentLen: content.length,
+        hasTrace,
+        traceLen: trace?.length ?? 0,
+        isStreaming,
+      });
+    } catch { /* ignore */ }
+  }, [hasThinking, hasTrace, content.length, trace?.length, isStreaming]);
+
   return (
     <aside
       className="h-full flex flex-col border-l border-border bg-sidebar-bg shrink-0 overflow-hidden"
       style={{ width: `${width}px` }}
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
-        <div className="flex flex-col">
-          <span className="text-xs font-semibold text-text-primary">
-            {hasThinking && hasTrace ? 'Thinking & Actions' : hasThinking ? 'Thinking' : 'Actions'}
-          </span>
-          <span className="text-[11px] text-text-secondary">
-            {isStreaming ? 'Working…' : `${seconds}s`}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex items-center justify-center w-6 h-6 rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors cursor-pointer"
-          aria-label="Close panel"
-        >
-          <X size={14} />
-        </button>
-      </div>
-
-      <div ref={bodyRef} className="flex-1 overflow-y-auto px-3 py-3 text-sm">
+      <div ref={bodyRef} className="flex-1 overflow-y-auto px-3 pt-3 pb-3 text-sm">
         {hasThinking && (
           <div className="mb-3">
             {hasTrace && (
@@ -179,7 +188,7 @@ export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace
                 Thinking
               </div>
             )}
-            <AssistantContent content={content} />
+            <AssistantContent content={content} onWikilinkClick={onWikilinkClick} />
           </div>
         )}
         {hasTrace && (
@@ -190,16 +199,25 @@ export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace
               </div>
             )}
             {trace!.map((item, i) => (
-              <TraceEntry key={i} item={item} />
+              <TraceEntry key={i} item={item} onWikilinkClick={onWikilinkClick} />
             ))}
           </div>
         )}
         {!hasThinking && !hasTrace && (
-          <p className="text-text-secondary text-xs">Thinking…</p>
+          <div className="flex flex-col items-center justify-center gap-2 py-8 text-text-secondary">
+            {isStreaming ? (
+              <>
+                <FoxThinkingIndicator size="small" />
+                <p className="text-xs">Working… reasoning hasn’t streamed yet.</p>
+              </>
+            ) : (
+              <p className="text-xs">No thinking trace was returned for this response.</p>
+            )}
+          </div>
         )}
       </div>
 
-      <div className="flex items-center px-3 py-1.5 border-t border-border shrink-0">
+      <div className="flex items-center justify-between px-3 py-1.5 border-t border-border shrink-0">
         <button
           type="button"
           onClick={handleCopy}
@@ -209,6 +227,9 @@ export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace
           <Copy size={12} />
           {copied ? 'Copied' : 'Copy'}
         </button>
+        <span className="text-[11px] text-text-secondary tabular-nums">
+          {isStreaming ? 'Working…' : `${seconds}s`}
+        </span>
       </div>
     </aside>
   );

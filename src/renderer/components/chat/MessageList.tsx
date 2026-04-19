@@ -10,6 +10,7 @@ export interface MessageListProps {
   streamingContent?: string;
   isGenerating?: boolean;
   renderAssistantContent?: (content: string) => React.ReactNode;
+  renderUserContent?: (content: string) => React.ReactNode;
   onRegenerate?: () => void;
   thinkingMap?: Record<string, ThinkingEntry>;
   activeThinkingMsgId?: string | null;
@@ -52,7 +53,7 @@ const ScrollToBottomButton: React.FC<ScrollToBottomButtonProps> = ({ visible, on
   </button>
 );
 
-export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, isGenerating, renderAssistantContent, onRegenerate, thinkingMap, activeThinkingMsgId, onThinkingChipClick }) => {
+export const MessageList: React.FC<MessageListProps> = ({ messages, streamingContent, isGenerating, renderAssistantContent, renderUserContent, onRegenerate, thinkingMap, activeThinkingMsgId, onThinkingChipClick }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -112,6 +113,7 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
               key={message.id}
               message={message}
               renderAssistantContent={renderAssistantContent}
+              renderUserContent={renderUserContent}
               onRegenerate={onRegenerate}
               thinking={thinkingMap?.[message.id]}
               isThinkingActive={activeThinkingMsgId === message.id}
@@ -161,11 +163,12 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
 const MessageBubble: React.FC<{
   message: ChatMessage;
   renderAssistantContent?: (content: string) => React.ReactNode;
+  renderUserContent?: (content: string) => React.ReactNode;
   onRegenerate?: () => void;
   thinking?: ThinkingEntry;
   isThinkingActive?: boolean;
   onThinkingChipClick?: () => void;
-}> = ({ message, renderAssistantContent, onRegenerate, thinking, isThinkingActive, onThinkingChipClick }) => {
+}> = ({ message, renderAssistantContent, renderUserContent, onRegenerate, thinking, isThinkingActive, onThinkingChipClick }) => {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
@@ -197,7 +200,11 @@ const MessageBubble: React.FC<{
   return (
     <div className="flex justify-end">
       <div className="max-w-[75%] rounded-[12px_12px_2px_12px] bg-[rgba(124,58,237,0.15)] text-text-primary" style={{ padding: '10px 16px' }}>
-        <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+        {renderUserContent ? (
+          <div className="text-sm whitespace-pre-wrap break-words">{renderUserContent(message.content)}</div>
+        ) : (
+          <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+        )}
       </div>
     </div>
   );

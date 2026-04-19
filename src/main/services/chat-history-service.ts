@@ -19,6 +19,24 @@ export interface ChatHistoryEntry {
   updatedAt: string;
 }
 
+/**
+ * Normalise a user-supplied rename title. Trims surrounding whitespace, caps
+ * the result at 200 characters, and falls back to a derived title (or the
+ * literal "New chat") when the input is effectively empty.
+ *
+ * Pulled out to a pure function so it can be unit-tested without standing up
+ * a real SQLite database.
+ */
+export function normaliseRenameTitle(
+  newTitle: string,
+  deriveFallback: () => string,
+): string {
+  const trimmed = newTitle.trim().slice(0, 200);
+  if (trimmed) return trimmed;
+  const derived = (deriveFallback() || "").slice(0, 60).replace(/\n/g, " ").trim();
+  return derived || "New chat";
+}
+
 export class ChatHistoryService {
   private db: Database.Database | null = null;
   private vaultPath: string | null = null;
@@ -121,6 +139,26 @@ export class ChatHistoryService {
     if (!this.db) return;
     this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+  }
+
+  /**
+   * Rename a session. Title is trimmed and capped at 200 chars; an empty
+   * trimmed title falls back to a derived title or "New chat" so the row never
+   * displays as blank. Intentionally does NOT touch `updated_at` — renaming
+   * shouldn't reorder the history list.
+   */
+  renameSession(sessionId: string, newTitle: string): void {
+    if (!this.db) return;
+    const fallback = (): string => {
+      const row = this.db!
+        .prepare(
+          "SELECT m.content FROM messages m WHERE m.session_id = ? AND m.role = 'user' ORDER BY m.timestamp ASC LIMIT 1"
+        )
+        .get(sessionId) as { content?: string } | undefined;
+      return row?.content ?? "";
+    };
+    const finalTitle = normaliseRenameTitle(newTitle, fallback);
+    this.db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(finalTitle, sessionId);
   }
 
   /** Derive a title from the first user message. */

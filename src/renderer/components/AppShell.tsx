@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from 'react';
 import type { WikiAPI, ArticleMeta } from '../../shared/types';
 import { getConfigFiles } from '../lib/file-classification';
 import ArticleBrowser from './ArticleBrowser';
@@ -12,6 +12,7 @@ import { IconRail, type SidebarView } from './IconRail';
 import { FilesView } from './FilesView';
 import { SearchView } from './SearchView';
 import { SearchPopup } from './SearchPopup';
+import { FindBar } from './FindBar';
 import { DebugLogPanel } from './DebugLogPanel';
 import { BookmarksView } from './BookmarksView';
 import { TocPanel, type TocHeading } from './TocPanel';
@@ -658,6 +659,13 @@ const AppShell: React.FC = () => {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const [findInitialQuery, setFindInitialQuery] = useState<string | undefined>(undefined);
+
+  // Refs mirroring the latest activeView / editingFilename so the global
+  // keydown handler can read them without re-binding on every change.
+  const activeViewRef = useRef<SidebarView>('files');
+  const editingFilenameRef = useRef<string | null>(null);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
   const [headings, setHeadings] = useState<TocHeading[]>([]);
@@ -742,12 +750,45 @@ const AppShell: React.FC = () => {
     };
   }, []);
 
+  // Keep refs in sync so the global keydown handler can read latest state.
+  useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
+  useEffect(() => { editingFilenameRef.current = editingFilename; }, [editingFilename]);
+
+  // Auto-close the in-page find bar when the user navigates away from the
+  // currently-searched document (different file, switched to chat, etc.).
+  useEffect(() => {
+    if (findBarOpen) setFindBarOpen(false);
+    // Intentionally only depend on the navigation surface, not findBarOpen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, editingFilename, selectedFilename, vaultReloadKey]);
+
   // ── Cmd+Shift+F → open search popup ──────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // ⌘⇧F — global vault search popup. Must come before ⌘F so the
+      // shift-modifier variant doesn't fall through to in-page find.
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setSearchPopupOpen(o => !o);
+        return;
+      }
+      // ⌘F — open the in-page find bar for the currently visible document.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
+        // Only intercept when there's actually a document to search; otherwise
+        // let the browser default (e.g. the chat view) take over.
+        const isDocumentView =
+          (activeViewRef.current !== "chat" &&
+            activeViewRef.current !== "settings" &&
+            activeViewRef.current !== "graph") ||
+          editingFilenameRef.current !== null;
+        if (!isDocumentView) return;
+        e.preventDefault();
+        // Seed from current text selection (if any) on first open, like
+        // Chrome / VSCode do.
+        const sel = window.getSelection?.()?.toString().trim() ?? "";
+        setFindInitialQuery(sel.length > 0 && sel.length < 200 ? sel : undefined);
+        setFindBarOpen(true);
+        return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault();
@@ -1086,6 +1127,14 @@ const AppShell: React.FC = () => {
         <DebugLogPanel
           open={debugPanelOpen}
           onClose={() => setDebugPanelOpen(false)}
+        />
+
+        {/* In-page Find bar (⌘F) — operates on whichever document view is
+            currently registered as the active find backend. */}
+        <FindBar
+          open={findBarOpen}
+          initialQuery={findInitialQuery}
+          onClose={() => setFindBarOpen(false)}
         />
       </NavContext.Provider>
     </NetworkStatusProvider>

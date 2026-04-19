@@ -65,7 +65,7 @@ const TraceEntry: React.FC<{ item: TraceItem; onWikilinkClick?: (target: string)
   if (item.kind === 'narration') {
     return (
       <div className="flex items-start gap-2 py-1.5 text-sm text-text-primary">
-        <FoxChipIcon size={14} solid className="text-text-secondary shrink-0 mt-[2px]" />
+        <FoxChipIcon size={14} solid className="text-text-secondary shrink-0 mt-[5px]" />
         <div className="min-w-0 flex-1 break-words">
           <AssistantContent content={item.content} onWikilinkClick={onWikilinkClick} />
         </div>
@@ -78,8 +78,12 @@ const TraceEntry: React.FC<{ item: TraceItem; onWikilinkClick?: (target: string)
     const isShell = item.name === 'shell';
     return (
       <div className="py-1.5 text-sm">
-        <div className="flex items-center gap-2 mb-1">
-          {isShell ? <ShellPromptGlyph /> : <FoxChipIcon size={14} solid className="text-text-secondary shrink-0" />}
+        <div className="flex items-start gap-2 mb-1">
+          {isShell ? (
+            <ShellPromptGlyph />
+          ) : (
+            <FoxChipIcon size={14} solid className="text-text-secondary shrink-0 mt-[5px]" />
+          )}
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-secondary">
             {isShell ? 'Shell' : item.name}
           </span>

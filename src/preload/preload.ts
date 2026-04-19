@@ -357,6 +357,10 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:deleteChatSession", sessionId);
   },
 
+  renameChatSession(sessionId: string, newTitle: string) {
+    return ipcRenderer.invoke("wiki:renameChatSession", sessionId, newTitle);
+  },
+
   // ── Lifecycle ────────────────────────────────────────────────────
 
   onUnsavedChanges(callback: (hasChanges: boolean) => void) {

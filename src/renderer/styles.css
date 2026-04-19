@@ -1933,3 +1933,28 @@ html.dark body {
 .thinking-chip-pulse {
   animation: thinking-pulse 2s ease-in-out infinite;
 }
+
+/* ── In-page Find highlights (preview + CodeMirror share these) ── */
+
+.lumina-find-hl {
+  background-color: rgba(250, 204, 21, 0.35); /* amber-300 @ 35% */
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.45);
+  color: inherit;
+}
+
+.lumina-find-hl--active {
+  background-color: rgba(249, 115, 22, 0.55); /* orange-500 @ 55% */
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.85);
+  color: #fff;
+}
+
+[data-theme="dark"] .lumina-find-hl {
+  background-color: rgba(250, 204, 21, 0.30);
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.55);
+}
+
+[data-theme="dark"] .lumina-find-hl--active {
+  background-color: rgba(249, 115, 22, 0.65);
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.95);
+}

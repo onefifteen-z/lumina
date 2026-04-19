@@ -87,23 +87,15 @@ export const FoxChipIcon: React.FC<{
 );
 
 /**
- * Single-color (solid) version of the fox face. Uses outline of the head plus
- * negative-space cutouts (eyes + nose) for legibility at small sizes.
+ * Single-color (solid) version of the fox face. Renders only the head hull —
+ * no eyes or nose — so it reads as a clean glyph at chip sizes (≤ 16px) where
+ * facet detail just becomes visual noise.
  */
 const FoxSolidSilhouette: React.FC<{ color?: string }> = ({ color }) => {
   const fill = color ?? 'currentColor';
   return (
     <g fill={fill}>
-      {/* Head outline (same hull as the colored version) */}
       <polygon points="216,156 340,172 464,156 490,320 432,462 340,486 248,462 190,320" />
-      {/* Eye cutouts: punch through with the parent background by drawing
-          inverse via a subtractive mask. SVG can't do CSS blend reliably
-          everywhere, so use opacity-0 placeholders and overlay shapes in
-          the page background color via fill-opacity. We approximate with
-          contrasting shapes instead — small enough to read as a fox. */}
-      <polygon points="248,254 292,278 254,300 218,278" fill="#0E0502" />
-      <polygon points="432,254 388,278 426,300 462,278" fill="#0E0502" />
-      <ellipse cx="340" cy="416" rx="14" ry="10" fill="#0E0502" />
     </g>
   );
 };

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SquarePen, RefreshCw, WifiOff, History, Trash2, FileText } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { SquarePen, RefreshCw, WifiOff, History, Trash2, FileText, Pencil } from 'lucide-react';
 import type { ChatMessage, ChatSession, ChatHistoryEntry, ArticleMeta } from '../../shared/types';
 import { MessageList } from './chat/MessageList';
 import { ChatInput } from './chat/ChatInput';
@@ -408,6 +408,198 @@ export type TraceItem =
   | { kind: 'narration'; content: string }
   | { kind: 'tool_call'; id: string; name: string; args: string }
   | { kind: 'tool_result'; id: string; output: string };
+
+/* ── History grouping helpers (exported for tests) ─────────────────────── */
+
+export type HistoryBucket = 'today' | 'yesterday' | 'last7' | 'last30' | 'older';
+
+const BUCKET_LABELS: Record<HistoryBucket, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last7: 'Previous 7 days',
+  last30: 'Previous 30 days',
+  older: 'Older',
+};
+
+/** Bucket an ISO timestamp relative to `now` (defaults to wall clock). */
+export function bucketForTimestamp(iso: string, now: Date = new Date()): HistoryBucket {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return 'older';
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86_400_000;
+  const startOfLast7 = startOfToday - 7 * 86_400_000;
+  const startOfLast30 = startOfToday - 30 * 86_400_000;
+  if (t >= startOfToday) return 'today';
+  if (t >= startOfYesterday) return 'yesterday';
+  if (t >= startOfLast7) return 'last7';
+  if (t >= startOfLast30) return 'last30';
+  return 'older';
+}
+
+export interface HistoryGroup<T extends { updatedAt: string }> {
+  bucket: HistoryBucket;
+  label: string;
+  entries: T[];
+}
+
+/**
+ * Group history entries into recency buckets. Input is assumed to be already
+ * sorted newest-first (which is what the backend returns); we preserve that
+ * ordering within each bucket and emit buckets in fixed recency order.
+ */
+export function groupHistoryByRecency<T extends { updatedAt: string }>(
+  entries: T[],
+  now: Date = new Date(),
+): HistoryGroup<T>[] {
+  const order: HistoryBucket[] = ['today', 'yesterday', 'last7', 'last30', 'older'];
+  const map = new Map<HistoryBucket, T[]>();
+  for (const e of entries) {
+    const b = bucketForTimestamp(e.updatedAt, now);
+    const arr = map.get(b) ?? [];
+    arr.push(e);
+    map.set(b, arr);
+  }
+  return order
+    .filter((b) => map.has(b) && (map.get(b)?.length ?? 0) > 0)
+    .map((b) => ({ bucket: b, label: BUCKET_LABELS[b], entries: map.get(b)! }));
+}
+
+/** Compact "x min ago" / "Yesterday" / "Mar 15" style stamp for history rows. */
+export function formatHistoryTimestamp(iso: string, now: Date = new Date()): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const diffSec = Math.max(0, Math.round((now.getTime() - t) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24 && bucketForTimestamp(iso, now) === 'today') return `${diffHr}h ago`;
+  const bucket = bucketForTimestamp(iso, now);
+  if (bucket === 'yesterday') return 'Yesterday';
+  const d = new Date(t);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return sameYear
+    ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/* ── History row (inline rename) ──────────────────────────────────────── */
+
+interface HistoryEntryRowProps {
+  entry: ChatHistoryEntry;
+  isActive: boolean;
+  onLoad: (id: string) => void;
+  onDelete: (id: string) => void;
+  onRename: (id: string, newTitle: string) => Promise<void> | void;
+}
+
+const HistoryEntryRow: React.FC<HistoryEntryRowProps> = ({ entry, isActive, onLoad, onDelete, onRename }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.title || '');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset draft whenever the upstream entry title changes (e.g. backend
+  // normalised an empty rename to "New chat") so re-opening the editor shows
+  // the canonical value rather than stale local state.
+  useEffect(() => {
+    if (!editing) setDraft(entry.title || '');
+  }, [entry.title, editing]);
+
+  // Auto-focus + select-all when entering edit mode.
+  useEffect(() => {
+    if (!editing) return;
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, [editing]);
+
+  const startEdit = useCallback(() => {
+    setDraft(entry.title || '');
+    setEditing(true);
+  }, [entry.title]);
+
+  const commit = useCallback(() => {
+    setEditing(false);
+    const next = draft.trim();
+    // Skip the IPC round-trip when nothing meaningful changed.
+    if (next === (entry.title || '').trim()) return;
+    void onRename(entry.id, next);
+  }, [draft, entry.id, entry.title, onRename]);
+
+  const cancel = useCallback(() => {
+    setEditing(false);
+    setDraft(entry.title || '');
+  }, [entry.title]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancel();
+      }
+    },
+    [commit, cancel],
+  );
+
+  return (
+    <div
+      className={`group flex items-center gap-1 px-3 py-1.5 text-xs transition-colors ${
+        isActive ? 'bg-primary-bg text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+      } ${editing ? '' : 'cursor-pointer'}`}
+      onClick={() => { if (!editing) onLoad(entry.id); }}
+      onDoubleClick={(e) => { e.stopPropagation(); if (!editing) startEdit(); }}
+      title={editing ? undefined : `${entry.title || 'Untitled'} · ${new Date(entry.updatedAt).toLocaleString()} · double-click to rename`}
+    >
+      <div className="min-w-0 flex-1">
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={commit}
+            onClick={(e) => e.stopPropagation()}
+            maxLength={200}
+            className="w-full bg-surface-active text-text-primary text-xs px-1.5 py-0.5 rounded outline-none border border-primary/40 focus:border-primary"
+            aria-label="Rename chat"
+          />
+        ) : (
+          <div className="truncate">{entry.title || 'Untitled'}</div>
+        )}
+        <div className="text-[10px] text-text-secondary/70 tabular-nums mt-0.5">
+          {formatHistoryTimestamp(entry.updatedAt)}
+        </div>
+      </div>
+      {!editing && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); startEdit(); }}
+            className="shrink-0 opacity-0 group-hover:opacity-100 text-text-secondary hover:text-primary transition-opacity cursor-pointer"
+            aria-label="Rename"
+            title="Rename"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onDelete(entry.id); }}
+            className="shrink-0 opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-400 transition-opacity cursor-pointer"
+            aria-label="Delete"
+            title="Delete"
+          >
+            <Trash2 size={12} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
 
 export interface ThinkingEntry {
   content: string;
@@ -846,6 +1038,19 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     if (sessionRef.current?.id === sessionId) handleNewSession();
   }, [refreshHistory]);
 
+  const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    // Optimistic local update so the new label appears immediately even if
+    // the IPC round-trip lags. We still refresh from the source of truth so
+    // the displayed title stays in sync with whatever the backend stored
+    // (it normalises empty / oversized inputs).
+    setHistoryList((prev) => prev.map((e) => (e.id === sessionId ? { ...e, title: newTitle } : e)));
+    try {
+      await window.api.renameChatSession(sessionId, newTitle);
+    } finally {
+      refreshHistory();
+    }
+  }, [refreshHistory]);
+
   const handleSend = useCallback(
     async (content: string, mentions: string[] = []) => {
       setError(null);
@@ -1046,6 +1251,11 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     paddingRight: 'max(1rem, calc(50% - 360px))',
   };
 
+  // Group history entries by recency. Backend already returns them sorted by
+  // updatedAt DESC (newest first), so we just bucket them into time bands and
+  // preserve the incoming order within each bucket.
+  const historyGroups = useMemo(() => groupHistoryByRecency(historyList), [historyList]);
+
   return (
     <div className="flex flex-1 min-h-0">
       {/* History sidebar */}
@@ -1061,21 +1271,21 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
             {historyList.length === 0 && (
               <p className="px-3 py-4 text-xs text-text-secondary">No history yet</p>
             )}
-            {historyList.map((entry) => (
-              <div
-                key={entry.id}
-                className={`group flex items-center gap-1 px-3 py-2 text-xs cursor-pointer transition-colors ${sessionRef.current?.id === entry.id ? 'bg-primary-bg text-text-primary' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'}`}
-                onClick={() => loadSession(entry.id)}
-              >
-                <span className="truncate flex-1">{entry.title || 'Untitled'}</span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); deleteSession(entry.id); }}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 text-text-secondary hover:text-red-400 transition-opacity cursor-pointer"
-                  aria-label="Delete"
-                >
-                  <Trash2 size={12} />
-                </button>
+            {historyGroups.map((group) => (
+              <div key={group.bucket} className="mb-1">
+                <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-text-secondary/80 select-none">
+                  {group.label}
+                </div>
+                {group.entries.map((entry) => (
+                  <HistoryEntryRow
+                    key={entry.id}
+                    entry={entry}
+                    isActive={sessionRef.current?.id === entry.id}
+                    onLoad={loadSession}
+                    onDelete={deleteSession}
+                    onRename={renameSession}
+                  />
+                ))}
               </div>
             ))}
           </div>

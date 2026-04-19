@@ -9,6 +9,7 @@ import { obsidianSyntaxExtensions } from '../extensions/obsidian-syntax';
 import { wikilinkAutocomplete } from '../extensions/wikilink-autocomplete';
 import type { ArticleFile, FrontmatterData } from '../../shared/types';
 import LLMAssistPanel from './LLMAssistPanel';
+import { useCodeMirrorFindBackend } from '../find/use-codemirror-find-backend';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -34,6 +35,11 @@ const ArticleEditor: React.FC = () => {
   const [assistSelection, setAssistSelection] = useState('');
   const [assistPosition, setAssistPosition] = useState<{ top: number; left: number } | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Register a CodeMirror-backed find backend for the global Cmd+F FindBar.
+  // Re-binds whenever the editor instance changes (handled via editingFilename
+  // as a versioning hint).
+  useCodeMirrorFindBackend(viewRef, true, editingFilename);
 
   // Keep titleRef in sync with title state
   useEffect(() => {

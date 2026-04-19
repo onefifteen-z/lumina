@@ -218,6 +218,7 @@ export interface WikiAPI {
   loadChatSession(sessionId: string): Promise<ChatSession | null>;
   saveChatSession(session: ChatSession, title?: string): Promise<void>;
   deleteChatSession(sessionId: string): Promise<void>;
+  renameChatSession(sessionId: string, newTitle: string): Promise<void>;
 
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;

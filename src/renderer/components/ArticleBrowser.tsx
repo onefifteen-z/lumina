@@ -12,6 +12,7 @@ import { useNavigation } from './AppShell';
 import { extractHeadings, addHeadingIds, type TocHeading } from './TocPanel';
 import { AlignLeft, Calendar, List, Tag, X } from 'lucide-react';
 import hljs from 'highlight.js';
+import { useDomFindBackend } from '../find/use-dom-find-backend';
 
 // ── Remark pipeline ────────────────────────────────────────────
 
@@ -176,6 +177,12 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Register a DOM-based find backend so the global FindBar (Cmd+F) can search
+  // and highlight inside the rendered article. Re-binds whenever the rendered
+  // HTML changes (different article).
+  const getFindRoot = useCallback(() => contentRef.current, []);
+  useDomFindBackend(getFindRoot, !!renderedHtml, renderedHtml);
 
   // Fetch article content + backlinks by vault-relative filename
   const selectArticle = useCallback(async (filename: string) => {

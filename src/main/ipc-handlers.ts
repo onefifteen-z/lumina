@@ -509,6 +509,10 @@ export function registerIpcHandlers(services: {
     chatHistory?.deleteSession(sessionId);
   });
 
+  ipcMain.handle("wiki:renameChatSession", async (_event, sessionId: string, newTitle: string) => {
+    chatHistory?.renameSession(sessionId, newTitle);
+  });
+
   // ── Config ───────────────────────────────────────────────────────
 
   ipcMain.handle("wiki:getConfig", async (): Promise<AppConfig> => {

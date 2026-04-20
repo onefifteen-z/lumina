@@ -1,9 +1,12 @@
 import { LLMProviderConfig } from "../../shared/types";
 import type { ChatChunk } from "../../shared/types";
+import type { ChatContentBlock } from "../../shared/types";
 import { startSpan } from "../telemetry";
 import { SpanStatusCode } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
 import { debugLog } from "../debug-log";
+import fs from "fs/promises";
+import path from "path";
 
 /** Error thrown for LLM-specific failures with categorized error types. */
 export class LLMError extends Error {
@@ -24,7 +27,23 @@ export class LLMError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * Connection / non-streaming-completion timeout. Set high enough to cover
+ * worst-case calls from the chat tool-loop:
+ *   - large vision-input prompts (e.g. 36-page PDF rasterized to PNGs)
+ *     stuffed into the prompt take 15–25s to upload + process;
+ *   - on top of that the model thinks for another 10–30s when the tool
+ *     output it just received is itself huge (e.g. a 43k-char `cat`).
+ *
+ * The previous 30s budget was tripping `tool-loop callNonStreaming threw`
+ * mid-flow, which dropped the loop into the streaming fallback path —
+ * and that fallback path forces `tool_choice: 'none'`, so the model
+ * could no longer call shell to actually create the files it had just
+ * decided to create. The user-visible symptom was "model says it will
+ * create wiki pages but never does".
+ */
+const DEFAULT_TIMEOUT_MS = 120_000;
+const TIMEOUT_SECONDS = DEFAULT_TIMEOUT_MS / 1000;
 
 export class LLMService {
   private config: LLMProviderConfig;
@@ -112,7 +131,7 @@ export class LLMService {
    * before streaming the final response.
    */
   async callNonStreaming(
-    messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }>,
+    messages: Array<{ role: string; content: string | null | ChatContentBlock[]; tool_calls?: unknown[]; tool_call_id?: string }>,
     tools?: unknown[],
     parentCtx?: Context,
   ): Promise<{ content: string | null; toolCalls: Array<{ id: string; function: { name: string; arguments: string } }> | null }> {
@@ -149,10 +168,11 @@ export class LLMService {
       }
 
       const message = (json as any)?.choices?.[0]?.message;
+      const assistantContent = normaliseAssistantContent(message?.content);
       const usage = (json as any)?.usage;
       debugLog("info", "llm", `← non-stream ${response.status} (${Date.now() - t0}ms)`, {
-        contentPreview: typeof message?.content === "string"
-          ? message.content.slice(0, 200)
+        contentPreview: assistantContent
+          ? assistantContent.slice(0, 200)
           : message?.content,
         toolCalls: Array.isArray(message?.tool_calls)
           ? message.tool_calls.map((tc: any) => ({
@@ -172,10 +192,10 @@ export class LLMService {
           "llm.token_count.total": usage.total_tokens ?? 0,
         });
       }
-      if (message?.content) span?.setAttribute("output.value", message.content);
+      if (assistantContent) span?.setAttribute("output.value", assistantContent);
       span?.setStatus({ code: SpanStatusCode.OK });
       return {
-        content: message?.content ?? null,
+        content: assistantContent,
         toolCalls: message?.tool_calls ?? null,
       };
     } catch (err) {
@@ -192,7 +212,7 @@ export class LLMService {
    * Accepts an optional AbortSignal for external cancellation support.
    */
   async *generateChat(
-    messages: Array<{ role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }>,
+    messages: Array<{ role: string; content: string | null | ChatContentBlock[]; tool_calls?: unknown[]; tool_call_id?: string }>,
     signal?: AbortSignal,
     tools?: unknown[],
     parentCtx?: Context,
@@ -356,6 +376,47 @@ export class LLMService {
     }
   }
 
+  /**
+   * Upload a file to a LiteLLM-compatible `/v1/files` endpoint and return
+   * the provider-issued file id.
+   */
+  async uploadFile(
+    filePath: string,
+    purpose: string = "user_data",
+  ): Promise<{ id: string }> {
+    const data = await fs.readFile(filePath);
+    const form = new FormData();
+    form.set("purpose", purpose);
+    form.set(
+      "file",
+      new Blob([data], { type: detectMimeType(filePath) }),
+      path.basename(filePath),
+    );
+
+    const response = await fetch(this.buildFilesUrl(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: form,
+    });
+    if (!response.ok) {
+      await this.handleHttpError(response);
+    }
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new LLMError("Failed to parse file upload response as JSON", "malformed_response");
+    }
+    const fileId = (json as any)?.id ?? (json as any)?.file?.id;
+    if (typeof fileId !== "string" || fileId.length === 0) {
+      throw new LLMError("File upload response missing file id", "malformed_response");
+    }
+    this.setAvailable(true);
+    return { id: fileId };
+  }
+
   // ── Private helpers ──────────────────────────────────────────────
 
   /** Make a single non-streaming LLM call and return the assistant message. */
@@ -422,7 +483,10 @@ export class LLMService {
       this.setAvailable(false);
 
       if (err instanceof DOMException && err.name === "AbortError") {
-        throw new LLMError("LLM request timed out after 30 seconds", "timeout");
+        throw new LLMError(
+          `LLM request timed out after ${TIMEOUT_SECONDS} seconds`,
+          "timeout",
+        );
       }
       throw new LLMError(`Network error: ${(err as Error).message}`, "network");
     }
@@ -486,7 +550,10 @@ export class LLMService {
         if (externalSignal?.aborted) {
           throw new LLMError("Request was aborted", "network");
         }
-        throw new LLMError("LLM request timed out after 30 seconds", "timeout");
+        throw new LLMError(
+          `LLM request timed out after ${TIMEOUT_SECONDS} seconds`,
+          "timeout",
+        );
       }
       throw new LLMError(`Network error: ${(err as Error).message}`, "network");
     }
@@ -553,6 +620,16 @@ export class LLMService {
     if (base.endsWith("/v1")) return `${base}/chat/completions`;
     return `${base}/v1/chat/completions`;
   }
+
+  /** Build the files URL from the configured endpoint. */
+  private buildFilesUrl(): string {
+    const base = this.config.endpointUrl.replace(/\/+$/, "");
+    if (base.includes("/chat/completions")) {
+      return base.replace(/\/chat\/completions(?:\/)?$/, "/files");
+    }
+    if (base.endsWith("/v1")) return `${base}/files`;
+    return `${base}/v1/files`;
+  }
 }
 
 /**
@@ -563,7 +640,7 @@ export class LLMService {
 function summariseMessages(
   messages: Array<{
     role: string;
-    content: string | null;
+    content: string | null | ChatContentBlock[];
     tool_calls?: unknown[];
     tool_call_id?: string;
   }>,
@@ -573,6 +650,34 @@ function summariseMessages(
     if (typeof m.content === "string") {
       out.content =
         m.content.length > 240 ? `${m.content.slice(0, 240)}…(${m.content.length})` : m.content;
+    } else if (Array.isArray(m.content)) {
+      out.content = m.content.map((block) => {
+        if (block.type === "text") {
+          return {
+            type: "text",
+            text:
+              block.text.length > 120
+                ? `${block.text.slice(0, 120)}…(${block.text.length})`
+                : block.text,
+          };
+        }
+        if (block.type === "file") {
+          return {
+            type: "file",
+            file_id: block.file.file_id,
+            format: block.file.format,
+            filename: block.file.filename,
+          };
+        }
+        return {
+          type: "image_url",
+          urlPreview:
+            block.image_url.url.length > 80
+              ? `${block.image_url.url.slice(0, 80)}…`
+              : block.image_url.url,
+          detail: block.image_url.detail,
+        };
+      });
     } else if (m.content === null) {
       out.content = null;
     }
@@ -591,4 +696,45 @@ function summariseMessages(
     }
     return out;
   });
+}
+
+function normaliseAssistantContent(content: unknown): string | null {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+  const parts: string[] = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+      continue;
+    }
+    if (part && typeof part === "object") {
+      const text = (part as any).text;
+      if (typeof text === "string") parts.push(text);
+    }
+  }
+  if (parts.length === 0) return null;
+  return parts.join("\n");
+}
+
+function detectMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".pdf":
+      return "application/pdf";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    case ".bmp":
+      return "image/bmp";
+    case ".txt":
+      return "text/plain";
+    default:
+      return "application/octet-stream";
+  }
 }

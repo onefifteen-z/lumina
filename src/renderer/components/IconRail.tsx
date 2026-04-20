@@ -20,6 +20,12 @@ export interface IconRailProps {
   configFiles?: ArticleMeta[];
   onSelectConfigFile?: (filename: string) => void;
   hasClaudeMd?: boolean;
+  /**
+   * Invoked when the user clicks the CLAUDE.md slot but no CLAUDE.md file
+   * exists yet in the vault. Lets the host open the editor pre-filled with
+   * the bundled template (saving creates the file; cancelling is a no-op).
+   */
+  onCreateClaudeMdFromTemplate?: () => void;
 }
 
 
@@ -37,8 +43,24 @@ const bottomItems: { view: SidebarView; icon: React.ElementType; label: string }
 
 const allItems = [...topItems, ...bottomItems];
 
-export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile, hasClaudeMd = true }: IconRailProps) {
+export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile, hasClaudeMd = true, onCreateClaudeMdFromTemplate }: IconRailProps) {
   const visibleTopItems = hasClaudeMd ? topItems : topItems.filter((i) => i.view !== "chat");
+  // The CLAUDE.md slot is always visible. When the vault has no CLAUDE.md we
+  // surface a muted appearance so the user can tell the file doesn't exist
+  // yet, but the button is still actionable: clicking it opens an editor
+  // pre-seeded with the bundled template.
+  const claudeFile = configFiles?.[0];
+  const claudeButtonVisible = Boolean(
+    (claudeFile && onSelectConfigFile) || onCreateClaudeMdFromTemplate,
+  );
+  const claudeButtonEnabled = Boolean(claudeFile || onCreateClaudeMdFromTemplate);
+  const handleClaudeClick = (): void => {
+    if (claudeFile && onSelectConfigFile) {
+      onSelectConfigFile(claudeFile.filename);
+    } else {
+      onCreateClaudeMdFromTemplate?.();
+    }
+  };
   const allVisibleItems = [...visibleTopItems, ...bottomItems];
   const buttonRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -108,19 +130,31 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
 
       {/* Config button + Settings pushed to bottom */}
       <div className="flex flex-col items-center gap-1 mt-auto" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        {configFiles && configFiles.length > 0 && onSelectConfigFile && (
+        {claudeButtonVisible && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label="Open CLAUDE.md"
-                onClick={() => onSelectConfigFile(configFiles[0].filename)}
-                className="flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none"
+                aria-label={claudeFile ? "Open CLAUDE.md" : "Create CLAUDE.md from template"}
+                disabled={!claudeButtonEnabled}
+                onClick={handleClaudeClick}
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none",
+                  claudeButtonEnabled
+                    ? "cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                    : "cursor-not-allowed text-text-tertiary opacity-50",
+                  // Muted state when CLAUDE.md doesn't exist yet — keeps the
+                  // slot visually distinct from "open existing file" without
+                  // hiding the affordance.
+                  !claudeFile && claudeButtonEnabled && "text-text-tertiary hover:text-text-secondary"
+                )}
               >
                 <FileCode size={18} aria-hidden="true" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">CLAUDE.md</TooltipContent>
+            <TooltipContent side="right">
+              {claudeFile ? "CLAUDE.md" : "CLAUDE.md (not in vault — click to create)"}
+            </TooltipContent>
           </Tooltip>
         )}
         {bottomItems.map((item, i) =>

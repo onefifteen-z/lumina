@@ -55,6 +55,7 @@ vi.mock("react", async () => {
         () => {},
       ],
       useCallback: (fn: unknown) => fn,
+      useMemo: <T,>(fn: () => T) => fn(),
     },
     useRef: () => ({ current: null }),
     useEffect: () => {},
@@ -63,6 +64,7 @@ vi.mock("react", async () => {
       () => {},
     ],
     useCallback: (fn: unknown) => fn,
+    useMemo: <T,>(fn: () => T) => fn(),
   };
 });
 
@@ -176,5 +178,31 @@ describe("MessageList fox indicator integration", () => {
     const container = foxContainers[0];
     const className = (container.props as any).className as string;
     expect(className).toContain("justify-start");
+  });
+
+  it("shows latest shell command under streaming thinking chip", () => {
+    const tree = MessageList({
+      messages: [],
+      isGenerating: true,
+      streamingContent: "",
+      thinkingMap: {
+        __streaming__: {
+          content: "",
+          trace: [
+            { kind: "tool_call", id: "1", name: "shell", args: JSON.stringify({ command: "echo a" }) },
+            { kind: "tool_call", id: "2", name: "shell", args: JSON.stringify({ command: "echo b" }) },
+          ],
+          durationMs: 0,
+          isStreaming: true,
+        },
+      },
+      activeThinkingMsgId: "__streaming__",
+      onThinkingChipClick: () => {},
+    });
+    const cmds = findByTestId(tree as ReactElement, "streaming-shell-command");
+    expect(cmds.length).toBeGreaterThanOrEqual(1);
+    const text = String((cmds[0].props as any).children);
+    expect(text).toContain("echo b");
+    expect(text).not.toContain("echo a");
   });
 });

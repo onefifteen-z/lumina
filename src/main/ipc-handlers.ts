@@ -6,6 +6,8 @@ import type {
   AppConfig,
   LLMProviderConfig,
   LLMAssistParams,
+  ChatContentBlock,
+  IngestRequest,
 } from "../shared/types";
 import { reconfigureTelemetry } from "./telemetry";
 import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
@@ -15,7 +17,9 @@ import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
 import { ChatHistoryService } from "./services/chat-history-service";
+import { IngestService } from "./services/ingest-service";
 import { debugLog, getDebugLogBacklog } from "./debug-log";
+import { readClaudeMdTemplate } from "./services/template-service";
 
 // Track whether the renderer has unsaved changes
 let rendererHasUnsavedChanges = false;
@@ -44,6 +48,7 @@ export function registerIpcHandlers(services: {
   let llm = services.llm;
   const chat = services.chat ?? null;
   const chatHistory = services.chatHistory ?? null;
+  const ingest = new IngestService(llm, fileSystem);
 
   /**
    * Rebuild the LLM service from the current persisted config and API key,
@@ -58,6 +63,7 @@ export function registerIpcHandlers(services: {
       llm = null;
     }
     chat?.setLLMService(llm);
+    ingest.setLLMService(llm);
   }
 
   // Keep a cached article list for backlink computation
@@ -86,6 +92,7 @@ export function registerIpcHandlers(services: {
     });
 
     chat?.setFileSystemService(fileSystem);
+    ingest.setFileSystemService(fileSystem);
     try {
       chatHistory?.open(vaultPath);
     } catch (err) {
@@ -404,9 +411,17 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:sendChatMessage",
-    async (event, payload: { requestId: string; content: string }) => {
+    async (
+      event,
+      payload: {
+        requestId: string;
+        content: string;
+        blocks?: ChatContentBlock[];
+        reloadClaudeMd?: boolean;
+      },
+    ) => {
       if (!chat) throw new Error("Chat service is not available.");
-      const { requestId, content } = payload;
+      const { requestId, content, blocks, reloadClaudeMd } = payload;
       const sender = event.sender;
 
       const startedAt = Date.now();
@@ -420,7 +435,7 @@ export function registerIpcHandlers(services: {
       });
 
       try {
-        for await (const chunk of chat.sendMessage(content)) {
+        for await (const chunk of chat.sendMessage(content, blocks, { reloadClaudeMd })) {
           if (chunk.type === 'thinking') {
             thinkingChars += chunk.content.length;
             debugLog("stream", "chat", `thinking +${chunk.content.length}c`, {
@@ -475,6 +490,14 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("wiki:getChatSession", async () => {
     if (!chat) return null;
     return chat.getSession();
+  });
+
+  // Deprecated: superseded by the model-callable `ingest_source` tool
+  // (see src/main/services/ingest-tool.ts and assets/templates/INGEST.md).
+  // Kept registered so we can re-expose it as a power-user shortcut later
+  // without re-wiring IPC plumbing. The renderer no longer calls it.
+  ipcMain.handle("wiki:ingestFile", async (_event, request: IngestRequest) => {
+    return ingest.ingestFile(request);
   });
 
   // ── Chat History ─────────────────────────────────────────────────
@@ -601,6 +624,18 @@ export function registerIpcHandlers(services: {
     // Actual unsaved-changes logic lives in the renderer; this is the
     // acknowledgement channel.
     return true;
+  });
+
+  // ── Templates ────────────────────────────────────────────────────
+
+  /**
+   * Returns the bundled CLAUDE.md template content. Used by the renderer when
+   * the user opens the CLAUDE.md slot in the icon rail and the vault has no
+   * such file yet — we pre-fill the editor with this so they can edit/save
+   * (creating the file) or cancel (no-op).
+   */
+  ipcMain.handle("wiki:getClaudeMdTemplate", async (): Promise<string | null> => {
+    return readClaudeMdTemplate();
   });
 
   // ── Debug log ────────────────────────────────────────────────────

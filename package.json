@@ -12,9 +12,22 @@
       "dist/renderer/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "node_modules/@napi-rs/canvas/**/*"
+    ],
     "directories": {
       "output": "release"
     },
+    "extraResources": [
+      {
+        "from": "assets/templates",
+        "to": "templates",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "mac": {
       "target": "dmg",
       "icon": "assets/icons/mac/icon.icns"
@@ -47,6 +60,7 @@
     "@codemirror/search": "^6.6.0",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
+    "@napi-rs/canvas": "^0.1.99",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.215.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.215.0",
@@ -65,6 +79,8 @@
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.8.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remark-gfm": "^4.0.1",

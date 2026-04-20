@@ -123,6 +123,75 @@ export type ChatTraceChunk =
   | { type: 'tool_call'; id: string; name: string; args: string }
   | { type: 'tool_result'; id: string; output: string };
 
+/** OpenAI-compatible multimodal content block used in chat requests. */
+export type ChatContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "file";
+      file: {
+        file_id: string;
+        filename?: string;
+        format?: string;
+      };
+    }
+  | {
+      type: "image_url";
+      image_url: {
+        url: string;
+        detail?: "low" | "medium" | "high" | "ultra_high" | "auto";
+      };
+    };
+
+/** One-shot slash-command metadata attached to the current send action. */
+export type ChatSendCommand =
+  | {
+      type: "ingest";
+      filename: string;
+      prompt: string;
+    }
+  | {
+      // `/lint` lints the entire wiki using the live CLAUDE.md as its
+      // source of conventions. It does NOT target a single file (we used
+      // to thread `filename` through here for the old "lint this note"
+      // UX). The optional `prompt` is whatever free-form text the user
+      // typed after `/lint` — e.g. "focus on the entities pages" — which
+      // ChatView surfaces verbatim as "additional instruction" appended
+      // to the lint workflow prompt. Empty / missing means "do the
+      // default whole-wiki lint pass".
+      type: "lint";
+      prompt?: string;
+    };
+
+/**
+ * Request payload for ingesting a vault file into chat content blocks.
+ *
+ * @deprecated Superseded by the model-callable `ingest_source` tool
+ * (see src/main/services/ingest-tool.ts). The renderer no longer calls
+ * `window.api.ingestFile`; the model drives extraction itself via tool
+ * calls following the protocol in assets/templates/INGEST.md. Kept so
+ * the existing main-process IngestService remains type-safe.
+ */
+export interface IngestRequest {
+  filename: string;
+}
+
+/** @deprecated Used only by the deprecated `ingestFile` IPC. */
+export type IngestKind = "text" | "pdf" | "pptx" | "image";
+
+/**
+ * Normalized ingest output consumed by the renderer and chat pipeline.
+ *
+ * @deprecated Used only by the deprecated `ingestFile` IPC. The
+ * `ingest_source` tool returns its output as a structured string instead.
+ */
+export interface IngestResult {
+  sourceFilename: string;
+  kind: IngestKind;
+  blocks: ChatContentBlock[];
+  summary: string;
+  chunkCount: number;
+}
+
 /** A single message in a chat conversation. */
 export interface ChatMessage {
   id: string;
@@ -202,7 +271,11 @@ export interface WikiAPI {
 
   // Chat
   startChatSession(): Promise<ChatSession>;
-  sendChatMessage(content: string): Promise<void>; // streaming via events
+  sendChatMessage(
+    content: string,
+    blocks?: ChatContentBlock[],
+    options?: { reloadClaudeMd?: boolean },
+  ): Promise<void>; // streaming via events
   stopChatGeneration(): Promise<void>;
   getChatSession(): Promise<ChatSession | null>;
   onChatChunk(callback: (chunk: string) => void): void;
@@ -218,12 +291,22 @@ export interface WikiAPI {
   loadChatSession(sessionId: string): Promise<ChatSession | null>;
   saveChatSession(session: ChatSession, title?: string): Promise<void>;
   deleteChatSession(sessionId: string): Promise<void>;
+
+  // Ingest
+  ingestFile(request: IngestRequest): Promise<IngestResult>;
   renameChatSession(sessionId: string, newTitle: string): Promise<void>;
 
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
   notifyUnsavedChanges(isDirty: boolean): void;
   confirmClose(): Promise<boolean>;
+
+  // Templates
+  /**
+   * Read the bundled CLAUDE.md template shipped with the app.
+   * Returns null if the template file is missing or unreadable.
+   */
+  getClaudeMdTemplate(): Promise<string | null>;
 
   // Debug log
   getDebugLogBacklog(): Promise<DebugLogEntry[]>;

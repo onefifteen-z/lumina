@@ -13,8 +13,18 @@ import { useCodeMirrorFindBackend } from '../find/use-codemirror-find-backend';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-const ArticleEditor: React.FC = () => {
-  const { editingFilename, navigate, generatedContent, clearGeneratedContent } = useNavigation();
+export interface ArticleEditorProps {
+  /**
+   * When true, render a compact editor for embedding under the article reader
+   * (same tab, Obsidian-style) instead of the full-page layout.
+   */
+  embedded?: boolean;
+  /** Called after a successful save (e.g. to refresh the reader preview). */
+  onAfterSave?: () => void;
+}
+
+const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfterSave }) => {
+  const { editingFilename, navigate, generatedContent, clearGeneratedContent, prefilledTitle, clearPrefilledTitle } = useNavigation();
 
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -39,7 +49,7 @@ const ArticleEditor: React.FC = () => {
   // Register a CodeMirror-backed find backend for the global Cmd+F FindBar.
   // Re-binds whenever the editor instance changes (handled via editingFilename
   // as a versioning hint).
-  useCodeMirrorFindBackend(viewRef, true, editingFilename);
+  useCodeMirrorFindBackend(viewRef, true, embedded && editingFilename ? `${editingFilename}:embedded` : editingFilename);
 
   // Keep titleRef in sync with title state
   useEffect(() => {
@@ -127,18 +137,49 @@ const ArticleEditor: React.FC = () => {
       savedContentRef.current = editorContent;
       setIsDirty(false);
 
+      onAfterSave?.();
+
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
       console.error('Failed to save article:', err);
       setSaveStatus('error');
     }
-  }, [title, originalFrontmatter, editingFilename]);
+  }, [title, originalFrontmatter, editingFilename, onAfterSave]);
 
   // Keep saveHandlerRef in sync so the keymap closure always calls the latest save
   useEffect(() => {
     saveHandlerRef.current = handleSave;
   }, [handleSave]);
+
+  // Cmd/Ctrl+S — capture phase so Electron doesn't treat it as "Save Page".
+  // Full-page: only when focus is inside this editor (incl. title). Inline: only
+  // when focus is inside the embedded editor chrome / CodeMirror.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 's') return;
+      if (!viewRef.current) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest('[data-no-global-save]')) return;
+
+      const insideThisEditor = !!el?.closest('.article-editor');
+      if (!insideThisEditor) return;
+
+      if (embedded) {
+        const cmFocused = viewRef.current.hasFocus();
+        if (!cmFocused && !el?.closest('.article-editor__toolbar')) return;
+      } else {
+        const inTitle = !!el?.closest('.article-editor__title');
+        const cmFocused = viewRef.current.hasFocus();
+        if (!cmFocused && !inTitle) return;
+      }
+
+      e.preventDefault();
+      saveHandlerRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [embedded]);
 
   // Initialize CodeMirror editor
   useEffect(() => {
@@ -287,6 +328,19 @@ const ArticleEditor: React.FC = () => {
     clearGeneratedContent();
   }, [generatedContent, editingFilename, clearGeneratedContent]);
 
+  // Seed the title input when the host requested a specific filename for the
+  // new article (e.g. the "Create CLAUDE.md from template" flow). Runs once
+  // per prefill: we clear it immediately so subsequent edits aren't clobbered.
+  useEffect(() => {
+    if (!prefilledTitle || editingFilename) return;
+    setTitle(prefilledTitle);
+    titleRef.current = prefilledTitle;
+    // Don't update savedTitleRef — the file doesn't exist yet, so the editor
+    // should show as dirty until the user saves.
+    setIsDirty(true);
+    clearPrefilledTitle();
+  }, [prefilledTitle, editingFilename, clearPrefilledTitle]);
+
   // Clean up dirty notification on unmount
   useEffect(() => {
     return () => {
@@ -381,24 +435,49 @@ const ArticleEditor: React.FC = () => {
     saveStatus === 'idle' ? '' :
       `article-editor__status--${saveStatus}`;
 
+  const docLabel =
+    embedded && editingFilename
+      ? editingFilename.split('/').pop()?.replace(/\.md$/i, '') ?? editingFilename
+      : null;
+
   return (
-    <div className="article-editor">
+    <div
+      className={
+        embedded
+          ? 'article-editor article-editor--embedded article-editor--inline-surface'
+          : 'article-editor'
+      }
+    >
       {/* Toolbar */}
       <div className="article-editor__toolbar">
-        <button
-          className="article-editor__back-btn"
-          onClick={handleBack}
-          aria-label="Back to articles"
-        >
-          ← Back
-        </button>
+        <div className="article-editor__toolbar-left">
+          <button
+            type="button"
+            className="article-editor__back-btn"
+            onClick={handleBack}
+            aria-label={embedded ? 'Back to preview' : 'Back to articles'}
+          >
+            {embedded ? 'Done' : '← Back'}
+          </button>
+          {docLabel && (
+            <span className="article-editor__doc-label" title={editingFilename ?? undefined}>
+              {docLabel}
+            </span>
+          )}
+        </div>
         <div className="article-editor__toolbar-right">
+          {embedded && (
+            <span className="article-editor__kbd-hint" aria-hidden="true">
+              ⌘S save
+            </span>
+          )}
           {statusLabel && (
             <span className={`article-editor__status ${statusClass}`}>
               {statusLabel}
             </span>
           )}
           <button
+            type="button"
             className="article-editor__save-btn"
             onClick={handleSave}
             disabled={saveStatus === 'saving'}
@@ -408,30 +487,34 @@ const ArticleEditor: React.FC = () => {
         </div>
       </div>
 
-      {/* Title input */}
-      <input
-        className="article-editor__title"
-        type="text"
-        placeholder="Article title…"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        aria-label="Article title"
-      />
-
-      {/* CodeMirror container */}
-      {loading ? (
-        <div className="article-editor__loading">Loading article…</div>
-      ) : (
-        <div className="article-editor__cm-wrapper" ref={editorContainerRef}>
-          <div className="article-editor__cm" ref={editorRef} />
-          <LLMAssistPanel
-            selectedText={assistSelection}
-            position={assistPosition}
-            onAccept={handleAssistAccept}
-            onDismiss={handleAssistDismiss}
-          />
-        </div>
+      {/* Title input — full-page editor only (inline uses front-matter title from file). */}
+      {!embedded && (
+        <input
+          className="article-editor__title"
+          type="text"
+          placeholder="Article title…"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          aria-label="Article title"
+        />
       )}
+
+      {/* CodeMirror: mount the host node immediately so init effect ([]) can run;
+          async load overlays a spinner without destroying the editor. */}
+      <div className="article-editor__cm-wrapper" ref={editorContainerRef}>
+        {loading && (
+          <div className="article-editor__loading-overlay" aria-busy="true">
+            Loading…
+          </div>
+        )}
+        <div className="article-editor__cm" ref={editorRef} />
+        <LLMAssistPanel
+          selectedText={assistSelection}
+          position={assistPosition}
+          onAccept={handleAssistAccept}
+          onDismiss={handleAssistDismiss}
+        />
+      </div>
     </div>
   );
 };

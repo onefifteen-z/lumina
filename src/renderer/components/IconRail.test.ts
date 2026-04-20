@@ -165,3 +165,68 @@ describe("IconRail keyboard navigation with chat icon", () => {
     expect(index).toBe(0);
   });
 });
+
+// Mirror the IconRail's CLAUDE.md slot derivation. The slot is now always
+// shown when a creation handler is supplied — even if the vault has no
+// CLAUDE.md yet — and is muted/disabled appropriately.
+function deriveClaudeSlot(opts: {
+  configFiles?: { filename: string }[];
+  onSelectConfigFile?: () => void;
+  onCreateClaudeMdFromTemplate?: () => void;
+}): { visible: boolean; enabled: boolean; mode: "open" | "create" | "none" } {
+  const claudeFile = opts.configFiles?.[0];
+  const visible = Boolean(
+    (claudeFile && opts.onSelectConfigFile) || opts.onCreateClaudeMdFromTemplate,
+  );
+  const enabled = Boolean(claudeFile || opts.onCreateClaudeMdFromTemplate);
+  const mode: "open" | "create" | "none" =
+    claudeFile && opts.onSelectConfigFile
+      ? "open"
+      : opts.onCreateClaudeMdFromTemplate
+        ? "create"
+        : "none";
+  return { visible, enabled, mode };
+}
+
+describe("IconRail CLAUDE.md slot", () => {
+  it("opens existing CLAUDE.md when both file and selector are present", () => {
+    const slot = deriveClaudeSlot({
+      configFiles: [{ filename: "CLAUDE.md" }],
+      onSelectConfigFile: () => {},
+      onCreateClaudeMdFromTemplate: () => {},
+    });
+    expect(slot).toEqual({ visible: true, enabled: true, mode: "open" });
+  });
+
+  it("falls back to template-creation when vault has no CLAUDE.md", () => {
+    const slot = deriveClaudeSlot({
+      configFiles: [],
+      onCreateClaudeMdFromTemplate: () => {},
+    });
+    expect(slot).toEqual({ visible: true, enabled: true, mode: "create" });
+  });
+
+  it("hides the slot when no file AND no creation handler is wired", () => {
+    const slot = deriveClaudeSlot({ configFiles: [] });
+    expect(slot.visible).toBe(false);
+    expect(slot.enabled).toBe(false);
+  });
+
+  it("renders disabled-but-visible would never happen — visible implies enabled", () => {
+    // Sanity: the only path to visible is having either a file+selector or a
+    // creation handler, both of which also flip enabled. This guards the
+    // invariant against future refactors.
+    for (const cfg of [
+      { configFiles: [{ filename: "CLAUDE.md" }], onSelectConfigFile: () => {} },
+      { configFiles: [], onCreateClaudeMdFromTemplate: () => {} },
+      {
+        configFiles: [{ filename: "CLAUDE.md" }],
+        onSelectConfigFile: () => {},
+        onCreateClaudeMdFromTemplate: () => {},
+      },
+    ]) {
+      const slot = deriveClaudeSlot(cfg);
+      if (slot.visible) expect(slot.enabled).toBe(true);
+    }
+  });
+});

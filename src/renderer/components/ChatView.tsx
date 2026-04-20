@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { SquarePen, RefreshCw, WifiOff, History, Trash2, FileText, Pencil } from 'lucide-react';
-import type { ChatMessage, ChatSession, ChatHistoryEntry, ArticleMeta } from '../../shared/types';
+import type {
+  ChatMessage,
+  ChatSession,
+  ChatHistoryEntry,
+  ArticleMeta,
+  ChatSendCommand,
+  ChatContentBlock,
+} from '../../shared/types';
 import { MessageList } from './chat/MessageList';
-import { ChatInput } from './chat/ChatInput';
+import { ChatInput, parseSlashCommand } from './chat/ChatInput';
 import { CodeBlock } from './chat/CodeBlock';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useNavigation } from './AppShell';
@@ -166,26 +173,28 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
     } else if (parsed.type === 'heading') {
       blocks.push({ type: 'heading', level: parsed.level!, content: parsed.content });
       i++;
-    } else if (parsed.type === 'ul') {
+    } else if (parsed.type === 'ul' || parsed.type === 'ol') {
+      // CommonMark "loose list": items can be separated by blank lines and
+      // still belong to the same list. Without this, `1. a\n\n1. b\n\n1. c`
+      // (which is the LLM's preferred output style — markdown auto-numbers
+      // anyway, so it always emits "1.") becomes three separate <ol>s
+      // each starting at 1, and the user sees "1. 1. 1." instead of
+      // "1. 2. 3.". We accumulate while the next non-blank line stays the
+      // same list type.
+      const listType = parsed.type;
       const items: string[] = [parsed.content];
       i++;
       while (i < lines.length) {
-        const next = classifyLine(lines[i]);
-        if (next.type !== 'ul') break;
+        // Skip blank separators between items.
+        let j = i;
+        while (j < lines.length && lines[j].trim() === '') j++;
+        if (j >= lines.length) break;
+        const next = classifyLine(lines[j]);
+        if (next.type !== listType) break;
         items.push(next.content);
-        i++;
+        i = j + 1;
       }
-      blocks.push({ type: 'ul', items });
-    } else if (parsed.type === 'ol') {
-      const items: string[] = [parsed.content];
-      i++;
-      while (i < lines.length) {
-        const next = classifyLine(lines[i]);
-        if (next.type !== 'ol') break;
-        items.push(next.content);
-        i++;
-      }
-      blocks.push({ type: 'ol', items });
+      blocks.push({ type: listType, items });
     } else {
       // Paragraph: collect consecutive paragraph lines
       const paraLines: string[] = [parsed.content];
@@ -776,6 +785,79 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     refreshArticleIndex();
   }, [refreshArticleIndex, vaultKey]);
 
+  // Historically `/ingest` would also write a tiny `Ingest-<basename>-<ts>.md`
+  // stub into the vault root just to record "we ingested this". That stub
+  // never carried any knowledge content (just Source/Kind/Chunks/Summary),
+  // duplicated information the chat session itself preserves, and — more
+  // importantly — collided with the CLAUDE.md workflow where the model
+  // owns `wiki/sources/<name>.md` and `wiki/log.md`. We deleted the helper.
+  // If you want a vault-level audit trail of ingests, do it in `wiki/log.md`
+  // via the model.
+
+  /**
+   * Build the user-facing prompt for an `/ingest <filename>` slash command.
+   *
+   * The renderer used to call `window.api.ingestFile()` (which rasterized
+   * the file and stuffed the result into the message as content blocks),
+   * but that bypassed CLAUDE.md's wiki workflow and confused the model.
+   * Now `/ingest` is purely a prompt-template expander: the model owns the
+   * entire ingest decision tree via the `ingest_source` tool + INGEST.md.
+   *
+   * `command.prompt` is whatever the user typed after the filename, or the
+   * default placeholder set in `parseSlashCommand`. We surface it as
+   * "additional instruction" so a verbose user prompt doesn't drown the
+   * standardised ingest directive.
+   */
+  const buildIngestPrompt = useCallback(
+    (command: Extract<ChatSendCommand, { type: 'ingest' }>): string => {
+      const lines = [
+        `Please ingest \`${command.filename}\` following CLAUDE.md and INGEST.md.`,
+        ``,
+        `Start by calling \`ingest_source({ path: "${command.filename}" })\` to extract the content, then complete the wiki Ingest workflow as described in CLAUDE.md.`,
+      ];
+      const extra = command.prompt?.trim();
+      // Suppress the boring default placeholder we generate when the user
+      // didn't actually type anything past the filename. Sending it would
+      // just be noise.
+      const defaultPlaceholder =
+        "Please analyze the attached file and answer the user's request.";
+      if (extra && extra !== defaultPlaceholder) {
+        lines.push("", "Additional instruction from the user:", extra);
+      }
+      return lines.join("\n");
+    },
+    [],
+  );
+
+  /**
+   * Build the user-facing prompt for `/lint [prompt…]` (whole-wiki lint).
+   *
+   * `/lint` used to target a single file (`buildLintUserPayload` would
+   * inline the file content into the user message). The new contract is:
+   * the model owns the lint loop end-to-end via `shell` calls, walking
+   * `wiki/` itself and following CLAUDE.md's Lint workflow. We keep the
+   * renderer's job to a single thing: tell the model "go run /lint" in
+   * a way that triggers that workflow unambiguously, optionally appending
+   * a user-supplied focus instruction (e.g. `/lint focus on entities`).
+   *
+   * `extra` is the parsed `command.prompt` (already stripped of `/lint`),
+   * so we use it verbatim. We deliberately do NOT scrape `content` — the
+   * caret-driven parser is the single source of truth for what's "lint
+   * args" vs. "command verb".
+   */
+  const buildLintPrompt = useCallback((extra: string | undefined): string => {
+    const lines = [
+      'Please lint the entire knowledge base following the **Lint** workflow in CLAUDE.md.',
+      '',
+      'Walk `wiki/` with `shell` calls, surface contradictions / staleness / orphan pages / inconsistent terminology, then propose fixes and ask which to apply (per the workflow). Append the lint log entry when done.',
+    ];
+    const userExtra = (extra ?? '').trim();
+    if (userExtra) {
+      lines.push('', 'Additional instruction from the user:', userExtra);
+    }
+    return lines.join('\n');
+  }, []);
+
   const persistSession = useCallback(async () => {
     try {
       const s = await window.api.getChatSession();
@@ -1052,7 +1134,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   }, [refreshHistory]);
 
   const handleSend = useCallback(
-    async (content: string, mentions: string[] = []) => {
+    async (content: string, mentions: string[] = [], command?: ChatSendCommand) => {
       setError(null);
       setShowWelcome(false);
 
@@ -1076,11 +1158,28 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       firstThinkingFlushed.current = false;
       userClosedStreamingRef.current = false;
 
-      // Build the actual payload: prepend a "Referenced files" block so the
-      // LLM has the file contents in context. Read each mentioned file and
-      // skip any that fail (network / missing file shouldn't block the send).
       let payload = content;
-      if (mentions.length > 0) {
+      let payloadBlocks: ChatContentBlock[] | undefined;
+      let sendOpts: { reloadClaudeMd?: boolean } | undefined;
+
+      if (command?.type === 'ingest') {
+        // Pure prompt-template expansion. No IPC, no payload blocks — the
+        // model handles file extraction itself via the `ingest_source` tool
+        // (see INGEST.md, which is appended to the system prompt).
+        payload = buildIngestPrompt(command);
+        // Force CLAUDE.md/INGEST.md reload so any user edits to either are
+        // picked up before the ingest workflow starts.
+        sendOpts = { reloadClaudeMd: true };
+      } else if (command?.type === 'lint') {
+        // Pure prompt-template expansion. No file IO — the model walks
+        // the wiki via `shell` itself, following CLAUDE.md's Lint
+        // workflow. `command.prompt` is the optional free-form text the
+        // user typed after `/lint`. Reload CLAUDE.md so any user edits
+        // land in the system prompt before the lint pass starts.
+        payload = buildLintPrompt(command.prompt);
+        sendOpts = { reloadClaudeMd: true };
+      } else if (mentions.length > 0) {
+        // Backward-compatible @filename context injection for plain text turns.
         const reads = await Promise.all(
           mentions.map(async (filename) => {
             try {
@@ -1101,13 +1200,13 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       }
 
       try {
-        await window.api.sendChatMessage(payload);
+        await window.api.sendChatMessage(payload, payloadBlocks, sendOpts);
       } catch {
         setIsGenerating(false);
         setError({ type: 'network', message: 'Failed to send message.' });
       }
     },
-    [],
+    [buildIngestPrompt, buildLintPrompt],
   );
 
   const handleStop = useCallback(async () => {
@@ -1139,15 +1238,29 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     firstThinkingFlushed.current = false;
     userClosedStreamingRef.current = false;
 
-    // Re-attach any file mentions present in the original user text.
+    // Recreate one-shot ingest payload or @mention payload from the last user turn.
     let payload = lastUserMsg.content;
+    let payloadBlocks: ChatContentBlock[] | undefined;
+    let sendOpts: { reloadClaudeMd?: boolean } | undefined;
+
+    const slash = parseSlashCommand(lastUserMsg.content);
+    if (slash?.type === 'ingest') {
+      // See handleSend: pure prompt-template path, model handles extraction.
+      payload = buildIngestPrompt(slash);
+      sendOpts = { reloadClaudeMd: true };
+    } else if (slash?.type === 'lint') {
+      // See handleSend: pure prompt-template path, model owns the lint loop.
+      payload = buildLintPrompt(slash.prompt);
+      sendOpts = { reloadClaudeMd: true };
+    }
+
     const mentionRe = /(?:^|\s)@(\S+)/g;
     const mentioned: string[] = [];
     let m: RegExpExecArray | null;
     while ((m = mentionRe.exec(lastUserMsg.content)) !== null) {
       mentioned.push(m[1]);
     }
-    if (mentioned.length > 0) {
+    if (!payloadBlocks && !slash && mentioned.length > 0) {
       const reads = await Promise.all(
         mentioned.map(async (filename) => {
           try {
@@ -1167,11 +1280,11 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       }
     }
 
-    window.api.sendChatMessage(payload).catch(() => {
+    window.api.sendChatMessage(payload, payloadBlocks, sendOpts).catch(() => {
       setIsGenerating(false);
       setError({ type: 'network', message: 'Failed to send message.' });
     });
-  }, [messages]);
+  }, [messages, buildIngestPrompt, buildLintPrompt]);
 
   /* ── Determine what to show ─────────────────────────────────── */
 

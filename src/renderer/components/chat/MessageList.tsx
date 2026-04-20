@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Sparkles, Copy, RefreshCw, ThumbsUp, ThumbsDown, ChevronDown } from 'lucide-react';
 import type { ChatMessage } from '../../../shared/types';
 import { FoxThinkingIndicator } from './FoxThinkingIndicator';
 import { ThinkingChip } from './ThinkingChip';
 import type { ThinkingEntry } from '../ChatView';
+import { latestShellCommandFromTrace } from './shell-trace';
 
 export interface MessageListProps {
   messages: ChatMessage[];
@@ -76,6 +77,11 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
   // Filter out system messages — they aren't displayed in the chat
   const visibleMessages = messages.filter((m) => m.role !== 'system');
 
+  const streamingShellCmd = useMemo(
+    () => latestShellCommandFromTrace(thinkingMap?.__streaming__?.trace),
+    [thinkingMap?.__streaming__?.trace],
+  );
+
   const colStyle: React.CSSProperties = {
     paddingLeft: 'max(1rem, calc(50% - 360px))',
     paddingRight: 'max(1rem, calc(50% - 360px))',
@@ -121,23 +127,35 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, streamingCon
             />
           ))}
 
-          {/* Fox thinking indicator — shown when generating but no streaming content yet and no thinking */}
-          {isGenerating && (!streamingContent || streamingContent.length === 0) && !thinkingMap?.__streaming__ && (
+          {/* Fox thinking indicator — shown when generating but no streaming text yet and no streaming-side thinking */}
+          {isGenerating &&
+            (streamingContent == null || streamingContent.length === 0) &&
+            !thinkingMap?.__streaming__ && (
             <div className="flex justify-start" data-testid="fox-thinking-container">
               <FoxThinkingIndicator size="large" />
             </div>
           )}
 
           {/* Streaming partial assistant response (with optional thinking chip) */}
-          {(streamingContent != null && streamingContent.length > 0 || thinkingMap?.__streaming__) && (
+          {((streamingContent != null && streamingContent.length > 0) || thinkingMap?.__streaming__) && (
             <div className="w-full text-text-primary" data-testid="streaming-message">
               {thinkingMap?.__streaming__ && onThinkingChipClick && (
-                <ThinkingChip
-                  isStreaming={thinkingMap.__streaming__.isStreaming}
-                  durationMs={thinkingMap.__streaming__.durationMs}
-                  isActive={activeThinkingMsgId === '__streaming__'}
-                  onClick={() => onThinkingChipClick('__streaming__')}
-                />
+                <div className="mb-1.5">
+                  <ThinkingChip
+                    isStreaming={thinkingMap.__streaming__.isStreaming}
+                    durationMs={thinkingMap.__streaming__.durationMs}
+                    isActive={activeThinkingMsgId === '__streaming__'}
+                    onClick={() => onThinkingChipClick('__streaming__')}
+                  />
+                  {thinkingMap.__streaming__.isStreaming && streamingShellCmd && (
+                    <div
+                      className="mt-1 ml-0.5 text-[11px] font-mono text-text-secondary whitespace-pre-wrap break-all max-h-16 overflow-y-auto border border-border/50 rounded-md px-2 py-1 bg-[rgba(255,255,255,0.04)]"
+                      data-testid="streaming-shell-command"
+                    >
+                      {streamingShellCmd}
+                    </div>
+                  )}
+                </div>
               )}
               {streamingContent != null && streamingContent.length > 0 && (
                 renderAssistantContent ? (

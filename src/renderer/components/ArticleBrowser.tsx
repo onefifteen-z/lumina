@@ -13,6 +13,7 @@ import { extractHeadings, addHeadingIds, type TocHeading } from './TocPanel';
 import { AlignLeft, Calendar, List, Tag, X } from 'lucide-react';
 import hljs from 'highlight.js';
 import { useDomFindBackend } from '../find/use-dom-find-backend';
+import ArticleEditor from './ArticleEditor';
 
 // ── Remark pipeline ────────────────────────────────────────────
 
@@ -164,9 +165,16 @@ interface ArticleBrowserProps {
   selectedFilename: string | null;
   onHeadingsChange?: (headings: TocHeading[]) => void;
   onNavigate?: (filename: string) => void;
+  /** When true, the same tab shows CodeMirror under the metadata instead of a separate editor screen. */
+  inlineEditActive?: boolean;
 }
 
-const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHeadingsChange, onNavigate }) => {
+const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
+  selectedFilename,
+  onHeadingsChange,
+  onNavigate,
+  inlineEditActive = false,
+}) => {
   const { editArticle } = useNavigation();
 
   // Selected article state
@@ -235,6 +243,14 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
       onHeadingsChange?.([]);
     }
   }, [selectedFilename, selectArticle]);
+
+  const prevInlineRef = useRef(inlineEditActive);
+  useEffect(() => {
+    if (prevInlineRef.current && !inlineEditActive && selectedFilename) {
+      void selectArticle(selectedFilename);
+    }
+    prevInlineRef.current = inlineEditActive;
+  }, [inlineEditActive, selectedFilename, selectArticle]);
 
   // After each render, mark wikilinks whose target file doesn't exist
   useEffect(() => {
@@ -352,8 +368,12 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
             </div>
           )}
 
-          {/* Filename */}
-          <h1 className="text-lg font-bold text-text-primary mb-4">{currentFilename?.split('/').pop()?.replace(/\.md$/i, '')}</h1>
+          {/* Filename — hidden while inline editing (editor shows doc name in its bar). */}
+          {!inlineEditActive && (
+            <h1 className="text-lg font-bold text-text-primary mb-4">
+              {currentFilename?.split('/').pop()?.replace(/\.md$/i, '')}
+            </h1>
+          )}
 
           {/* Properties panel */}
           <div className="mb-6 pb-4 border-b border-border">
@@ -444,31 +464,42 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({ selectedFilename, onHea
             </div>
           </div>
 
-          {/* Rendered markdown body */}
-          <div
-            ref={contentRef}
-            className="article-view__content"
-            onClick={handleContentClick}
-            dangerouslySetInnerHTML={{ __html: renderedHtml }}
-          />
+          {inlineEditActive ? (
+            <ArticleEditor
+              embedded
+              onAfterSave={() => {
+                if (selectedFilename) void selectArticle(selectedFilename);
+              }}
+            />
+          ) : (
+            <>
+              {/* Rendered markdown body */}
+              <div
+                ref={contentRef}
+                className="article-view__content"
+                onClick={handleContentClick}
+                dangerouslySetInnerHTML={{ __html: renderedHtml }}
+              />
 
-          {/* Backlinks */}
-          {backlinks.length > 0 && (
-            <section className="article-view__backlinks">
-              <h3 className="article-view__backlinks-title">Backlinks</h3>
-              <ul className="article-view__backlinks-list">
-                {backlinks.map((link) => (
-                  <li key={link.filename}>
-                    <button
-                      className="article-view__backlink"
-                      onClick={() => handleBacklinkClick(link.filename)}
-                    >
-                      {link.title}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
+              {/* Backlinks */}
+              {backlinks.length > 0 && (
+                <section className="article-view__backlinks">
+                  <h3 className="article-view__backlinks-title">Backlinks</h3>
+                  <ul className="article-view__backlinks-list">
+                    {backlinks.map((link) => (
+                      <li key={link.filename}>
+                        <button
+                          className="article-view__backlink"
+                          onClick={() => handleBacklinkClick(link.filename)}
+                        >
+                          {link.title}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
         </>
       )}

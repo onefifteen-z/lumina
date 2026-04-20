@@ -59,6 +59,14 @@ export interface NavigationContext {
   clearGeneratedContent: () => void;
   /** Switch to the files view and select the given article for viewing */
   viewArticle: (filename: string) => void;
+  /**
+   * Optional title to seed into the editor when entering "new article" mode.
+   * Used by the "Create CLAUDE.md from template" flow so saving writes
+   * `claude.md` without forcing the user to retype the name.
+   */
+  prefilledTitle: string | null;
+  /** Clear the prefilled title once the editor has consumed it. */
+  clearPrefilledTitle: () => void;
 }
 
 const NavContext = createContext<NavigationContext>({
@@ -70,6 +78,8 @@ const NavContext = createContext<NavigationContext>({
   generatedContent: null,
   clearGeneratedContent: () => { },
   viewArticle: () => { },
+  prefilledTitle: null,
+  clearPrefilledTitle: () => { },
 });
 
 export const useNavigation = () => useContext(NavContext);
@@ -195,6 +205,7 @@ const SidebarLayout: React.FC<{
   onToggleBookmark: (filename: string) => void;
   hasClaudeMd: boolean;
   vaultReloadKey: number;
+  onCreateClaudeMdFromTemplate: () => void;
 }> = ({
   activeView,
   onViewChange,
@@ -222,6 +233,7 @@ const SidebarLayout: React.FC<{
   onToggleBookmark,
   hasClaudeMd,
   vaultReloadKey,
+  onCreateClaudeMdFromTemplate,
 }) => {
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate, viewArticle } = useNavigation();
@@ -245,6 +257,16 @@ const SidebarLayout: React.FC<{
       if (!prevThinkingRef.current && chatThinkingData) setRightCollapsed(false);
       prevThinkingRef.current = chatThinkingData;
     }, [chatThinkingData]);
+
+    /** Editing the article that is already open in the reader — keep tabs / TOC chrome. */
+    const inlineEditActive =
+      editingFilename !== null &&
+      editingFilename !== '' &&
+      selectedFilename !== null &&
+      editingFilename === selectedFilename;
+
+    /** Titlebar tabs + TOC behave like the reader (not full-screen editor). */
+    const readerLayoutChrome = editingFilename === null || inlineEditActive;
 
     // ── Tabs ──────────────────────────────────────────────────
     const [tabs, setTabs] = useState<string[]>(() => selectedFilename ? [selectedFilename] : []);
@@ -390,7 +412,7 @@ const SidebarLayout: React.FC<{
           )}
 
           {/* Tabs in titlebar */}
-          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && tabs.length > 0 && (
+          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && readerLayoutChrome && (
             <div
               style={{
                 position: "absolute",
@@ -456,7 +478,7 @@ const SidebarLayout: React.FC<{
           )}
 
           {/* Right TOC toggle */}
-          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && headings.length > 0 && (
+          {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && readerLayoutChrome && headings.length > 0 && (
             <div
               style={{
                 position: "absolute",
@@ -510,6 +532,7 @@ const SidebarLayout: React.FC<{
             configFiles={configFiles}
             onSelectConfigFile={viewArticle}
             hasClaudeMd={hasClaudeMd}
+            onCreateClaudeMdFromTemplate={onCreateClaudeMdFromTemplate}
           />
 
           {/* Sidebar Panel */}
@@ -608,17 +631,18 @@ const SidebarLayout: React.FC<{
                 {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && selectedFilename === '__new__' && (
                   <NewTabPage onNewNote={onNewArticle} onGoToFile={() => onViewChange('search')} onClose={() => closeTab('__new__')} />
                 )}
-                {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && selectedFilename !== '__new__' && (
+                {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && selectedFilename !== '__new__' && (editingFilename === null || inlineEditActive) && (
                   <ArticleBrowser
                     selectedFilename={selectedFilename}
                     onHeadingsChange={onHeadingsChange}
                     onNavigate={selectWithHistory}
+                    inlineEditActive={inlineEditActive}
                   />
                 )}
-                {editingFilename !== null && <ArticleEditor />}
+                {editingFilename !== null && !inlineEditActive && <ArticleEditor />}
               </main>
             </div>
-            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && !rightCollapsed && headings.length > 0 && (
+            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && readerLayoutChrome && !rightCollapsed && headings.length > 0 && (
               <div
                 className={`lumina-resize-handle${isRightResizing ? ' is-dragging' : ''}`}
                 onMouseDown={handleRightResizeStart}
@@ -630,7 +654,7 @@ const SidebarLayout: React.FC<{
                 onMouseDown={handleRightResizeStart}
               />
             )}
-            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && (
+            {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && readerLayoutChrome && (
               <TocPanel headings={headings} collapsed={rightCollapsed} width={rightWidth} />
             )}
             {activeView === 'chat' && editingFilename === null && chatThinkingData && !rightCollapsed && (
@@ -1009,6 +1033,34 @@ const AppShell: React.FC = () => {
     setGeneratedContent(null);
   }, []);
 
+  const [prefilledTitle, setPrefilledTitle] = useState<string | null>(null);
+  const clearPrefilledTitle = useCallback(() => setPrefilledTitle(null), []);
+
+  /**
+   * Open the editor pre-filled with the bundled CLAUDE.md template, behaving
+   * like a "new article" so the file isn't created until the user explicitly
+   * saves. Cancelling (closing without save) leaves the vault untouched —
+   * matching the user's request: "不保存则保持原样".
+   */
+  const handleCreateClaudeMdFromTemplate = useCallback(async () => {
+    let template: string | null = null;
+    try {
+      template = await window.api.getClaudeMdTemplate();
+    } catch (err) {
+      console.error('Failed to load CLAUDE.md template:', err);
+    }
+    // Fallback if the bundled template can't be read for any reason — better
+    // to open a near-empty editor than to silently no-op the click.
+    const seed =
+      template && template.trim().length > 0
+        ? template
+        : '# CLAUDE.md\n\nYou are the wiki maintainer for this vault.\n';
+    setSelectedFilename(null);
+    setEditingFilename('');
+    setPrefilledTitle('claude');
+    setGeneratedContent(seed);
+  }, []);
+
   const handleVaultInit = useCallback(async () => {
     const defaultContent = '# System Prompt\n\nYou are a helpful assistant for this vault.\n';
     await window.api.saveArticle({
@@ -1048,6 +1100,8 @@ const AppShell: React.FC = () => {
     generatedContent,
     clearGeneratedContent,
     viewArticle,
+    prefilledTitle,
+    clearPrefilledTitle,
   };
 
   // Still loading config
@@ -1098,6 +1152,7 @@ const AppShell: React.FC = () => {
               onToggleBookmark={onToggleBookmark}
               hasClaudeMd={hasClaudeMd}
               vaultReloadKey={vaultReloadKey}
+              onCreateClaudeMdFromTemplate={handleCreateClaudeMdFromTemplate}
             />
           </SidebarProvider>
         </TooltipProvider>

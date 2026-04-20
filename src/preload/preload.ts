@@ -8,6 +8,8 @@ import type {
   WikiAPI,
   ChatTraceChunk,
   DebugLogEntry,
+  ChatContentBlock,
+  IngestRequest,
 } from "../shared/types";
 
 /**
@@ -257,9 +259,18 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:startChatSession");
   },
 
-  sendChatMessage(content: string) {
+  sendChatMessage(
+    content: string,
+    blocks?: ChatContentBlock[],
+    options?: { reloadClaudeMd?: boolean },
+  ) {
     const requestId = Date.now().toString();
-    return ipcRenderer.invoke("wiki:sendChatMessage", { requestId, content });
+    return ipcRenderer.invoke("wiki:sendChatMessage", {
+      requestId,
+      content,
+      blocks,
+      reloadClaudeMd: options?.reloadClaudeMd,
+    });
   },
 
   stopChatGeneration() {
@@ -357,6 +368,14 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:deleteChatSession", sessionId);
   },
 
+  // ── Ingest ───────────────────────────────────────────────────────
+
+  // Deprecated: superseded by the model-callable `ingest_source` tool.
+  // Kept exposed in case we want to re-add a power-user shortcut later.
+  ingestFile(request: IngestRequest) {
+    return ipcRenderer.invoke("wiki:ingestFile", request);
+  },
+
   renameChatSession(sessionId: string, newTitle: string) {
     return ipcRenderer.invoke("wiki:renameChatSession", sessionId, newTitle);
   },
@@ -375,6 +394,12 @@ const api: WikiAPI = {
 
   confirmClose() {
     return ipcRenderer.invoke("wiki:confirmClose");
+  },
+
+  // ── Templates ────────────────────────────────────────────────────
+
+  getClaudeMdTemplate(): Promise<string | null> {
+    return ipcRenderer.invoke("wiki:getClaudeMdTemplate");
   },
 
   // ── Debug log ────────────────────────────────────────────────────

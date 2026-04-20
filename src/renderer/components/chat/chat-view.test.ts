@@ -311,6 +311,37 @@ describe("parseMarkdownLines", () => {
     expect(result).toEqual([{ type: "ol", items: ["first", "second"] }]);
   });
 
+  it("groups ordered list items separated by blank lines (loose list)", () => {
+    // LLMs frequently emit "1. ... \n\n1. ... \n\n1. ..." (each line starts
+    // with "1." because markdown renumbers automatically). Without
+    // blank-line tolerance, every item became its own <ol> and rendered
+    // as "1. 1. 1." instead of "1. 2. 3.".
+    const result = parseMarkdownLines("1. first\n\n1. second\n\n1. third");
+    expect(result).toEqual([
+      { type: "ol", items: ["first", "second", "third"] },
+    ]);
+  });
+
+  it("groups unordered list items separated by blank lines", () => {
+    const result = parseMarkdownLines("- a\n\n- b\n\n- c");
+    expect(result).toEqual([{ type: "ul", items: ["a", "b", "c"] }]);
+  });
+
+  it("does not merge ordered list across a non-list block", () => {
+    const result = parseMarkdownLines("1. first\n\nSome text\n\n1. second");
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ type: "ol", items: ["first"] });
+    expect(result[1]).toEqual({ type: "paragraph", content: "Some text" });
+    expect(result[2]).toEqual({ type: "ol", items: ["second"] });
+  });
+
+  it("does not merge ul into ol across blank lines", () => {
+    const result = parseMarkdownLines("- a\n\n1. b");
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ type: "ul", items: ["a"] });
+    expect(result[1]).toEqual({ type: "ol", items: ["b"] });
+  });
+
   it("separates different block types", () => {
     const result = parseMarkdownLines("# Title\nSome text\n- item");
     expect(result).toHaveLength(3);

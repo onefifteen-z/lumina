@@ -753,6 +753,60 @@ html.dark body {
   overflow: hidden;
 }
 
+.article-editor--embedded {
+  height: auto;
+  flex: 0 1 auto;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.article-editor--inline-surface .article-editor__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.article-editor--embedded .article-editor__cm-wrapper {
+  position: relative;
+  min-height: min(72vh, 780px);
+}
+
+.article-editor__loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+/* Inline surface: match reading typography (source markdown, prose rhythm). */
+.article-editor--inline-surface .article-editor__cm .cm-content {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-text);
+  padding: 4px 0 48px;
+}
+
+.article-editor--inline-surface .article-editor__cm .cm-scroller {
+  font-family: inherit;
+}
+
 .article-editor__toolbar {
   display: flex;
   align-items: center;
@@ -761,6 +815,30 @@ html.dark body {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-secondary);
   gap: 12px;
+}
+
+.article-editor__toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.article-editor__doc-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+}
+
+.article-editor__kbd-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  opacity: 0.85;
+  user-select: none;
 }
 
 .article-editor__toolbar-right {

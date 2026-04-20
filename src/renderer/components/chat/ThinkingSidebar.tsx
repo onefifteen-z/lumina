@@ -1,5 +1,6 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Copy, ChevronRight, ChevronDown } from 'lucide-react';
+import hljs from 'highlight.js';
 import { AssistantContent } from '../ChatView';
 import type { TraceItem } from '../ChatView';
 import { FoxThinkingIndicator, FoxChipIcon } from './FoxThinkingIndicator';
@@ -28,6 +29,42 @@ function formatArgs(argsJson: string): string {
   } catch {
     return argsJson;
   }
+}
+
+function hlLanguageForArgs(summary: string): 'json' | 'bash' {
+  const t = summary.trim();
+  if (t.startsWith('{') || t.startsWith('[')) return 'json';
+  return 'bash';
+}
+
+function hlLanguageForShellOutput(output: string): 'json' | 'bash' {
+  const t = output.trim();
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try {
+      JSON.parse(t);
+      return 'json';
+    } catch {
+      /* ignore */
+    }
+  }
+  return 'bash';
+}
+
+function highlightCode(code: string, language: 'json' | 'bash'): string {
+  try {
+    return hljs.highlight(code, { language, ignoreIllegals: true }).value;
+  } catch {
+    return hljs.highlightAuto(code).value;
+  }
+}
+
+function toolCallNameForResult(trace: TraceItem[] | undefined, resultIndex: number, resultId: string): string | null {
+  if (!trace) return null;
+  for (let i = resultIndex - 1; i >= 0; i--) {
+    const it = trace[i];
+    if (it.kind === 'tool_call' && it.id === resultId) return it.name;
+  }
+  return null;
 }
 
 /** Claude-style mono shell prompt glyph: `>_` */
@@ -59,8 +96,32 @@ const OutputGlyph: React.FC = () => (
   </svg>
 );
 
-const TraceEntry: React.FC<{ item: TraceItem; onWikilinkClick?: (target: string) => void }> = ({ item, onWikilinkClick }) => {
+const TraceEntry: React.FC<{ item: TraceItem; itemIndex: number; trace?: TraceItem[]; onWikilinkClick?: (target: string) => void }> = ({
+  item,
+  itemIndex,
+  trace,
+  onWikilinkClick,
+}) => {
   const [expanded, setExpanded] = useState(false);
+
+  const callSummary = item.kind === 'tool_call' ? formatArgs(item.args) : '';
+  const isShellCall = item.kind === 'tool_call' && item.name === 'shell';
+  const callLang: 'json' | 'bash' = item.kind === 'tool_call' ? hlLanguageForArgs(callSummary) : 'bash';
+  const callHtml = useMemo(() => {
+    if (item.kind !== 'tool_call') return '';
+    return highlightCode(callSummary, callLang);
+  }, [item.kind, callSummary, callLang]);
+
+  const resultTool = item.kind === 'tool_result' ? toolCallNameForResult(trace, itemIndex, item.id) : null;
+  const isShellOutput = resultTool === 'shell';
+  const toolOutput = item.kind === 'tool_result' ? item.output : '';
+  const outLang: 'json' | 'bash' = item.kind === 'tool_result'
+    ? (isShellOutput ? hlLanguageForShellOutput(toolOutput) : hlLanguageForArgs(toolOutput))
+    : 'bash';
+  const outHtml = useMemo(() => {
+    if (item.kind !== 'tool_result') return '';
+    return highlightCode(toolOutput, outLang);
+  }, [item.kind, toolOutput, outLang]);
 
   if (item.kind === 'narration') {
     return (
@@ -74,28 +135,25 @@ const TraceEntry: React.FC<{ item: TraceItem; onWikilinkClick?: (target: string)
   }
 
   if (item.kind === 'tool_call') {
-    const argSummary = formatArgs(item.args);
-    const isShell = item.name === 'shell';
     return (
       <div className="py-1.5 text-sm">
         <div className="flex items-start gap-2 mb-1">
-          {isShell ? (
+          {isShellCall ? (
             <ShellPromptGlyph />
           ) : (
             <FoxChipIcon size={14} solid className="text-text-secondary shrink-0 mt-[5px]" />
           )}
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-secondary">
-            {isShell ? 'Shell' : item.name}
+            {isShellCall ? 'Shell' : item.name}
           </span>
         </div>
-        <pre className="ml-6 text-[12.5px] font-mono leading-relaxed text-text-primary bg-[rgba(255,255,255,0.04)] border border-border/60 rounded-md px-2.5 py-1.5 whitespace-pre-wrap break-words">
-          {argSummary}
+        <pre className="ml-6 text-[12.5px] font-mono leading-relaxed bg-[rgba(255,255,255,0.04)] border border-border/60 rounded-md px-2.5 py-1.5 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+          <code className="hljs !bg-transparent !p-0" dangerouslySetInnerHTML={{ __html: callHtml }} />
         </pre>
       </div>
     );
   }
 
-  // tool_result
   return (
     <div className="py-1.5 text-sm">
       <button
@@ -108,8 +166,8 @@ const TraceEntry: React.FC<{ item: TraceItem; onWikilinkClick?: (target: string)
         <span className="text-[12.5px]">Output ({item.output.length.toLocaleString()} chars)</span>
       </button>
       {expanded && (
-        <pre className="ml-6 mt-1.5 text-[12.5px] font-mono leading-relaxed text-text-secondary bg-[rgba(255,255,255,0.04)] border border-border/60 rounded-md px-2.5 py-1.5 whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
-          {item.output}
+        <pre className="ml-6 mt-1.5 text-[12.5px] font-mono leading-relaxed bg-[rgba(255,255,255,0.04)] border border-border/60 rounded-md px-2.5 py-1.5 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+          <code className="hljs !bg-transparent !p-0" dangerouslySetInnerHTML={{ __html: outHtml }} />
         </pre>
       )}
     </div>
@@ -203,7 +261,7 @@ export const ThinkingSidebar: React.FC<ThinkingSidebarProps> = ({ content, trace
               </div>
             )}
             {trace!.map((item, i) => (
-              <TraceEntry key={i} item={item} onWikilinkClick={onWikilinkClick} />
+              <TraceEntry key={i} item={item} itemIndex={i} trace={trace} onWikilinkClick={onWikilinkClick} />
             ))}
           </div>
         )}

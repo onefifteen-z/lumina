@@ -8,9 +8,11 @@
 
 *Own your knowledge. Think with AI. Never leave your machine.*
 
+**Current version: 0.8.0**
+
 [![CI](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml)
 [![Last commit](https://img.shields.io/github/last-commit/McK-Playground/prj-lumina/main?color=D4731A)](https://github.com/McK-Playground/prj-lumina/commits/main)
-[![Electron](https://img.shields.io/badge/Electron-36.x-47848F?logo=electron&logoColor=white)](https://electronjs.org)
+[![Electron](https://img.shields.io/badge/Electron-33.x-47848F?logo=electron&logoColor=white)](https://electronjs.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
@@ -33,7 +35,7 @@ Lumina is a desktop wiki that stores everything as plain Markdown files on your 
 | **Multi-vault** | Switch between vaults instantly; each vault remembers its own settings |
 | **PDF & HTML viewer** | Browse PDFs and styled HTML files directly inside the app |
 | **Light & dark mode** | Amber-accented Obsidian-inspired theme with system preference support |
-| **100% local** | No cloud sync, no telemetry — your notes never leave your machine |
+| **100% local by default** | No cloud sync; no analytics. Optional **OpenTelemetry** traces to a **Phoenix** server you run (off by default) — see [Observability (Phoenix)](#observability-phoenix) |
 
 ## 🚀 Getting Started
 
@@ -60,27 +62,32 @@ On first launch, select a folder as your vault. Lumina will watch it for changes
 
 To configure LLM features, open **Settings** and enter your endpoint URL, API key, and model name. Supports any OpenAI-compatible API including LiteLLM proxies, Gemini, and Claude.
 
+The same **Settings** screen configures an optional [Arize Phoenix](https://arize.com/docs/phoenix) OTLP endpoint for development-time tracing (see below).
+
 ## 🏗 Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Desktop shell | Electron |
 | UI | React 18 + TypeScript + Tailwind CSS v4 |
-| Editor | CodeMirror 6 with Obsidian syntax theme |
+| Editor | CodeMirror 6: Obsidian-style syntax, wikilink autocomplete, live preview (hide markers / tables / list bullets), inline article editing with editable frontmatter |
 | Graph | D3.js force-directed layout |
 | Search | FlexSearch |
 | Icons | Lucide React |
 | Components | shadcn/ui (vendored) |
-| Testing | Vitest + fast-check (248 tests) |
+| Observability (optional) | OpenTelemetry JS SDK → OTLP/HTTP Protobuf traces to Phoenix (`/v1/traces`) |
+| Testing | Vitest + fast-check (430+ tests) |
 
 ## 📂 Project Layout
 
 ```
 src/
 ├── main/                   Electron main process
-│   └── services/           FileSystem · Search · LLM · Chat · Config
+│   ├── telemetry.ts        Optional Phoenix / OTLP trace export
+│   └── services/           FileSystem · Search · LLM · Chat · Config · …
 ├── renderer/               React UI
-│   └── components/         AppShell · FilesView · ArticleBrowser · ChatView · …
+│   ├── components/         AppShell · FilesView · ArticleBrowser · ChatView · …
+│   └── extensions/         CodeMirror: wikilink autocomplete, markdown live preview, …
 ├── preload/                contextBridge API surface (WikiAPI)
 └── shared/                 Types + Markdown parser
 assets/                     App icon (SVG + PNG)
@@ -92,7 +99,20 @@ assets/                     App icon (SVG + PNG)
 npm test
 ```
 
-248 tests across 16 suites — Markdown parser, filesystem service (incl. move/import), search index, remark plugins, network status, file classification, chat components, and more.
+430+ tests across 25 suites — Markdown parser, filesystem service (incl. move/import), search index, remark plugins, network status, file classification, chat components, live preview helpers, and more.
+
+## Observability (Phoenix)
+
+Lumina can export **distributed traces** from the Electron **main process** to an [Arize Phoenix](https://arize.com/docs/phoenix) (or any OTLP-compatible) collector for local debugging and LLM observability. This is **opt-in** and **disabled by default**.
+
+| | |
+|---|---|
+| **What is sent** | OpenTelemetry spans (e.g. `llm.call`, `llm.stream`, `chat.message`) — metadata about operations, not your vault file contents |
+| **Transport** | OTLP over HTTP with **Protobuf** to `{scheme}://{host}:{port}/v1/traces` |
+| **How to enable** | **Settings → Phoenix Observability** → turn on, set host (default `localhost`) and port (default **6006**), choose `http` or `https`, then **Save Settings** |
+| **Persistence** | Stored in app config (`phoenix` in the same store as vault path and LLM provider) |
+
+Phoenix must be reachable from your machine (typical dev setup: Phoenix UI + OTLP ingest on port 6006). If the toggle is off, **no** telemetry SDK is started and nothing is exported.
 
 ## Features
 
@@ -100,7 +120,8 @@ npm test
 - Obsidian-compatible Markdown storage with frontmatter, wikilinks, embeds, and tags
 - Full-text search and tag-based filtering via FlexSearch
 - Wikilink navigation, backlink resolution, and interactive graph view
-- CodeMirror 6 editor with Obsidian syntax highlighting and `[[` autocomplete
+- CodeMirror 6 editor with Obsidian syntax highlighting, `[[` autocomplete, and **live preview** decorations (hide syntax markers; GFM tables as HTML when the caret is outside the table)
+- **Inline edit** mode: edit the article body in the reader tab; **Properties** panel for title, tags, dates, and extra frontmatter fields
 - Unsaved changes handling with navigation prompts and before-quit dialogs
 
 ### Sidebar & Navigation
@@ -117,6 +138,7 @@ npm test
 - AI-powered article generation with streaming preview
 - LLM assist panel for summarize/expand/refine on selected text with diff view
 - Multi-turn chat with streaming responses, Markdown rendering, and code syntax highlighting
+- Optional **Phoenix** tracing for LLM/chat spans in the main process (see [Observability (Phoenix)](#observability-phoenix))
 - Fox thinking animation while waiting for LLM responses, plus a matching
   fox mark on each "Thinking… / Thought for Xs" chip
 - Action bar on assistant messages (copy, regenerate, thumbs up/down)

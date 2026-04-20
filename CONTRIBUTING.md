@@ -54,6 +54,7 @@ Useful scripts:
 src/
 ├── main/                   Electron main process
 │   ├── ipc-handlers.ts     All wiki:* IPC channel registrations
+│   ├── telemetry.ts        Optional OpenTelemetry → Phoenix (OTLP traces)
 │   └── services/           FileSystem · Search · LLM · Chat · Config · ChatHistory
 ├── renderer/               React UI (runs in BrowserWindow)
 │   ├── components/         AppShell · FilesView · ArticleBrowser · ChatView · …
@@ -103,7 +104,7 @@ assets/                     App icon (SVG + PNG) + loading mock
 ## Testing
 
 We use **Vitest** (with **fast-check** for property tests). The current suite
-is **248 tests across 16 files**, and we expect it to stay green on every PR.
+is **430+ tests across 25 files**, and we expect it to stay green on every PR.
 
 ```bash
 npm test                                   # whole suite
@@ -156,7 +157,9 @@ Open an issue with:
 
 We're a local-first app — every new feature is weighed against:
 
-- **Privacy**: nothing should phone home or leak vault contents.
+- **Privacy**: nothing should phone home or leak vault contents. The optional
+  **Phoenix / OTLP** exporter is user-controlled (off by default); if you add
+  new spans, avoid attaching raw note bodies or secrets as span attributes.
 - **Vault portability**: data stays as plain Markdown / standard files.
 - **Performance**: cold-load and search must stay snappy on large vaults.
 

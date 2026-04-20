@@ -1,6 +1,6 @@
 {
   "name": "llm-wiki",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "A local, AI-powered wiki desktop application built with Electron",
   "main": "dist/main/main/main.js",
   "build": {

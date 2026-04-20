@@ -25,7 +25,8 @@
  *   - mode='text':
  *       always go through markitdown (caller swears it's a text doc)
  *   - mode='vision':
- *       PDF only → rasterize each page to PNG and embed as data URLs
+ *       PDF only → rasterize each page to PNG when `ctx.pdfImageIngest` is
+ *       true; otherwise same markitdown path as office (no page images).
  *       Anything else → error (PPTX vision rasterization isn't implemented;
  *                       images don't need it)
  */
@@ -113,6 +114,11 @@ export interface IngestArgs {
 export interface IngestContext {
   /** Absolute path to the open vault. Required — there's no global default. */
   vaultRoot: string;
+  /**
+   * When true, `mode=vision` on PDFs rasterizes pages to PNGs. When false or
+   * omitted, vision on PDF uses markitdown only (matches default app setting).
+   */
+  pdfImageIngest?: boolean;
   /** Override the venv-bootstrap step. Tests inject a stub. */
   ensureVenv?: () => Promise<EnsureVenvResult>;
   /** Override the rasterize call. Tests inject a stub. */
@@ -120,6 +126,88 @@ export interface IngestContext {
   /** Override exec. Tests inject a stub so markitdown never actually runs. */
   execCommand?: (cmd: string, opts: { timeout: number; maxBuffer?: number }) =>
     Promise<{ stdout: string; stderr: string }>;
+}
+
+export type ExtractMarkdownResult =
+  | { ok: true; body: string }
+  | { ok: false; headerKind: string; message: string };
+
+/**
+ * Run markitdown on a document path (PDF, Office, etc.). Shared by
+ * `runOffice`, vision fallback when rasterization is disabled, and chat PDF
+ * ingest without images.
+ */
+export async function extractMarkdownViaMarkitdown(
+  absPath: string,
+  rel: string,
+  ctx: IngestContext,
+  opts?: { includeVisionRetryHint?: boolean },
+): Promise<ExtractMarkdownResult> {
+  const includeVisionRetryHint = opts?.includeVisionRetryHint !== false;
+  const ensure = ctx.ensureVenv ?? ensureLuminaVenv;
+  const venv = await ensure();
+  if (!venv.ok) {
+    return {
+      ok: false,
+      headerKind: `office-${venv.reason}`,
+      message: venv.message,
+    };
+  }
+
+  const cmd = `${shQuote(venv.pythonBin)} -m markitdown ${shQuote(absPath)}`;
+  const runExec = ctx.execCommand ?? defaultExec;
+
+  let stdout = "";
+  try {
+    const result = await runExec(cmd, {
+      timeout: MARKITDOWN_TIMEOUT_MS,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    stdout = result.stdout;
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & {
+      stderr?: string;
+      stdout?: string;
+      killed?: boolean;
+      signal?: string;
+    };
+    if (e.killed && e.signal === "SIGTERM") {
+      const pdf = path.extname(rel).toLowerCase() === ".pdf";
+      const visionPart =
+        includeVisionRetryHint && pdf
+          ? ` For PDFs, retry with mode: "vision" to rasterize pages instead.`
+          : "";
+      return {
+        ok: false,
+        headerKind: "office-timeout",
+        message:
+          `markitdown timed out after ${MARKITDOWN_TIMEOUT_MS / 1000}s on "${rel}".${visionPart}`,
+      };
+    }
+    const stderr = (e.stderr ?? "").trim();
+    const ext = path.extname(rel).toLowerCase();
+    const visionHint =
+      includeVisionRetryHint && ext === ".pdf"
+        ? ` For PDFs you can retry with mode: "vision" to rasterize pages.`
+        : ext === ".pptx" || ext === ".ppt"
+          ? ` PPTX vision rasterization is not implemented — please convert "${rel}" to PDF first and ingest the PDF.`
+          : "";
+    return {
+      ok: false,
+      headerKind: "office-failed",
+      message:
+        `markitdown failed on "${rel}": ${stderr || e.message || "unknown error"}.${visionHint}`,
+    };
+  }
+
+  const truncated = stdout.length > TEXT_CHAR_LIMIT;
+  const content = truncated
+    ? `${stdout.slice(0, TEXT_CHAR_LIMIT)}\n\n…[truncated ${stdout.length - TEXT_CHAR_LIMIT} chars]`
+    : stdout;
+  const note = truncated
+    ? `Source: ${rel} (extracted via markitdown; ${stdout.length} chars, truncated to ${TEXT_CHAR_LIMIT})\n\n`
+    : `Source: ${rel} (extracted via markitdown; ${stdout.length} chars)\n\n`;
+  return { ok: true, body: note + content };
 }
 
 /**
@@ -333,69 +421,15 @@ async function runOffice(
   absPath: string,
   rel: string,
   ctx: IngestContext,
+  officeOpts?: { includeVisionRetryHint?: boolean },
 ): Promise<string> {
-  const ensure = ctx.ensureVenv ?? ensureLuminaVenv;
-  const venv = await ensure();
-  if (!venv.ok) {
-    // Each reason has a different remedy; surface them verbatim so the
-    // model can route to the right user-facing message.
-    return format(
-      header(false, `office-${venv.reason}`),
-      venv.message,
-    );
+  const extracted = await extractMarkdownViaMarkitdown(absPath, rel, ctx, {
+    includeVisionRetryHint: officeOpts?.includeVisionRetryHint !== false,
+  });
+  if (!extracted.ok) {
+    return format(header(false, extracted.headerKind), extracted.message);
   }
-
-  // Run markitdown via `python -m markitdown <abs-path>`. We don't go
-  // through the markitdown CLI binary because it's not always on PATH for
-  // a freshly-bootstrapped venv; `python -m markitdown` is the supported
-  // module-mode entrypoint and is what `ensureLuminaVenv` smoke-tests for.
-  const cmd = `${shQuote(venv.pythonBin)} -m markitdown ${shQuote(absPath)}`;
-  const runExec = ctx.execCommand ?? defaultExec;
-
-  let stdout = "";
-  try {
-    const result = await runExec(cmd, {
-      timeout: MARKITDOWN_TIMEOUT_MS,
-      // markitdown output for big PDFs can blow past the 1 MiB default.
-      maxBuffer: 50 * 1024 * 1024,
-    });
-    stdout = result.stdout;
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & {
-      stderr?: string;
-      stdout?: string;
-      killed?: boolean;
-      signal?: string;
-    };
-    if (e.killed && e.signal === "SIGTERM") {
-      return format(
-        header(false, "office-timeout"),
-        `markitdown timed out after ${MARKITDOWN_TIMEOUT_MS / 1000}s on "${rel}". ` +
-          `For PDFs, retry with mode: "vision" to rasterize pages instead.`,
-      );
-    }
-    const stderr = (e.stderr ?? "").trim();
-    const ext = path.extname(rel).toLowerCase();
-    const visionHint =
-      ext === ".pdf"
-        ? ` For PDFs you can retry with mode: "vision" to rasterize pages.`
-        : ext === ".pptx" || ext === ".ppt"
-          ? ` PPTX vision rasterization is not implemented — please convert "${rel}" to PDF first and ingest the PDF.`
-          : "";
-    return format(
-      header(false, "office-failed"),
-      `markitdown failed on "${rel}": ${stderr || e.message || "unknown error"}.${visionHint}`,
-    );
-  }
-
-  const truncated = stdout.length > TEXT_CHAR_LIMIT;
-  const content = truncated
-    ? `${stdout.slice(0, TEXT_CHAR_LIMIT)}\n\n…[truncated ${stdout.length - TEXT_CHAR_LIMIT} chars]`
-    : stdout;
-  const note = truncated
-    ? `Source: ${rel} (extracted via markitdown; ${stdout.length} chars, truncated to ${TEXT_CHAR_LIMIT})\n\n`
-    : `Source: ${rel} (extracted via markitdown; ${stdout.length} chars)\n\n`;
-  return format(header(true, "office"), note + content);
+  return format(header(true, "office"), extracted.body);
 }
 
 async function runVision(
@@ -412,6 +446,10 @@ async function runVision(
           ? `For "${rel}", convert to PDF first and re-ingest.`
           : `For "${rel}", use mode="auto".`),
     );
+  }
+
+  if (ctx.pdfImageIngest !== true) {
+    return runOffice(absPath, rel, ctx, { includeVisionRetryHint: false });
   }
 
   let bytes: Buffer;

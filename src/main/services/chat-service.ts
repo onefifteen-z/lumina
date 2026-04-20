@@ -40,6 +40,25 @@ function truncate(text: string, max: number): string {
 }
 
 /**
+ * Replace large `data:*;base64,...` payloads in chat history so follow-up turns
+ * do not re-send megabytes of PNG/PDF bytes on every API call. Short URLs
+ * (e.g. tiny icons) are kept. Exported for unit tests.
+ */
+export function stripHeavyDataUrlsFromText(text: string): string {
+  if (!text) return text;
+  // Only RFC-style base64 characters — do not allow \s here or trailing words
+  // like " y" get swallowed as if they were part of the payload.
+  return text.replace(
+    /data:(?:image\/[\w.+-]+|application\/[\w.+-]+);base64,[A-Za-z0-9+/=]+/gi,
+    (match) => {
+      if (match.length < 900) return match;
+      const approxKiB = (match.length / 1024).toFixed(1);
+      return `[omitted ~${approxKiB} KiB base64 data URL from an earlier message]`;
+    },
+  );
+}
+
+/**
  * Clamp a model-supplied `timeout_seconds` value into the allowed range.
  * Non-numeric / missing → SHELL_DEFAULT_TIMEOUT_S. Bounds: [1, max].
  * Exported via test-only re-export below for unit tests.
@@ -116,8 +135,9 @@ const INGEST_TOOL = {
       "string the model can include in subsequent reasoning. Auto-dispatches " +
       "by extension: text files come back as text, images as markdown image " +
       "data URLs, PDFs/PPTX/XLSX/DOCX go through markitdown. Use mode='vision' " +
-      "to retry a PDF as rasterized page images when the markitdown output is " +
-      "unusable. See INGEST.md for the full protocol.",
+      "on PDFs for rasterized page images only when the user has enabled " +
+      "\"PDF page images\" in Settings; otherwise vision falls back to markitdown. " +
+      "See INGEST.md for the full protocol.",
     parameters: {
       type: "object",
       properties: {
@@ -131,7 +151,8 @@ const INGEST_TOOL = {
           enum: ["auto", "text", "vision"],
           description:
             "auto (default) dispatches by extension. text forces the markitdown " +
-            "path. vision rasterizes a PDF to page images — only valid for .pdf.",
+            "path. vision on .pdf: rasterized page images when PDF page images are enabled " +
+            "in Settings; otherwise markitdown (same as text for PDFs).",
         },
       },
       required: ["path"],
@@ -144,6 +165,7 @@ export class ChatService {
   private abortController: AbortController | null = null;
   private llm: LLMService | null;
   private fileSystem: FileSystemService | null;
+  private pdfImageIngest = false;
   /**
    * Loader for the bundled CLAUDE.md template, used as a system-prompt
    * fallback when the vault has no CLAUDE.md (or the file is empty). Injected
@@ -265,6 +287,23 @@ export class ChatService {
 
     let accumulated = "";
 
+    const toLlmMessageContent = (
+      m: ChatMessage,
+    ): string | ChatContentBlock[] => {
+      const isCurrentMultimodal =
+        m.id === currentUserMessageId &&
+        m.role === "user" &&
+        contentBlocks &&
+        contentBlocks.length > 0;
+      if (isCurrentMultimodal) {
+        return contentBlocks;
+      }
+      if (m.role === "user" || m.role === "assistant") {
+        return stripHeavyDataUrlsFromText(m.content);
+      }
+      return m.content;
+    };
+
     try {
       // ── Tool-calling resolution loop ────────────────────────────
       // Both tools require a vault (shell needs a cwd; ingest_source needs
@@ -293,13 +332,7 @@ export class ChatService {
           { role: "system", content: this.session!.systemPrompt },
           ...this.session!.messages.map((m) => ({
             role: m.role,
-            content:
-              m.id === currentUserMessageId &&
-              m.role === "user" &&
-              contentBlocks &&
-              contentBlocks.length > 0
-                ? contentBlocks
-                : m.content,
+            content: toLlmMessageContent(m),
           })),
           ...extraMessages,
         ];
@@ -445,13 +478,7 @@ export class ChatService {
         { role: "system", content: this.session!.systemPrompt },
         ...this.session!.messages.map((m) => ({
           role: m.role,
-          content:
-            m.id === currentUserMessageId &&
-            m.role === "user" &&
-            contentBlocks &&
-            contentBlocks.length > 0
-              ? contentBlocks
-              : m.content,
+          content: toLlmMessageContent(m),
         })),
         ...extraMessages,
       ];
@@ -518,6 +545,11 @@ export class ChatService {
     this.fileSystem = fs;
   }
 
+  /** Mirrors Settings → PDF page images; drives ingest_source vision behaviour. */
+  setPdfImageIngest(enabled: boolean): void {
+    this.pdfImageIngest = enabled;
+  }
+
   /**
    * Dispatch a tool call. Two tools are exposed:
    *   - `shell` — run a shell command with vault root as cwd, with optional
@@ -546,6 +578,7 @@ export class ChatService {
       // model can act on (matching INGEST.md's contract).
       return runIngestTool(args, {
         vaultRoot: this.fileSystem.getVaultPath(),
+        pdfImageIngest: this.pdfImageIngest,
       });
     }
     return `Error: unknown tool "${name}".`;

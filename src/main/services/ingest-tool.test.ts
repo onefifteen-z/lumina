@@ -34,6 +34,8 @@ afterEach(async () => {
 function happyCtx(overrides: Partial<IngestContext> = {}): IngestContext {
   return {
     vaultRoot: tmpRoot,
+    /** Tests that expect rasterized vision output opt in explicitly via overrides when needed. */
+    pdfImageIngest: true,
     ensureVenv: async (): Promise<EnsureVenvResult> => ({
       ok: true,
       pythonBin: "/fake/venv/bin/python",
@@ -224,6 +226,24 @@ describe("runIngestTool mode overrides", () => {
     // Each page is embedded as a markdown image with a labelled alt text.
     expect(out).toContain("![raw/scan.pdf page 1]");
     expect(out).toContain("data:image/png;base64,");
+  });
+
+  it("mode=vision on PDF with pdfImageIngest:false → office (markitdown), no rasterize", async () => {
+    let rasterCalled = false;
+    await writeFile("raw/scan.pdf", Buffer.from("fake-pdf"));
+    const out = await runIngestTool(
+      { path: "raw/scan.pdf", mode: "vision" },
+      happyCtx({
+        pdfImageIngest: false,
+        rasterize: async () => {
+          rasterCalled = true;
+          throw new Error("rasterize should not run");
+        },
+      }),
+    );
+    expect(rasterCalled).toBe(false);
+    expect(out).toMatch(/^\[ingest_source ok kind=office\]/);
+    expect(out).toContain("extracted markdown");
   });
 
   it("mode=vision on non-PDF → kind=vision-unsupported", async () => {

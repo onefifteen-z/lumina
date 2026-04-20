@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as fc from "fast-check";
-import { ChatService, clampShellTimeout } from "./chat-service";
+import { ChatService, clampShellTimeout, stripHeavyDataUrlsFromText } from "./chat-service";
 import { LLMService } from "./llm-service";
 import { FileSystemService } from "./filesystem-service";
 import type { ChatMessage } from "../../shared/types";
@@ -556,6 +556,34 @@ describe("ChatService edge case unit tests", () => {
       expect(newSession.messages).toEqual([]);
       expect(service.getSession()!.messages).toEqual([]);
     });
+  });
+});
+
+// ── stripHeavyDataUrlsFromText ───────────────────────────────────
+
+describe("stripHeavyDataUrlsFromText", () => {
+  it("keeps short base64 data URLs unchanged", () => {
+    const short = `![](data:image/png;base64,${"A".repeat(200)})`;
+    expect(stripHeavyDataUrlsFromText(short)).toBe(short);
+  });
+
+  it("replaces long data:image URLs with a placeholder", () => {
+    const b64 = "A".repeat(2000);
+    const input = `intro ![](data:image/png;base64,${b64}) outro`;
+    const out = stripHeavyDataUrlsFromText(input);
+    expect(out).toContain("intro ");
+    expect(out).toContain(" outro");
+    expect(out).toMatch(/\[omitted ~[\d.]+ KiB base64 data URL from an earlier message\]/);
+    expect(out).not.toContain(b64.slice(0, 80));
+  });
+
+  it("handles application/pdf data URLs", () => {
+    const b64 = "B".repeat(2000);
+    const input = `x data:application/pdf;base64,${b64} y`;
+    const out = stripHeavyDataUrlsFromText(input);
+    expect(out).toContain("x ");
+    expect(out).toContain(" y");
+    expect(out).not.toContain(b64.slice(0, 80));
   });
 });
 

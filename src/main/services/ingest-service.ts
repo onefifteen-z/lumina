@@ -9,6 +9,10 @@ import type {
 import type { LLMService } from "./llm-service";
 import type { FileSystemService } from "./filesystem-service";
 import { rasterizePdfToPngs } from "./pdf-rasterize";
+import {
+  extractMarkdownViaMarkitdown,
+  type IngestContext,
+} from "./ingest-tool";
 
 const TEXT_CHAR_LIMIT = 180_000;
 /**
@@ -59,10 +63,16 @@ const IMAGE_EXTENSIONS = new Set([
 export class IngestService {
   private llm: LLMService | null;
   private fileSystem: FileSystemService | null;
+  private pdfImageIngest = false;
 
   constructor(llm: LLMService | null, fileSystem: FileSystemService | null) {
     this.llm = llm;
     this.fileSystem = fileSystem;
+  }
+
+  /** When false (default), PDF attach uses markitdown only; when true, rasterize pages to PNG. */
+  setPdfImageIngest(enabled: boolean): void {
+    this.pdfImageIngest = enabled;
   }
 
   setLLMService(llm: LLMService | null): void {
@@ -165,6 +175,33 @@ export class IngestService {
     sourceFilename: string,
     kind: IngestKind,
   ): Promise<IngestResult> {
+    if (!this.pdfImageIngest) {
+      const ctx: IngestContext = {
+        vaultRoot: this.fileSystem!.getVaultPath(),
+      };
+      const extracted = await extractMarkdownViaMarkitdown(
+        absPath,
+        sourceFilename,
+        ctx,
+      );
+      if (!extracted.ok) {
+        throw new Error(extracted.message);
+      }
+      const blocks: ChatContentBlock[] = [
+        {
+          type: "text",
+          text: `File: ${sourceFilename}\n\n${extracted.body}`,
+        },
+      ];
+      return {
+        sourceFilename,
+        kind,
+        blocks,
+        summary: `Extracted PDF as Markdown via markitdown (${extracted.body.length} chars).`,
+        chunkCount: 1,
+      };
+    }
+
     const sourceBytes = await fs.readFile(absPath);
     const { pages, totalPages, truncated } = await rasterizePdfToPngs(
       new Uint8Array(sourceBytes),

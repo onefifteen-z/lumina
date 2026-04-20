@@ -49,6 +49,13 @@ export function registerIpcHandlers(services: {
   const chatHistory = services.chatHistory ?? null;
   const ingest = new IngestService(llm, fileSystem);
 
+  function syncPdfImageIngestFromConfig(): void {
+    const on = config.getConfig().pdfImageIngest;
+    ingest.setPdfImageIngest(on);
+    chat?.setPdfImageIngest(on);
+  }
+  syncPdfImageIngestFromConfig();
+
   /**
    * Rebuild the LLM service from the current persisted config and API key,
    * then push the new instance into the chat service so it takes effect immediately.
@@ -580,6 +587,7 @@ export function registerIpcHandlers(services: {
       }
 
       config.saveConfig(partial);
+      syncPdfImageIngestFromConfig();
       // If the provider config changed, rebuild the LLM service immediately.
       if (partial.llmProvider !== undefined) {
         rebuildLLMService();

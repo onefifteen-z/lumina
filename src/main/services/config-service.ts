@@ -13,6 +13,7 @@ interface StoreSchema {
   vaultHistory: VaultEntry[];
   llmProvider: LLMProviderConfig | null;
   phoenix: PhoenixConfig;
+  pdfImageIngest: boolean;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -30,6 +31,7 @@ export class ConfigService {
         vaultHistory: [],
         llmProvider: null,
         phoenix: { enabled: false, scheme: "http", host: "localhost", port: 6006 },
+        pdfImageIngest: false,
         theme: "system",
         chatHistorySidebarOpen: false,
         lastChatSessionId: "",
@@ -45,6 +47,7 @@ export class ConfigService {
       vaultPath: this.store.get("vaultPath"),
       llmProvider: this.store.get("llmProvider"),
       phoenix: this.store.get("phoenix"),
+      pdfImageIngest: this.store.get("pdfImageIngest") ?? false,
       theme: this.store.get("theme"),
       chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
       lastChatSessionId: this.store.get("lastChatSessionId"),
@@ -61,6 +64,9 @@ export class ConfigService {
     }
     if (partial.phoenix !== undefined) {
       this.store.set("phoenix", partial.phoenix);
+    }
+    if (partial.pdfImageIngest !== undefined) {
+      this.store.set("pdfImageIngest", partial.pdfImageIngest);
     }
     if (partial.theme !== undefined) {
       this.store.set("theme", partial.theme);

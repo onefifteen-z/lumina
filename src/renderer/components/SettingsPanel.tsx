@@ -20,6 +20,9 @@ const SettingsPanel: React.FC = () => {
   const [phoenixHost, setPhoenixHost] = useState('localhost');
   const [phoenixPort, setPhoenixPort] = useState('6006');
 
+  /** Rasterize PDF pages to PNG for chat attach and ingest_source vision mode. */
+  const [pdfImageIngest, setPdfImageIngest] = useState(false);
+
   // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,6 +49,7 @@ const SettingsPanel: React.FC = () => {
         setPhoenixScheme(ph.scheme ?? 'http');
         setPhoenixHost(ph.host || 'localhost');
         setPhoenixPort(String(ph.port || 6006));
+        setPdfImageIngest(config.pdfImageIngest ?? false);
       } catch {
         // Defaults are fine
       } finally {
@@ -71,7 +75,7 @@ const SettingsPanel: React.FC = () => {
         port: Number.isNaN(port) || port <= 0 ? 6006 : port,
       };
 
-      await window.api.saveConfig({ vaultPath, llmProvider, phoenix });
+      await window.api.saveConfig({ vaultPath, llmProvider, phoenix, pdfImageIngest });
       await window.api.saveApiKey(apiKey);
 
       setSaveMsg('Settings saved');
@@ -81,7 +85,7 @@ const SettingsPanel: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [endpointUrl, apiKey, model, vaultPath, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort]);
+  }, [endpointUrl, apiKey, model, vaultPath, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort, pdfImageIngest]);
 
   // Test LLM connection
   const handleTestConnection = useCallback(async () => {
@@ -194,6 +198,29 @@ const SettingsPanel: React.FC = () => {
             <span className="settings-conn settings-conn--err">{connError}</span>
           )}
         </div>
+      </section>
+
+      {/* ── PDF vision ingest ─────────────────────────── */}
+      <section className="settings-section">
+        <div className="settings-section__header-row">
+          <h3 className="settings-section__heading">PDF page images</h3>
+          <button
+            type="button"
+            className={`phoenix-toggle ${pdfImageIngest ? 'phoenix-toggle--on' : ''}`}
+            onClick={() => setPdfImageIngest((v) => !v)}
+            aria-pressed={pdfImageIngest}
+          >
+            <span className="phoenix-toggle__track">
+              <span className="phoenix-toggle__thumb" />
+            </span>
+            <span className="phoenix-toggle__label">{pdfImageIngest ? 'Enabled' : 'Disabled'}</span>
+          </button>
+        </div>
+        <p className="settings-section__hint">
+          When enabled, attached PDFs and <code className="settings-inline-code">ingest_source</code> with{' '}
+          <code className="settings-inline-code">mode: &quot;vision&quot;</code> send rasterized page screenshots.
+          When disabled, PDFs are extracted as Markdown only (markitdown).
+        </p>
       </section>
 
       {/* ── Phoenix Observability Section ────────────── */}

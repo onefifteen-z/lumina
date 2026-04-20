@@ -46,14 +46,14 @@ Only retry **after** seeing the auto result, and only for `.pdf`. Trigger condit
 - The text is structurally meaningless (e.g. only page numbers and headers, no body)
 - The error string says markitdown failed for a content reason (not a python/install reason — those won't be fixed by vision)
 
-A vision retry rasterizes each PDF page to a PNG and returns markdown with embedded image data URLs. Costs more tokens — only use it when text extraction is genuinely unusable.
+A vision retry rasterizes each PDF page to a PNG and returns markdown with embedded image data URLs **only when the user has enabled "PDF page images" in Settings**. If that setting is off, `mode: "vision"` on a PDF still uses markitdown and you will see `kind=office` — ask the user to enable the setting when page images are truly needed. Costs more tokens — only use vision when text extraction is genuinely unusable.
 
 ```
 # example flow when first pass is poor
 ingest_source({ path: "raw/scanned-paper.pdf" })
 # → "[ingest_source ok kind=office]\n\n12\n\n13\n\n"  ← almost empty
 ingest_source({ path: "raw/scanned-paper.pdf", mode: "vision" })
-# → "[ingest_source ok kind=office-vision]\n\n![page 1](data:image/png;base64,...)\n..."
+# → "[ingest_source ok kind=office-vision]\n\n![page 1](data:image/png;base64,...)\n..."   (when PDF page images are enabled in Settings)
 ```
 
 ## When NOT to retry with vision

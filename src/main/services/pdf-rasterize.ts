@@ -7,7 +7,7 @@
  * endpoint accepts).
  *
  * Tunables:
- *   - DPI (default 144) → pdfjs `scale = dpi / 72`
+ *   - DPI (default 96) → pdfjs `scale = dpi / 72`
  *   - MAX_PAGE_DIMENSION caps the longer edge to keep base64 payloads
  *     under control even for legal/poster-sized pages.
  *   - MAX_PAGES truncates very large PDFs; callers should surface a
@@ -31,7 +31,7 @@ export interface RasterizedPage {
 }
 
 export interface RasterizeOptions {
-  /** Target rendering DPI. 144 ≈ "retina print" — readable but compact. */
+  /** Target rendering DPI. Default 96 balances readability and payload size. */
   dpi?: number;
   /** Cap on the longer edge of the rendered page (post-rasterization). */
   maxPageDimension?: number;
@@ -46,8 +46,8 @@ export interface RasterizeResult {
   truncated: boolean;
 }
 
-const DEFAULT_DPI = 144;
-const DEFAULT_MAX_DIM = 1600;
+const DEFAULT_DPI = 96;
+const DEFAULT_MAX_DIM = 1200;
 const DEFAULT_MAX_PAGES = 50;
 
 type PdfjsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");

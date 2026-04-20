@@ -92,6 +92,8 @@ export interface AppConfig {
   vaultPath: string;
   llmProvider: LLMProviderConfig | null;
   phoenix: PhoenixConfig;
+  /** When true, PDFs are rasterized to page PNGs for chat attach and ingest_source vision mode. Default off: PDFs use markitdown text only. */
+  pdfImageIngest: boolean;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;

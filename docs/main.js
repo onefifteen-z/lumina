@@ -83,6 +83,10 @@
   function initNav() {
     var nav = document.querySelector(".top-nav");
     if (!nav) return;
+    if (document.body.classList.contains("guide-page")) {
+      nav.classList.add("top-nav--scrolled");
+      return;
+    }
     function onScroll() {
       var y = window.scrollY || document.documentElement.scrollTop;
       nav.classList.toggle("top-nav--scrolled", y > 16);
@@ -131,8 +135,13 @@
   }
 
   function start() {
+    var prefix = "";
+    try {
+      prefix = document.body.getAttribute("data-locale-prefix") || "";
+    } catch (e) {}
+    var i18nOpts = prefix ? { localeFilePrefix: prefix } : undefined;
     if (window.LuminaDocsI18n && typeof window.LuminaDocsI18n.init === "function") {
-      window.LuminaDocsI18n.init(boot);
+      window.LuminaDocsI18n.init(boot, i18nOpts);
     } else {
       boot();
     }

@@ -29,7 +29,8 @@ Then open the URL printed in the terminal (paths use `./` so they work under a s
 
 ## Files
 
-- `index.html` — landing page (feature story + CSS “UI” mockups)
+- `guide.html` — **User guide** (vault → settings → raw → ingest → Q&A → `/lint`) in **EN / 中文 / 日本語** via the same `?lang=` + `locales/guide-*.json` mechanism as the landing page
+- `index.html` — landing page (feature story + CSS “UI” mockups); links to `guide.html`
 - `styles.css` — layout, motion, and scroll-reveal styles
 - `main.js` — scroll progress bar, nav “scrolled” state, parallax on hero glow, `IntersectionObserver` for reveal-on-scroll (skipped when `prefers-reduced-motion: reduce`)
 - `assets/icon.png` — app icon (copy of root `assets/icon.png` for Pages)

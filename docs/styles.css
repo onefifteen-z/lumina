@@ -1278,6 +1278,10 @@ html[data-site-theme="dark"] .lumina-graph__t {
   max-width: 20ch;
 }
 
+html:lang(ja) .section__title {
+  max-width: 100%;
+}
+
 .section__intro {
   margin: 0 0 3rem;
   font-size: 1.08rem;
@@ -1539,6 +1543,100 @@ html[data-site-theme="dark"] .feature-card:hover {
   .feature-deck .reveal {
     transition-delay: 0s !important;
   }
+}
+
+/* User guide (guide.html) */
+.guide-doc {
+  padding-top: calc(var(--nav-h) + 2.25rem);
+  padding-bottom: 3.5rem;
+}
+
+.guide-doc > .section__title {
+  max-width: none;
+}
+
+.guide-doc .guide-lead {
+  max-width: 48rem;
+}
+
+.guide-section {
+  margin-bottom: 2.35rem;
+}
+
+.guide-section h2 {
+  font-size: clamp(1.2rem, 2.5vw, 1.45rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.85rem;
+  max-width: 100%;
+  color: var(--text);
+}
+
+.guide-body {
+  color: var(--text-muted);
+  font-size: 1.02rem;
+  line-height: 1.65;
+  max-width: 48rem;
+}
+
+.guide-body p {
+  margin: 0 0 0.75rem;
+}
+
+.guide-body ol,
+.guide-body ul {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.35rem;
+}
+
+.guide-body li {
+  margin-bottom: 0.4rem;
+}
+
+.guide-body li code,
+.guide-body p code,
+.guide-body td code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+}
+
+.guide-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.guide-body th,
+.guide-body td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.guide-body th {
+  background: var(--code-bg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.guide-body .pre-block {
+  margin-top: 0.5rem;
+}
+
+.site-footer__brand p a {
+  color: var(--accent-deep);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.site-footer__brand p a:hover {
+  color: var(--accent);
 }
 
 /* Footer */

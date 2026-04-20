@@ -3,6 +3,8 @@
 
   var LANG_KEY = "lumina-docs-lang";
   var BASE = "./locales/";
+  /** @type {string} e.g. "" for `en.json`, or "guide-" for `guide-en.json` */
+  var localeFilePrefix = "";
 
   function normalizeLang(raw) {
     if (raw == null || raw === "") return null;
@@ -20,8 +22,6 @@
       var stored = normalizeLang(window.localStorage.getItem(LANG_KEY));
       if (stored) return stored;
     } catch (e) {}
-    var nav = normalizeLang(navigator.language || navigator.userLanguage);
-    if (nav === "zh" || nav === "ja") return nav;
     return "en";
   }
 
@@ -39,6 +39,10 @@
       else url.searchParams.set("lang", lang);
       window.history.replaceState({}, "", url.pathname + url.search + url.hash);
     } catch (e) {}
+  }
+
+  function localeFilename(lang) {
+    return localeFilePrefix + lang + ".json";
   }
 
   function applyMeta(data) {
@@ -104,7 +108,7 @@
   }
 
   function loadLocale(lang, cb) {
-    fetch(BASE + lang + ".json")
+    fetch(BASE + localeFilename(lang))
       .then(function (r) {
         if (!r.ok) throw new Error(lang);
         return r.json();
@@ -117,7 +121,7 @@
           cb(new Error("en"));
           return;
         }
-        fetch(BASE + "en.json")
+        fetch(BASE + localeFilename("en"))
           .then(function (r) {
             return r.json();
           })
@@ -152,7 +156,13 @@
 
   window.LuminaDocsI18n = {
     resolveLang: resolveLang,
-    init: function (cb) {
+    /**
+     * @param {function(): void} [cb]
+     * @param {{ localeFilePrefix?: string }} [opts] Pass `{ localeFilePrefix: "guide-" }` on guide.html
+     */
+    init: function (cb, opts) {
+      opts = opts || {};
+      localeFilePrefix = typeof opts.localeFilePrefix === "string" ? opts.localeFilePrefix : "";
       var lang = resolveLang();
       window.__LUMINA_DOC_LANG__ = lang;
       loadLocale(lang, function (err, data) {

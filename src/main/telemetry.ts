@@ -57,7 +57,7 @@ export async function shutdownTelemetry(): Promise<void> {
 }
 
 export function getTracer(): Tracer {
-  return trace.getTracer("lumina", "0.8.1");
+  return trace.getTracer("lumina", "0.8.2");
 }
 
 export function startSpan(

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script>
+      (function () {
+        try {
+          var k = "lumina-docs-theme";
+          var s = localStorage.getItem(k);
+          var dark = s === "dark" || (s !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-site-theme", dark ? "dark" : "light");
+        } catch (e) {}
+      })();
+    </script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Lumina user guide: vault, settings, raw, ingest, questions, and /lint — English, Chinese, and Japanese."
+    />
+    <title>Lumina — User guide</title>
+    <link rel="alternate" hreflang="en" href="guide.html" />
+    <link rel="alternate" hreflang="zh-CN" href="guide.html?lang=zh" />
+    <link rel="alternate" hreflang="ja" href="guide.html?lang=ja" />
+    <link rel="alternate" hreflang="x-default" href="guide.html" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" type="image/png" href="./assets/icon.png" />
+  </head>
+  <body class="guide-page" data-locale-prefix="guide-">
+    <a class="skip-link" href="#main" data-i18n="skipLink">Skip to main content</a>
+    <div class="scroll-progress" aria-hidden="true"></div>
+
+    <header class="top-nav top-nav--scrolled">
+      <div class="top-nav__inner wrap">
+        <a class="top-nav__brand" href="index.html" data-i18n-aria-label="brandAria" aria-label="Lumina home">
+          <img src="./assets/icon.png" width="32" height="32" alt="" />
+          <span>Lumina</span>
+        </a>
+        <nav class="top-nav__links" data-i18n-aria-label="navPrimaryAria" aria-label="Primary">
+          <a href="index.html" data-i18n="navHome">Home</a>
+          <div class="lang-switch" role="group" data-i18n-aria-label="navLangAria" aria-label="Language">
+            <button type="button" class="lang-switch__btn" data-set-lang="en" aria-pressed="true">EN</button>
+            <button type="button" class="lang-switch__btn" data-set-lang="zh" aria-pressed="false">中文</button>
+            <button type="button" class="lang-switch__btn" data-set-lang="ja" aria-pressed="false">日本語</button>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" role="switch" aria-checked="false" title="Theme">
+            <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2" />
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+              />
+            </svg>
+            <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                d="M21 14.5A8.5 8.5 0 0 1 9.5 3 6.5 6.5 0 1 0 21 14.5Z"
+              />
+            </svg>
+          </button>
+          <a
+            class="top-nav__cta"
+            href="https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-i18n="navDownload"
+            >Download</a
+          >
+        </nav>
+      </div>
+    </header>
+
+    <main id="main" class="guide-doc wrap">
+      <p class="section__eyebrow reveal" data-i18n="guideKicker">Documentation</p>
+      <h1 class="section__title reveal" data-i18n="guideTitle">User guide</h1>
+      <div class="guide-lead section__intro reveal" data-i18n-html="guideLeadHtml"></div>
+
+      <section class="guide-section reveal" aria-labelledby="g-s1">
+        <h2 id="g-s1" data-i18n="s1Title">1. Create a vault</h2>
+        <div class="guide-body" data-i18n-html="s1Html"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-s2">
+        <h2 id="g-s2" data-i18n="s2Title">2. Settings</h2>
+        <div class="guide-body" data-i18n-html="s2Html"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-s3">
+        <h2 id="g-s3" data-i18n="s3Title">3. Add files to raw</h2>
+        <div class="guide-body" data-i18n-html="s3Html"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-s4">
+        <h2 id="g-s4" data-i18n="s4Title">4. Ingest</h2>
+        <div class="guide-body" data-i18n-html="s4Html"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-s5">
+        <h2 id="g-s5" data-i18n="s5Title">5. Ask questions</h2>
+        <div class="guide-body" data-i18n-html="s5Html"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-s6">
+        <h2 id="g-s6" data-i18n="s6Title">6. Lint the wiki</h2>
+        <div class="guide-body" data-i18n-html="s6Html"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-ap">
+        <h2 id="g-ap" data-i18n="appendixTitle">Appendix</h2>
+        <div class="guide-body" data-i18n-html="appendixHtml"></div>
+      </section>
+      <section class="guide-section reveal" aria-labelledby="g-qk">
+        <h2 id="g-qk" data-i18n="quickTitle">Quick commands</h2>
+        <div class="guide-body" data-i18n-html="quickHtml"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer__inner">
+        <div class="site-footer__brand">
+          <img src="./assets/icon.png" width="40" height="40" alt="" />
+          <div>
+            <strong>Lumina</strong>
+            <p><a href="index.html" data-i18n="navHome">Home</a> · <a href="guide.html" data-i18n="guideTitle">User guide</a></p>
+          </div>
+        </div>
+        <div class="site-footer__links">
+          <a href="index.html" data-i18n="navHome">Home</a>
+          <a href="https://github.com/McK-Playground/prj-lumina" target="_blank" rel="noopener noreferrer" data-i18n="footGh">GitHub</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./i18n.js" defer></script>
+    <script src="./main.js" defer></script>
+  </body>
+</html>

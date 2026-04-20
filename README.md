@@ -8,7 +8,7 @@
 
 *Own your knowledge. Think with AI. Never leave your machine.*
 
-**Current version: 0.8.1**
+**Current version: 0.8.2**
 
 [![CI](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml)
 [![Last commit](https://img.shields.io/github/last-commit/McK-Playground/prj-lumina/main?color=D4731A)](https://github.com/McK-Playground/prj-lumina/commits/main)
@@ -30,7 +30,7 @@ Lumina is a desktop wiki that stores everything as plain Markdown files on your 
 |---|---|
 | **Obsidian-compatible vault** | Markdown + frontmatter, `[[wikilinks]]`, `![[embeds]]`, and tags — open your existing vault directly |
 | **LLM chat & assist** | Multi-turn chat with streaming, plus inline summarize / expand / refine on any selection |
-| **Instant full-text search** | FlexSearch-powered search with tag filtering, accessible via `⌘K` popup |
+| **Instant full-text search** | FlexSearch-powered search with tag filtering, accessible via `⌘⇧F` (`Ctrl+Shift+F`) popup — also `⌘O` (`Ctrl+O`) |
 | **Interactive graph** | D3 force-directed wikilink graph to explore connections visually |
 | **Multi-vault** | Switch between vaults instantly; each vault remembers its own settings |
 | **PDF & HTML viewer** | Browse PDFs and styled HTML files directly inside the app |

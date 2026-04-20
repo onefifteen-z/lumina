@@ -21,7 +21,16 @@ import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
 import { VaultSwitcher } from './VaultSwitcher';
 import { VaultInitDialog } from './VaultInitDialog';
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X, FileText, Plus } from 'lucide-react';
+import { WelcomeScreen } from './WelcomeScreen';
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  X,
+  FileText,
+  Plus,
+} from 'lucide-react';
 import { TooltipProvider } from './ui/tooltip';
 import {
   SidebarProvider,
@@ -99,51 +108,6 @@ function applyTheme(theme: 'light' | 'dark') {
     document.documentElement.classList.remove('dark');
   }
 }
-
-// ── WelcomeScreen ──────────────────────────────────────────────
-
-const WelcomeScreen: React.FC<{ onVaultSelected: () => void }> = ({ onVaultSelected }) => {
-  const [selecting, setSelecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSelectVault = async () => {
-    setSelecting(true);
-    setError(null);
-    try {
-      const selectedPath = await window.api.selectVaultFolder();
-      if (!selectedPath) {
-        setSelecting(false);
-        return;
-      }
-      await window.api.saveConfig({ vaultPath: selectedPath });
-      await window.api.listArticles();
-      onVaultSelected();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set up vault folder.');
-      setSelecting(false);
-    }
-  };
-
-  return (
-    <div className="welcome-screen">
-      <div className="welcome-screen__card">
-        <div className="welcome-screen__icon" aria-hidden="true">📚</div>
-        <h1 className="welcome-screen__title">Welcome to Lumina</h1>
-        <p className="welcome-screen__description">
-          Your local, AI-powered personal wiki. To get started, select or create a folder to store your wiki articles.
-        </p>
-        <button
-          className="welcome-screen__btn"
-          onClick={handleSelectVault}
-          disabled={selecting}
-        >
-          {selecting ? 'Setting up…' : 'Select Vault Folder'}
-        </button>
-        {error && <p className="welcome-screen__error" role="alert">{error}</p>}
-      </div>
-    </div>
-  );
-};
 
 // ── Offline Banner ──────────────────────────────────────────
 

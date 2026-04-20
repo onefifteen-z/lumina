@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script>
+      (function () {
+        try {
+          var k = "lumina-docs-theme";
+          var s = localStorage.getItem(k);
+          var dark = s === "dark" || (s !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-site-theme", dark ? "dark" : "light");
+        } catch (e) {}
+      })();
+    </script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Lumina — your personal LLM wiki vault for your team: Obsidian-style Markdown on disk, multiturn chat on your LLM endpoint. Version and share the vault with Box, SharePoint, or Git."
+    />
+    <title>Lumina — LLM Wiki for your desktop</title>
+    <link rel="alternate" hreflang="en" href="index.html" />
+    <link rel="alternate" hreflang="zh-CN" href="index.html?lang=zh" />
+    <link rel="alternate" hreflang="ja" href="index.html?lang=ja" />
+    <link rel="alternate" hreflang="x-default" href="index.html" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" type="image/png" href="./assets/icon.png" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main" data-i18n="skipLink">Skip to main content</a>
+    <div class="scroll-progress" aria-hidden="true"></div>
+
+    <!-- Same build users download from Box (McKinsey distribution). -->
+    <header class="top-nav">
+      <div class="top-nav__inner wrap">
+        <a class="top-nav__brand" href="#top" data-i18n-aria-label="brandAria" aria-label="Lumina home">
+          <img src="./assets/icon.png" width="32" height="32" alt="" />
+          <span>Lumina</span>
+        </a>
+        <nav class="top-nav__links" aria-label="Primary" data-i18n-aria-label="navPrimaryAria">
+          <a href="#experience" data-i18n="navExperience">Experience</a>
+          <a href="#features" data-i18n="navFeatures">Features</a>
+          <a href="#privacy" data-i18n="navPrivacy">Privacy</a>
+          <a href="#start" data-i18n="navStart">Get started</a>
+          <div class="lang-switch" role="group" data-i18n-aria-label="navLangAria" aria-label="Language">
+            <button type="button" class="lang-switch__btn" data-set-lang="en" aria-pressed="true">EN</button>
+            <button type="button" class="lang-switch__btn" data-set-lang="zh" aria-pressed="false">中文</button>
+            <button type="button" class="lang-switch__btn" data-set-lang="ja" aria-pressed="false">日本語</button>
+          </div>
+          <button type="button" class="theme-toggle" id="theme-toggle" role="switch" aria-checked="false" title="Theme">
+            <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2" />
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+              />
+            </svg>
+            <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                d="M21 14.5A8.5 8.5 0 0 1 9.5 3 6.5 6.5 0 1 0 21 14.5Z"
+              />
+            </svg>
+          </button>
+          <a
+            class="top-nav__cta"
+            href="https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-i18n="navDownload"
+            >Download</a
+          >
+        </nav>
+      </div>
+    </header>
+
+    <section class="hero" id="top">
+      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="hero__noise" aria-hidden="true"></div>
+      <div class="wrap hero__grid">
+        <div class="hero__copy reveal">
+          <p class="hero__eyebrow" data-i18n="heroEyebrow">LLM Wiki · desktop app · v0.8.1</p>
+          <h1 data-i18n-html="heroH1Html">Think wiki.<br />Ask your <span class="hero__accent">LLM</span>.</h1>
+          <p class="hero__lead" data-i18n-html="heroLeadHtml">
+            Your personal <strong>LLM wiki vault</strong> for the team: Markdown, graph, search, and chat in one place.
+            Keep files in Box, SharePoint, or Git for sharing and version history.
+          </p>
+          <div class="hero__actions">
+            <a
+              class="btn btn-primary btn-lg"
+              href="https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="heroDownloadBtn"
+              >Download Lumina</a
+            >
+            <a
+              class="btn btn-ghost btn-lg"
+              href="https://github.com/McK-Playground/prj-lumina"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="heroSourceBtn"
+              >Source code</a
+            >
+          </div>
+          <ul class="hero__bullets" data-i18n-aria-label="heroBulletsAria" aria-label="Key points">
+            <li data-i18n="heroB1">Obsidian-style wiki on plain Markdown files</li>
+            <li data-i18n="heroB2">Chat and inline assist across the same vault</li>
+            <li data-i18n="heroB3">Your API key, your model endpoint</li>
+            <li data-i18n="heroB4">Share and version with Box, SharePoint, or Git</li>
+          </ul>
+        </div>
+        <div class="hero__visual reveal reveal--delay" aria-hidden="true">
+          <div class="lumina-frame lumina-frame--float">
+            <nav class="lumina-rail">
+              <span class="lumina-rail__btn lumina-rail__btn--active" data-i18n-title="tiFiles" title="Files"
+                ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6"
+                  /></svg
+              ></span>
+              <span class="lumina-rail__btn" data-i18n-title="tiChat" title="Chat"
+                ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                  /></svg
+              ></span>
+              <span class="lumina-rail__btn" data-i18n-title="tiSearch" title="Search"
+                ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2" />
+                  <path fill="none" stroke="currentColor" stroke-width="2" d="m21 21-4.3-4.3" /></svg
+              ></span>
+              <span class="lumina-rail__btn" data-i18n-title="tiGraph" title="Graph"
+                ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="5" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="2" />
+                  <circle cx="12" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="2" />
+                  <circle cx="19" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="2" />
+                  <path fill="none" stroke="currentColor" stroke-width="1.5" d="M7 7l5 9M14 9l3-1" /></svg
+              ></span>
+              <span class="lumina-rail__spacer"></span>
+              <span class="lumina-rail__btn" data-i18n-title="tiSettings" title="Settings"
+                ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+                  /></svg
+              ></span>
+              <span class="lumina-rail__theme" data-i18n-title="tiTheme" title="Theme"
+                ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2" />
+                  <path fill="none" stroke="currentColor" stroke-width="2" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg
+              ></span>
+            </nav>
+            <div class="lumina-stage">
+              <aside class="lumina-ab">
+                <div class="lumina-ab__header" data-i18n="abHeader">Articles in vault</div>
+                <div class="lumina-ab__item lumina-ab__item--active">
+                  <span class="lumina-ab__title" data-i18n="weekTitle">Week in review</span>
+                  <span class="lumina-ab__excerpt" data-i18n="weekExcerpt">Captured ideas from reading list and meeting notes…</span>
+                </div>
+                <div class="lumina-ab__item">
+                  <span class="lumina-ab__title" data-i18n="strategyTitle">Strategy memo</span>
+                  <span class="lumina-ab__excerpt" data-i18n="strategyExcerpt">Outline for Q4 narrative and metrics…</span>
+                </div>
+              </aside>
+              <div class="lumina-main">
+                <div class="lumina-toolbar">
+                  <span class="lumina-toolbar__nav">
+                    <span class="lumina-toolbar__chev" aria-hidden="true">‹</span>
+                    <span class="lumina-toolbar__chev lumina-toolbar__chev--off" aria-hidden="true">›</span>
+                  </span>
+                  <span class="lumina-toolbar__crumb"
+                    ><span class="muted" data-i18n="crumbMyVault">My vault</span><span class="sep">/</span
+                    ><strong data-i18n="crumbNotes">notes</strong><span class="sep">/</span
+                    ><span class="muted" data-i18n="crumbWeekReview">Week in review</span></span
+                  >
+                  <span class="lumina-toolbar__actions">
+                    <span class="lumina-toolbar__iconbtn" aria-hidden="true">☆</span>
+                    <span class="lumina-toolbar__iconbtn" aria-hidden="true">✎</span>
+                  </span>
+                </div>
+                <div class="lumina-editor">
+                  <div class="lumina-line" data-i18n-html="editorLine1Html">
+                    <span class="lumina-h1">#</span> Week in review
+                  </div>
+                  <div class="lumina-line"></div>
+                  <div class="lumina-line" data-i18n-html="editorLine3Html">
+                    See <span class="lumina-wikilink">[[Reading list]]</span> for sources.
+                  </div>
+                  <div class="lumina-line" data-i18n-html="editorLine4Html">
+                    Lumina search feels <em>instant</em> — try <span class="kbd">⌘K</span>.
+                  </div>
+                  <span class="lumina-caret" aria-hidden="true"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main id="main">
+      <section class="section section--tight wrap" id="experience">
+        <p class="section__eyebrow reveal" data-i18n="expEyebrow">Inside the app</p>
+        <h2 class="section__title reveal" data-i18n="expTitle">Built for the way you already work</h2>
+        <p class="section__intro reveal" data-i18n="expIntro">
+          The layout mirrors the real desktop shell: icon rail, article list, content toolbar, and the same light
+          palette as the product (amber primary on soft gray rails). Point the app at a vault that lives in a Box
+          folder, a SharePoint-synced library, or a Git checkout — your team’s Markdown stays where IT already governs
+          versions and access.
+        </p>
+
+        <article class="showcase reveal">
+          <div class="showcase__text">
+            <h3 data-i18n="sh1Title">Read &amp; write with live preview</h3>
+            <p data-i18n="sh1Body">
+              The article browser splits the same way as Lumina: file list on the left, toolbar with back/forward and
+              edit controls on top, and the reading surface below — Markdown, wikilinks, and tags exactly like your
+              Obsidian vault on disk.
+            </p>
+          </div>
+          <div class="showcase__mock" aria-hidden="true">
+            <div class="lumina-frame lumina-frame--tilt">
+              <nav class="lumina-rail lumina-rail--compact">
+                <span class="lumina-rail__btn lumina-rail__btn--active" data-i18n-title="tiFiles" title="Files"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" /></svg
+                ></span>
+                <span class="lumina-rail__btn" data-i18n-title="tiChat" title="Chat"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg
+                ></span>
+                <span class="lumina-rail__spacer"></span>
+                <span class="lumina-rail__btn" data-i18n-title="tiSettings" title="Settings"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" /></svg
+                ></span>
+              </nav>
+              <div class="lumina-stage">
+                <aside class="lumina-ab lumina-ab--narrow">
+                  <div class="lumina-ab__header" data-i18n="abHeader">Articles in vault</div>
+                  <div class="lumina-ab__item lumina-ab__item--active">
+                    <span class="lumina-ab__title" data-i18n="productTitle">Product brief</span>
+                    <span class="lumina-ab__excerpt" data-i18n="productExcerpt">Goals, non-goals, and launch checklist…</span>
+                  </div>
+                </aside>
+                <div class="lumina-main">
+                  <div class="lumina-toolbar">
+                    <span class="lumina-toolbar__nav"
+                      ><span class="lumina-toolbar__chev">‹</span><span class="lumina-toolbar__chev">›</span></span
+                    >
+                    <span class="lumina-toolbar__crumb"
+                      ><span class="muted" data-i18n="crumbVault">vault</span><span class="sep">/</span
+                      ><strong data-i18n="crumbWiki">wiki</strong><span class="sep">/</span
+                      ><span class="muted" data-i18n="crumbProduct">Product brief</span></span
+                    >
+                    <span class="lumina-toolbar__actions"
+                      ><span class="lumina-chip lumina-chip--ghost" data-i18n="chipPreview">Preview</span
+                      ><span class="lumina-chip lumina-chip--on" data-i18n="chipEdit">Edit</span></span
+                    >
+                  </div>
+                  <div class="lumina-preview">
+                    <div class="lumina-preview__banner"></div>
+                    <div class="lumina-preview__p"></div>
+                    <div class="lumina-preview__p lumina-preview__p--short"></div>
+                    <div class="lumina-preview__p"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="showcase showcase--reverse reveal">
+          <div class="showcase__text">
+            <h3 data-i18n="sh2Title">Chat that stays beside your notes</h3>
+            <p data-i18n="sh2Body">
+              The chat column uses the same centered message column as the app: user bubbles on the right with the
+              purple tint from Lumina’s message list, assistant text on the left, and the rounded vault-colored input
+              docked at the bottom.
+            </p>
+          </div>
+          <div class="showcase__mock" aria-hidden="true">
+            <div class="lumina-frame lumina-frame--tilt-rev">
+              <nav class="lumina-rail lumina-rail--compact">
+                <span class="lumina-rail__btn" data-i18n-title="tiFiles" title="Files"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" /></svg
+                ></span>
+                <span class="lumina-rail__btn lumina-rail__btn--active" data-i18n-title="tiChat" title="Chat"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg
+                ></span>
+                <span class="lumina-rail__spacer"></span>
+                <span class="lumina-rail__btn" data-i18n-title="tiSettings" title="Settings"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" /></svg
+                ></span>
+              </nav>
+              <div class="lumina-chat">
+                <div class="lumina-chat__top">
+                  <span class="lumina-chat__hist" data-i18n="chatHist">History</span>
+                  <span class="lumina-chat__new" aria-hidden="true">✎</span>
+                </div>
+                <div class="lumina-chat__scroll">
+                  <div class="lumina-chat__col">
+                    <div class="lumina-msg lumina-msg--user" data-i18n="chatUserMsg">Summarize my last three daily notes.</div>
+                    <div class="lumina-msg lumina-msg--assistant" data-i18n="chatAssistantMsg">
+                      Here’s a tight 3-bullet recap of themes across those files…
+                    </div>
+                    <div class="lumina-typing" aria-hidden="true"><span></span><span></span><span></span></div>
+                  </div>
+                </div>
+                <div class="lumina-chat__inputwrap">
+                  <div class="lumina-chat__input">
+                    <span data-i18n="chatInputPh">Ask anything about your vault…</span>
+                    <span class="lumina-caret lumina-caret--dim" aria-hidden="true"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="showcase reveal">
+          <div class="showcase__text">
+            <h3 data-i18n="sh3Title">Search palette, pixel-for-purpose</h3>
+            <p data-i18n-html="sh3BodyHtml">
+              The quick-search overlay (<span class="kbd">⌘K</span>) is centered with a soft rail-colored shell, icon
+              plus query row, keyboard hints in the footer, and a highlighted row — matching what you see in Lumina
+              today.
+            </p>
+          </div>
+          <div class="showcase__mock" aria-hidden="true">
+            <div class="lumina-search-bg">
+              <div class="lumina-search-card">
+                <div class="lumina-search__row">
+                  <svg class="lumina-ico lumina-ico--muted" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2" />
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="m21 21-4.3-4.3" />
+                  </svg>
+                  <span class="lumina-search__q" data-i18n="searchQueryText">quarterly review</span>
+                </div>
+                <div class="lumina-search__hit lumina-search__hit--on">
+                  <svg class="lumina-ico lumina-ico--sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" />
+                  </svg>
+                  <div>
+                    <span class="lumina-search__title" data-i18n="searchHit1Title">Q4 review</span>
+                    <span class="lumina-search__excerpt" data-i18n="searchHit1Excerpt">Revenue narrative, risks, and appendix links…</span>
+                  </div>
+                </div>
+                <div class="lumina-search__hit">
+                  <svg class="lumina-ico lumina-ico--sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" />
+                  </svg>
+                  <div>
+                    <span class="lumina-search__title" data-i18n="searchHit2Title">Team retro</span>
+                    <span class="lumina-search__excerpt" data-i18n="searchHit2Excerpt">What shipped, what slowed us down…</span>
+                  </div>
+                </div>
+                <div class="lumina-search__footer">
+                  <span data-i18n-html="searchFoot1Html"><kbd>↑↓</kbd> navigate</span>
+                  <span data-i18n-html="searchFoot2Html"><kbd>↵</kbd> open</span>
+                  <span data-i18n-html="searchFoot3Html"><kbd>esc</kbd> close</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="showcase showcase--reverse reveal">
+          <div class="showcase__text">
+            <h3 data-i18n="sh4Title">Graph view, same physics</h3>
+            <p data-i18n="sh4Body">
+              Nodes, soft edges, and labels echo the canvas graph: neutral disks that warm to amber when active, thin
+              link strokes, and typography sized like the live D3 view.
+            </p>
+          </div>
+          <div class="showcase__mock" aria-hidden="true">
+            <div class="lumina-frame lumina-frame--tilt-rev lumina-frame--graph">
+              <nav class="lumina-rail lumina-rail--compact">
+                <span class="lumina-rail__btn" data-i18n-title="tiFiles" title="Files"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="none" stroke="currentColor" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" /></svg
+                ></span>
+                <span class="lumina-rail__btn lumina-rail__btn--active" data-i18n-title="tiGraph" title="Graph"
+                  ><svg class="lumina-ico" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="5" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="2" />
+                    <circle cx="12" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="2" />
+                    <circle cx="19" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="2" /></svg
+                ></span>
+                <span class="lumina-rail__spacer"></span>
+              </nav>
+              <div class="lumina-graph">
+                <svg class="lumina-graph__svg" viewBox="0 0 360 220" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="lumG" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color: var(--lum-graph-hub-a); stop-opacity: 0.35" />
+                      <stop offset="100%" style="stop-color: var(--lum-graph-hub-b); stop-opacity: 0.12" />
+                    </linearGradient>
+                  </defs>
+                  <line class="lumina-graph__e" x1="180" y1="110" x2="80" y2="55" />
+                  <line class="lumina-graph__e" x1="180" y1="110" x2="280" y2="60" />
+                  <line class="lumina-graph__e" x1="180" y1="110" x2="95" y2="160" />
+                  <line class="lumina-graph__e" x1="180" y1="110" x2="265" y2="155" />
+                  <circle class="lumina-graph__n lumina-graph__n--hub" cx="180" cy="110" r="16" />
+                  <circle class="lumina-graph__n" cx="80" cy="55" r="7" />
+                  <circle class="lumina-graph__n" cx="280" cy="60" r="7" />
+                  <circle class="lumina-graph__n" cx="95" cy="160" r="7" />
+                  <circle class="lumina-graph__n" cx="265" cy="155" r="7" />
+                  <text class="lumina-graph__t" x="180" y="135" text-anchor="middle" data-i18n="graphLabelIndex">Index</text>
+                  <text class="lumina-graph__t lumina-graph__t--sm" x="80" y="78" text-anchor="middle" data-i18n="graphLabelA">Note A</text>
+                  <text class="lumina-graph__t lumina-graph__t--sm" x="280" y="83" text-anchor="middle" data-i18n="graphLabelB">Note B</text>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section wrap" id="features">
+        <p class="section__eyebrow reveal" data-i18n="featEyebrow">Why people stay</p>
+        <h2 class="section__title reveal" data-i18n="featTitle">Everything you need. Nothing you don’t.</h2>
+        <div class="feature-deck">
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">◇</div>
+            <h3 data-i18n="f1t">Obsidian-ready vaults</h3>
+            <p data-i18n="f1p">
+              Open your existing folders — frontmatter, wikilinks, embeds, and tags travel with you. Host that folder in
+              Box, sync it from SharePoint, or track it in Git; Lumina is just the editor over the files on disk.
+            </p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">↺</div>
+            <h3 data-i18n="f2t">Box, SharePoint, or Git for teams</h3>
+            <p data-i18n="f2p">
+              There is no separate Lumina cloud for your wiki. Use Box or SharePoint for shared folders and enterprise
+              controls, or Git for branches, diffs, and code-style review — then everyone opens the same vault in
+              Lumina.
+            </p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">✦</div>
+            <h3 data-i18n="f3t">Inline AI assist</h3>
+            <p data-i18n="f3p">Summarize, expand, or refine any selection without leaving the editor flow.</p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">⌁</div>
+            <h3 data-i18n="f4t">Multi-vault memory</h3>
+            <p data-i18n="f4p">Switch projects instantly; each vault keeps its own history, theme, and chat sessions.</p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">◆</div>
+            <h3 data-i18n="f5t">Readers built in</h3>
+            <p data-i18n="f5p">PDF and HTML live beside your notes — research stays inside one window.</p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">◎</div>
+            <h3 data-i18n="f6t">Light &amp; dark moods</h3>
+            <p data-i18n="f6p">Amber accents and paper textures in both themes, plus respect for system appearance.</p>
+          </article>
+          <article class="feature-card reveal">
+            <div class="feature-card__icon" aria-hidden="true">⚙</div>
+            <h3 data-i18n="f7t">Optional observability</h3>
+            <p data-i18n="f7p">Wire OpenTelemetry to your own Phoenix server when you want traces — off by default.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section section--privacy wrap" id="privacy">
+        <div class="privacy-panel reveal">
+          <h2 data-i18n="privacyTitle">Privacy is the default setting</h2>
+          <p data-i18n="privacyP1">
+            No forced cloud sync. No hidden analytics pipeline. Your API keys stay in the OS keychain, your Markdown
+            stays on disk, and Lumina only phones home to the LLM endpoint you trust — because you typed the URL
+            yourself.
+          </p>
+          <p data-i18n="privacyP2">
+            If you collaborate, keep the vault in Box, SharePoint, or Git — Lumina does not host a parallel wiki cloud;
+            it reads and writes the folder those tools already version for your team.
+          </p>
+          <p class="privacy-panel__cta">
+            <a
+              class="btn btn-primary"
+              href="https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="privacyCta"
+              >Download Lumina</a
+            >
+          </p>
+        </div>
+      </section>
+
+      <section class="section wrap" id="start">
+        <p class="section__eyebrow reveal" data-i18n="devEyebrow">Developers &amp; curious humans</p>
+        <h2 class="section__title reveal" data-i18n="devTitle">Clone, install, run</h2>
+        <div class="pre-block reveal">
+          <pre>git clone https://github.com/McK-Playground/prj-lumina.git
+cd prj-lumina
+npm install
+npm run dev</pre>
+        </div>
+        <p class="section__footnote reveal" data-i18n-html="devFootnoteHtml">
+          End users: use the
+          <a href="https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh" target="_blank" rel="noopener noreferrer"
+            >Box download</a
+          >
+          above. Developers: first launch picks a vault folder; add your model under <strong>Settings</strong>. Full
+          docs in the
+          <a href="https://github.com/McK-Playground/prj-lumina/blob/main/README.md" target="_blank" rel="noopener noreferrer">README</a>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap site-footer__inner">
+        <div class="site-footer__brand">
+          <img src="./assets/icon.png" width="40" height="40" alt="" />
+          <div>
+            <strong>Lumina</strong>
+            <p data-i18n="footTagline">MIT License · crafted for focused minds</p>
+          </div>
+        </div>
+        <div class="site-footer__links">
+          <a href="https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh" target="_blank" rel="noopener noreferrer" data-i18n="footDl"
+            >Download</a
+          >
+          <a href="https://github.com/McK-Playground/prj-lumina" target="_blank" rel="noopener noreferrer" data-i18n="footGh">GitHub</a>
+          <a href="https://github.com/McK-Playground/prj-lumina/issues" target="_blank" rel="noopener noreferrer" data-i18n="footIssues">Issues</a>
+          <a href="https://github.com/McK-Playground/prj-lumina/blob/main/README.md" target="_blank" rel="noopener noreferrer" data-i18n="footDocs">Docs</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./i18n.js" defer></script>
+    <script src="./main.js" defer></script>
+  </body>
+</html>

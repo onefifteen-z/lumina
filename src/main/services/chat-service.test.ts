@@ -522,6 +522,19 @@ describe("ChatService edge case unit tests", () => {
       const { session } = await service.startSession();
       expect(session.systemPrompt).toBe("VAULT CLAUDE");
     });
+
+    /**
+     * Pin the contract: even a one-line vault CLAUDE.md still gets the full
+     * INGEST.md appended. Guards against a future "optimisation" that skips
+     * INGEST.md for short prompts — the ingest protocol is part of the
+     * product contract, not a length-gated nice-to-have.
+     */
+    it("appends INGEST.md to a one-line vault CLAUDE.md", async () => {
+      const fs = mockFileSystem("hi");
+      const service = new ChatService(null, fs, NO_TEMPLATE, loadIngest);
+      const { session } = await service.startSession();
+      expect(session.systemPrompt).toBe(`hi\n\n${INGEST_TMPL}`);
+    });
   });
 
   describe("new session clears history", () => {

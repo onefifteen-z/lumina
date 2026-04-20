@@ -97,6 +97,17 @@ export class FileSystemService {
     return fs.readFile(filePath, "utf-8");
   }
 
+  /**
+   * Write a literal file to disk inside the vault — bypassing frontmatter
+   * serialization. Used for files that aren't articles (e.g. an empty
+   * CLAUDE.md slot the user is about to fill in).
+   */
+  async writeRawFile(filename: string, content: string): Promise<void> {
+    const filePath = path.join(this.vaultPath, filename);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, "utf-8");
+  }
+
   /** Absolute path to the vault root (used to scope shell commands). */
   getVaultPath(): string {
     return this.vaultPath;

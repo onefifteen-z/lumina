@@ -19,7 +19,6 @@ import { ChatService } from "./services/chat-service";
 import { ChatHistoryService } from "./services/chat-history-service";
 import { IngestService } from "./services/ingest-service";
 import { debugLog, getDebugLogBacklog } from "./debug-log";
-import { readClaudeMdTemplate } from "./services/template-service";
 
 // Track whether the renderer has unsaved changes
 let rendererHasUnsavedChanges = false;
@@ -160,6 +159,26 @@ export function registerIpcHandlers(services: {
         );
       await fileSystem.writeArticle(article);
       // Refresh the search index with updated article metadata
+      const articles = await fileSystem.scanVault();
+      if (searchIndex) await searchIndex.buildIndex(articles);
+      cachedArticles = articles;
+    },
+  );
+
+  /**
+   * Create an empty (or arbitrary-content) raw file in the vault. Bypasses
+   * the article-frontmatter serializer so files like an empty CLAUDE.md can
+   * literally be 0-byte. Refreshes the article cache so the file shows up
+   * in the sidebar immediately.
+   */
+  ipcMain.handle(
+    "wiki:writeRawFile",
+    async (_event, filename: string, content: string): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
+      await fileSystem.writeRawFile(filename, content);
       const articles = await fileSystem.scanVault();
       if (searchIndex) await searchIndex.buildIndex(articles);
       cachedArticles = articles;
@@ -627,16 +646,6 @@ export function registerIpcHandlers(services: {
   });
 
   // ── Templates ────────────────────────────────────────────────────
-
-  /**
-   * Returns the bundled CLAUDE.md template content. Used by the renderer when
-   * the user opens the CLAUDE.md slot in the icon rail and the vault has no
-   * such file yet — we pre-fill the editor with this so they can edit/save
-   * (creating the file) or cancel (no-op).
-   */
-  ipcMain.handle("wiki:getClaudeMdTemplate", async (): Promise<string | null> => {
-    return readClaudeMdTemplate();
-  });
 
   // ── Debug log ────────────────────────────────────────────────────
 

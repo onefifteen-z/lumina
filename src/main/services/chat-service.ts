@@ -596,12 +596,20 @@ export class ChatService {
    *   3. Hardcoded `DEFAULT_SYSTEM_PROMPT` — last-resort fallback if even
    *      the bundled template is missing (shouldn't happen in practice).
    *
-   * The bundled INGEST.md is always appended to (1) and (2) — never to (3).
-   * Reasoning: a vault owner customising CLAUDE.md still benefits from the
-   * latest ingest protocol shipped with the app version they're running,
-   * and shouldn't have to copy-paste it. We don't append to the trivial
-   * default because that path means everything else broke; muddling it
-   * with ingest instructions would be confusing.
+   * The bundled INGEST.md is force-appended to (1) and (2) — never to (3).
+   * This is a deliberate product contract: the user owns CLAUDE.md and can
+   * rewrite it freely, but they cannot opt out of the ingest protocol. The
+   * vault owner customising CLAUDE.md still benefits from the latest ingest
+   * protocol shipped with the app version they're running, and shouldn't
+   * have to copy-paste it. We don't append to the trivial default because
+   * that path means everything else broke; muddling it with ingest
+   * instructions would be confusing.
+   *
+   * Note: vault CLAUDE.md content is never trimmed or summarised before
+   * appending INGEST.md — even a one-line vault CLAUDE.md gets the full
+   * ingest protocol concatenated. If you ever want to add an "opt out of
+   * INGEST.md" knob (e.g. a vault config flag), do it as an intentional
+   * change here, not by adding a length/threshold heuristic.
    *
    * Read errors other than ENOENT are surfaced as a warning so the renderer
    * can show a banner; the session still proceeds with the next-best prompt.

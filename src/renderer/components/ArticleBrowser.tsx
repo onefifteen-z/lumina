@@ -1,33 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkGfm from 'remark-gfm';
-import remarkHtml from 'remark-html';
-import remarkWikilinks from '../plugins/remark-wikilinks';
-import remarkEmbeds from '../plugins/remark-embeds';
-import remarkTags from '../plugins/remark-tags';
 import type { ArticleFile } from '../../shared/types';
+import { markdownArticleBodyToHtml } from '../lib/article-markdown-preview-html';
 import { titleToFilename } from '../../shared/markdown-parser';
 import { useNavigation } from './AppShell';
 import { extractHeadings, addHeadingIds, type TocHeading } from './TocPanel';
 import { AlignLeft, Calendar, List, Tag, X } from 'lucide-react';
 import hljs from 'highlight.js';
 import { useDomFindBackend } from '../find/use-dom-find-backend';
-import ArticleEditor from './ArticleEditor';
+import ArticleLiveEditor from './ArticleLiveEditor';
 
-// ── Remark pipeline ────────────────────────────────────────────
-
-const markdownToHtml = (markdown: string): string => {
-  const result = unified()
-    .use(remarkParse)
-    .use(remarkGfm)
-    .use(remarkWikilinks)
-    .use(remarkEmbeds)
-    .use(remarkTags)
-    .use(remarkHtml, { sanitize: false })
-    .processSync(markdown);
-  return String(result);
-};
+const markdownToHtml = markdownArticleBodyToHtml;
 
 // ── Date formatting ────────────────────────────────────────────
 
@@ -185,12 +167,26 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const liveEditorFindRootRef = useRef<HTMLDivElement>(null);
+  const [liveFindEpoch, setLiveFindEpoch] = useState(0);
+  const bumpLiveFindEpoch = useCallback(() => {
+    setLiveFindEpoch((n) => n + 1);
+  }, []);
 
   // Register a DOM-based find backend so the global FindBar (Cmd+F) can search
   // and highlight inside the rendered article. Re-binds whenever the rendered
   // HTML changes (different article).
-  const getFindRoot = useCallback(() => contentRef.current, []);
-  useDomFindBackend(getFindRoot, !!renderedHtml, renderedHtml);
+  const getFindRoot = useCallback(() => {
+    if (inlineEditActive) return liveEditorFindRootRef.current;
+    return contentRef.current;
+  }, [inlineEditActive]);
+  const findBackendEnabled =
+    (!inlineEditActive && !!renderedHtml) ||
+    (inlineEditActive && !!article && !articleLoading);
+  const findBackendVersion = inlineEditActive
+    ? `${selectedFilename}:live:${liveFindEpoch}`
+    : renderedHtml;
+  useDomFindBackend(getFindRoot, findBackendEnabled, findBackendVersion);
 
   // Fetch article content + backlinks by vault-relative filename
   const selectArticle = useCallback(async (filename: string) => {
@@ -464,9 +460,12 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
             </div>
           </div>
 
-          {inlineEditActive ? (
-            <ArticleEditor
-              embedded
+          {inlineEditActive && currentFilename ? (
+            <ArticleLiveEditor
+              filename={currentFilename}
+              article={article}
+              findRootRef={liveEditorFindRootRef}
+              onLiveFindVersionBump={bumpLiveFindEpoch}
               onAfterSave={() => {
                 if (selectedFilename) void selectArticle(selectedFilename);
               }}

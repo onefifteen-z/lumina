@@ -22,10 +22,10 @@ export interface IconRailProps {
   hasClaudeMd?: boolean;
   /**
    * Invoked when the user clicks the CLAUDE.md slot but no CLAUDE.md file
-   * exists yet in the vault. Lets the host open the editor pre-filled with
-   * the bundled template (saving creates the file; cancelling is a no-op).
+   * exists yet in the vault. The host should create an empty CLAUDE.md in
+   * the vault and open it in the editor for the user to fill in.
    */
-  onCreateClaudeMdFromTemplate?: () => void;
+  onCreateEmptyClaudeMd?: () => void;
 }
 
 
@@ -43,22 +43,22 @@ const bottomItems: { view: SidebarView; icon: React.ElementType; label: string }
 
 const allItems = [...topItems, ...bottomItems];
 
-export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile, hasClaudeMd = true, onCreateClaudeMdFromTemplate }: IconRailProps) {
+export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile, hasClaudeMd = true, onCreateEmptyClaudeMd }: IconRailProps) {
   const visibleTopItems = hasClaudeMd ? topItems : topItems.filter((i) => i.view !== "chat");
   // The CLAUDE.md slot is always visible. When the vault has no CLAUDE.md we
   // surface a muted appearance so the user can tell the file doesn't exist
-  // yet, but the button is still actionable: clicking it opens an editor
-  // pre-seeded with the bundled template.
+  // yet, but the button is still actionable: clicking it creates an empty
+  // CLAUDE.md and opens it for editing.
   const claudeFile = configFiles?.[0];
   const claudeButtonVisible = Boolean(
-    (claudeFile && onSelectConfigFile) || onCreateClaudeMdFromTemplate,
+    (claudeFile && onSelectConfigFile) || onCreateEmptyClaudeMd,
   );
-  const claudeButtonEnabled = Boolean(claudeFile || onCreateClaudeMdFromTemplate);
+  const claudeButtonEnabled = Boolean(claudeFile || onCreateEmptyClaudeMd);
   const handleClaudeClick = (): void => {
     if (claudeFile && onSelectConfigFile) {
       onSelectConfigFile(claudeFile.filename);
     } else {
-      onCreateClaudeMdFromTemplate?.();
+      onCreateEmptyClaudeMd?.();
     }
   };
   const allVisibleItems = [...visibleTopItems, ...bottomItems];
@@ -135,7 +135,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label={claudeFile ? "Open CLAUDE.md" : "Create CLAUDE.md from template"}
+                aria-label={claudeFile ? "Open CLAUDE.md" : "Create CLAUDE.md"}
                 disabled={!claudeButtonEnabled}
                 onClick={handleClaudeClick}
                 className={cn(

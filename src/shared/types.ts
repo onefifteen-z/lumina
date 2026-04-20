@@ -222,6 +222,12 @@ export interface WikiAPI {
   listArticles(): Promise<ArticleMeta[]>;
   getArticle(filename: string): Promise<ArticleFile>;
   saveArticle(article: ArticleFile): Promise<void>;
+  /**
+   * Write a literal file to the vault, bypassing article frontmatter
+   * serialization. Use for creating files that should be 0-byte or contain
+   * exactly the content provided (e.g. an empty CLAUDE.md slot).
+   */
+  writeRawFile(filename: string, content: string): Promise<void>;
   deleteArticle(title: string): Promise<void>;
   articleExists(title: string): Promise<boolean>;
   createFolder(relativePath: string): Promise<void>;
@@ -300,13 +306,6 @@ export interface WikiAPI {
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;
   notifyUnsavedChanges(isDirty: boolean): void;
   confirmClose(): Promise<boolean>;
-
-  // Templates
-  /**
-   * Read the bundled CLAUDE.md template shipped with the app.
-   * Returns null if the template file is missing or unreadable.
-   */
-  getClaudeMdTemplate(): Promise<string | null>;
 
   // Debug log
   getDebugLogBacklog(): Promise<DebugLogEntry[]>;

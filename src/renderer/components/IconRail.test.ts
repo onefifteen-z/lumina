@@ -172,17 +172,17 @@ describe("IconRail keyboard navigation with chat icon", () => {
 function deriveClaudeSlot(opts: {
   configFiles?: { filename: string }[];
   onSelectConfigFile?: () => void;
-  onCreateClaudeMdFromTemplate?: () => void;
+  onCreateEmptyClaudeMd?: () => void;
 }): { visible: boolean; enabled: boolean; mode: "open" | "create" | "none" } {
   const claudeFile = opts.configFiles?.[0];
   const visible = Boolean(
-    (claudeFile && opts.onSelectConfigFile) || opts.onCreateClaudeMdFromTemplate,
+    (claudeFile && opts.onSelectConfigFile) || opts.onCreateEmptyClaudeMd,
   );
-  const enabled = Boolean(claudeFile || opts.onCreateClaudeMdFromTemplate);
+  const enabled = Boolean(claudeFile || opts.onCreateEmptyClaudeMd);
   const mode: "open" | "create" | "none" =
     claudeFile && opts.onSelectConfigFile
       ? "open"
-      : opts.onCreateClaudeMdFromTemplate
+      : opts.onCreateEmptyClaudeMd
         ? "create"
         : "none";
   return { visible, enabled, mode };
@@ -193,15 +193,15 @@ describe("IconRail CLAUDE.md slot", () => {
     const slot = deriveClaudeSlot({
       configFiles: [{ filename: "CLAUDE.md" }],
       onSelectConfigFile: () => {},
-      onCreateClaudeMdFromTemplate: () => {},
+      onCreateEmptyClaudeMd: () => {},
     });
     expect(slot).toEqual({ visible: true, enabled: true, mode: "open" });
   });
 
-  it("falls back to template-creation when vault has no CLAUDE.md", () => {
+  it("falls back to empty-file creation when vault has no CLAUDE.md", () => {
     const slot = deriveClaudeSlot({
       configFiles: [],
-      onCreateClaudeMdFromTemplate: () => {},
+      onCreateEmptyClaudeMd: () => {},
     });
     expect(slot).toEqual({ visible: true, enabled: true, mode: "create" });
   });
@@ -218,15 +218,32 @@ describe("IconRail CLAUDE.md slot", () => {
     // invariant against future refactors.
     for (const cfg of [
       { configFiles: [{ filename: "CLAUDE.md" }], onSelectConfigFile: () => {} },
-      { configFiles: [], onCreateClaudeMdFromTemplate: () => {} },
+      { configFiles: [], onCreateEmptyClaudeMd: () => {} },
       {
         configFiles: [{ filename: "CLAUDE.md" }],
         onSelectConfigFile: () => {},
-        onCreateClaudeMdFromTemplate: () => {},
+        onCreateEmptyClaudeMd: () => {},
       },
     ]) {
       const slot = deriveClaudeSlot(cfg);
       if (slot.visible) expect(slot.enabled).toBe(true);
     }
+  });
+
+  it("clicking the slot when no CLAUDE.md exists invokes the empty-create handler with no args", () => {
+    const calls: unknown[][] = [];
+    const onCreateEmptyClaudeMd = (...args: unknown[]) => {
+      calls.push(args);
+    };
+    // Mirror the IconRail click handler's branch: no file present →
+    // delegate to the create handler.
+    const claudeFile: { filename: string } | undefined = undefined;
+    const onSelectConfigFile: ((f: string) => void) | undefined = undefined;
+    if (claudeFile && onSelectConfigFile) {
+      onSelectConfigFile(claudeFile.filename);
+    } else {
+      onCreateEmptyClaudeMd();
+    }
+    expect(calls).toEqual([[]]);
   });
 });

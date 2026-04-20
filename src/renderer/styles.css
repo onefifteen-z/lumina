@@ -780,6 +780,28 @@ html.dark body {
   min-height: min(72vh, 780px);
 }
 
+/* ArticleLiveEditor: single-column CM6 + in-editor live preview (decorations) */
+.article-live-editor__surface {
+  position: relative;
+  min-height: min(72vh, 780px);
+}
+
+.article-live-editor__cm {
+  min-height: min(320px, 62vh);
+}
+
+.article-live-editor__cm .cm-editor {
+  min-height: inherit;
+}
+
+.article-live-editor__cm .cm-content,
+.article-live-editor__cm .cm-scroller {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-text);
+}
+
 .article-editor__loading-overlay {
   position: absolute;
   inset: 0;

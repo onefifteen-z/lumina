@@ -32,6 +32,10 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:saveArticle", article);
   },
 
+  writeRawFile(filename: string, content: string): Promise<void> {
+    return ipcRenderer.invoke("wiki:writeRawFile", filename, content);
+  },
+
   deleteArticle(title: string) {
     return ipcRenderer.invoke("wiki:deleteArticle", title);
   },
@@ -394,12 +398,6 @@ const api: WikiAPI = {
 
   confirmClose() {
     return ipcRenderer.invoke("wiki:confirmClose");
-  },
-
-  // ── Templates ────────────────────────────────────────────────────
-
-  getClaudeMdTemplate(): Promise<string | null> {
-    return ipcRenderer.invoke("wiki:getClaudeMdTemplate");
   },
 
   // ── Debug log ────────────────────────────────────────────────────

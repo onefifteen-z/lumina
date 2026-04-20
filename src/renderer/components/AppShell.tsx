@@ -205,7 +205,7 @@ const SidebarLayout: React.FC<{
   onToggleBookmark: (filename: string) => void;
   hasClaudeMd: boolean;
   vaultReloadKey: number;
-  onCreateClaudeMdFromTemplate: () => void;
+  onCreateEmptyClaudeMd: () => void;
 }> = ({
   activeView,
   onViewChange,
@@ -233,7 +233,7 @@ const SidebarLayout: React.FC<{
   onToggleBookmark,
   hasClaudeMd,
   vaultReloadKey,
-  onCreateClaudeMdFromTemplate,
+  onCreateEmptyClaudeMd,
 }) => {
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate, viewArticle } = useNavigation();
@@ -532,7 +532,7 @@ const SidebarLayout: React.FC<{
             configFiles={configFiles}
             onSelectConfigFile={viewArticle}
             hasClaudeMd={hasClaudeMd}
-            onCreateClaudeMdFromTemplate={onCreateClaudeMdFromTemplate}
+            onCreateEmptyClaudeMd={onCreateEmptyClaudeMd}
           />
 
           {/* Sidebar Panel */}
@@ -1037,37 +1037,34 @@ const AppShell: React.FC = () => {
   const clearPrefilledTitle = useCallback(() => setPrefilledTitle(null), []);
 
   /**
-   * Open the editor pre-filled with the bundled CLAUDE.md template, behaving
-   * like a "new article" so the file isn't created until the user explicitly
-   * saves. Cancelling (closing without save) leaves the vault untouched —
-   * matching the user's request: "不保存则保持原样".
+   * Create an empty CLAUDE.md in the vault root and immediately open it for
+   * editing. The bundled CLAUDE.md template is intentionally NOT exposed to
+   * the user — it's a runtime system prompt fallback only. The file the user
+   * owns starts empty so they can write whatever conventions they want; the
+   * bundled template fills in behind the scenes for chat sessions until the
+   * user puts content in their own CLAUDE.md.
    */
-  const handleCreateClaudeMdFromTemplate = useCallback(async () => {
-    let template: string | null = null;
+  const handleCreateEmptyClaudeMd = useCallback(async () => {
     try {
-      template = await window.api.getClaudeMdTemplate();
+      await window.api.writeRawFile('CLAUDE.md', '');
     } catch (err) {
-      console.error('Failed to load CLAUDE.md template:', err);
+      console.error('Failed to create empty CLAUDE.md:', err);
+      return;
     }
-    // Fallback if the bundled template can't be read for any reason — better
-    // to open a near-empty editor than to silently no-op the click.
-    const seed =
-      template && template.trim().length > 0
-        ? template
-        : '# CLAUDE.md\n\nYou are the wiki maintainer for this vault.\n';
-    setSelectedFilename(null);
-    setEditingFilename('');
-    setPrefilledTitle('claude');
-    setGeneratedContent(seed);
+    const list = await window.api.listArticles();
+    setArticles(list);
+    const claudeFile = list.find((a) => a.filename.toLowerCase() === 'claude.md');
+    if (claudeFile) {
+      setSelectedFilename(claudeFile.filename);
+      setEditingFilename(claudeFile.filename);
+    }
   }, []);
 
   const handleVaultInit = useCallback(async () => {
-    const defaultContent = '# System Prompt\n\nYou are a helpful assistant for this vault.\n';
-    await window.api.saveArticle({
-      frontmatter: { title: 'claude', tags: [], created: new Date().toISOString(), modified: new Date().toISOString() },
-      content: defaultContent,
-      rawContent: '',
-    });
+    // Empty CLAUDE.md by design — the bundled template fills in as the
+    // system prompt at runtime. Once the user writes anything in this file,
+    // it overrides the bundled template (see chat-service.loadSystemPrompt).
+    await window.api.writeRawFile('CLAUDE.md', '');
     await window.api.createFolder('raw');
     await window.api.createFolder('wiki');
     const list = await window.api.listArticles();
@@ -1152,7 +1149,7 @@ const AppShell: React.FC = () => {
               onToggleBookmark={onToggleBookmark}
               hasClaudeMd={hasClaudeMd}
               vaultReloadKey={vaultReloadKey}
-              onCreateClaudeMdFromTemplate={handleCreateClaudeMdFromTemplate}
+              onCreateEmptyClaudeMd={handleCreateEmptyClaudeMd}
             />
           </SidebarProvider>
         </TooltipProvider>

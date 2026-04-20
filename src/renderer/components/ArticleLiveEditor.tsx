@@ -26,6 +26,36 @@ export interface ArticleLiveEditorProps {
 const sameNormalized = (a: string, b: string): boolean =>
   normalizeLiveMarkdownForVault(a) === normalizeLiveMarkdownForVault(b);
 
+const FM_SNAPSHOT_SKIP = new Set([
+  "title",
+  "tags",
+  "created",
+  "modified",
+  "_corrupted",
+]);
+
+function cloneFrontmatter(fm: FrontmatterData): FrontmatterData {
+  return JSON.parse(JSON.stringify(fm)) as FrontmatterData;
+}
+
+function snapshotFrontmatter(fm: FrontmatterData): string {
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fm)) {
+    if (FM_SNAPSHOT_SKIP.has(k)) continue;
+    extra[k] = v;
+  }
+  const keys = Object.keys(extra).sort();
+  const sortedExtra: Record<string, unknown> = {};
+  for (const k of keys) sortedExtra[k] = extra[k];
+  return JSON.stringify({
+    title: fm.title ?? "",
+    tags: fm.tags ?? [],
+    created: fm.created ?? "",
+    modified: fm.modified ?? "",
+    extra: sortedExtra,
+  });
+}
+
 const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   filename,
   article,
@@ -42,7 +72,13 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const savedMarkdownRef = useRef(article.content);
   const [liveBody, setLiveBody] = useState(article.content);
+  const [draftFm, setDraftFm] = useState<FrontmatterData>(() =>
+    cloneFrontmatter(article.frontmatter),
+  );
   const prevFilenameRef = useRef<string | null>(null);
+  const savedFmSnapshotRef = useRef(snapshotFrontmatter(article.frontmatter));
+  const draftFmRef = useRef(draftFm);
+  draftFmRef.current = draftFm;
 
   const bumpFindRef = useRef(onLiveFindVersionBump);
   bumpFindRef.current = onLiveFindVersionBump;
@@ -56,6 +92,29 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
     }, FIND_BUMP_DEBOUNCE_MS);
   }, []);
 
+  const syncDirty = useCallback(() => {
+    const raw = viewRef.current?.state.doc.toString() ?? "";
+    const bodyDirty = !sameNormalized(
+      normalizeLiveMarkdownForVault(raw),
+      savedMarkdownRef.current,
+    );
+    const fmDirty =
+      snapshotFrontmatter(draftFmRef.current) !== savedFmSnapshotRef.current;
+    setIsDirty(bodyDirty || fmDirty);
+  }, []);
+
+  const patchDraftFm = useCallback(
+    (mutate: (prev: FrontmatterData) => FrontmatterData) => {
+      setDraftFm((prev) => {
+        const next = mutate(prev);
+        draftFmRef.current = next;
+        queueMicrotask(syncDirty);
+        return next;
+      });
+    },
+    [syncDirty],
+  );
+
   const docLabel =
     filename.split("/").pop()?.replace(/\.md$/i, "") ?? filename;
 
@@ -63,17 +122,26 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   useEffect(() => {
     const switchedFile = prevFilenameRef.current !== filename;
     prevFilenameRef.current = filename;
+    const fm = cloneFrontmatter(article.frontmatter);
     if (switchedFile) {
       savedMarkdownRef.current = bodyFromParent;
       setLiveBody(bodyFromParent);
+      setDraftFm(fm);
+      draftFmRef.current = fm;
+      savedFmSnapshotRef.current = snapshotFrontmatter(fm);
       setIsDirty(false);
       return;
     }
-    if (sameNormalized(bodyFromParent, savedMarkdownRef.current)) return;
-    savedMarkdownRef.current = bodyFromParent;
-    setLiveBody(bodyFromParent);
+    if (isDirty) return;
+    if (!sameNormalized(bodyFromParent, savedMarkdownRef.current)) {
+      savedMarkdownRef.current = bodyFromParent;
+      setLiveBody(bodyFromParent);
+    }
+    setDraftFm(fm);
+    draftFmRef.current = fm;
+    savedFmSnapshotRef.current = snapshotFrontmatter(fm);
     setIsDirty(false);
-  }, [filename, bodyFromParent]);
+  }, [filename, bodyFromParent, article, isDirty]);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -90,8 +158,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
 
     const changeListener = EditorView.updateListener.of((update) => {
       if (update.docChanged) {
-        const currentContent = update.state.doc.toString();
-        setIsDirty(!sameNormalized(currentContent, savedMarkdownRef.current));
+        syncDirty();
         scheduleFindBump();
       }
     });
@@ -121,7 +188,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       view.destroy();
       viewRef.current = null;
     };
-  }, [scheduleFindBump]);
+  }, [scheduleFindBump, syncDirty]);
 
   useEffect(() => {
     const v = viewRef.current;
@@ -131,9 +198,9 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
     v.dispatch({
       changes: { from: 0, to: v.state.doc.length, insert: liveBody },
     });
-    setIsDirty(!sameNormalized(liveBody, savedMarkdownRef.current));
+    syncDirty();
     scheduleFindBump();
-  }, [liveBody, scheduleFindBump]);
+  }, [liveBody, scheduleFindBump, syncDirty]);
 
   useEffect(() => {
     bumpFindRef.current?.();
@@ -142,7 +209,8 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   const handleSave = useCallback(async () => {
     const raw = viewRef.current?.state.doc.toString() ?? "";
     const editorContent = normalizeLiveMarkdownForVault(raw);
-    const trimmedTitle = (article.frontmatter.title ?? "").trim();
+    const fm0 = draftFmRef.current;
+    const trimmedTitle = (fm0.title ?? "").trim();
     if (!trimmedTitle) {
       setSaveStatus("error");
       return;
@@ -152,10 +220,10 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
     try {
       const now = new Date().toISOString();
       const frontmatter: FrontmatterData = {
-        ...article.frontmatter,
+        ...fm0,
         title: trimmedTitle,
-        tags: article.frontmatter.tags ?? [],
-        created: article.frontmatter.created || now,
+        tags: fm0.tags ?? [],
+        created: (fm0.created ?? "").trim() || now,
         modified: now,
       };
 
@@ -169,6 +237,9 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       await window.api.saveArticle(toSave);
       savedMarkdownRef.current = editorContent;
       setLiveBody(editorContent);
+      setDraftFm(cloneFrontmatter(frontmatter));
+      draftFmRef.current = cloneFrontmatter(frontmatter);
+      savedFmSnapshotRef.current = snapshotFrontmatter(frontmatter);
       setIsDirty(false);
       onAfterSave?.();
       setSaveStatus("saved");
@@ -178,7 +249,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       console.error("Failed to save article:", err);
       setSaveStatus("error");
     }
-  }, [article.frontmatter, onAfterSave]);
+  }, [onAfterSave]);
 
   useEffect(() => {
     saveHandlerRef.current = handleSave;
@@ -227,6 +298,10 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
         void window.api.getArticle(filename).then((next) => {
           savedMarkdownRef.current = next.content;
           setLiveBody(next.content);
+          const fm = cloneFrontmatter(next.frontmatter);
+          setDraftFm(fm);
+          draftFmRef.current = fm;
+          savedFmSnapshotRef.current = snapshotFrontmatter(fm);
           setIsDirty(false);
         });
       }
@@ -245,11 +320,12 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       if (!el?.closest(".article-live-editor")) return;
 
       const inToolbar = !!el?.closest(".article-editor__toolbar");
+      const inProps = !!el?.closest(".article-live-editor__properties");
       const inCm =
         !!el?.closest(".cm-editor") ||
         !!el?.closest(".cm-content") ||
         !!el?.closest(".cm-scroller");
-      if (!inToolbar && !inCm) return;
+      if (!inToolbar && !inCm && !inProps) return;
 
       e.preventDefault();
       saveHandlerRef.current();
@@ -274,7 +350,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       : saveStatus === "saved"
         ? "Saved"
         : saveStatus === "error"
-          ? article.frontmatter.title?.trim()
+          ? draftFm.title?.trim()
             ? "Error saving"
             : "Title is required"
           : "";
@@ -319,6 +395,98 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
             Save
           </button>
         </div>
+      </div>
+
+      <div className="article-live-editor__properties" data-article-properties>
+        <h3 className="article-live-editor__properties-title">Properties</h3>
+        <div className="article-live-editor__prop-row">
+          <label htmlFor="live-fm-title">title</label>
+          <input
+            id="live-fm-title"
+            type="text"
+            value={draftFm.title ?? ""}
+            onChange={(e) =>
+              patchDraftFm((p) => ({ ...p, title: e.target.value }))
+            }
+            placeholder="Article title"
+            autoComplete="off"
+          />
+        </div>
+        <div className="article-live-editor__prop-row">
+          <label htmlFor="live-fm-tags">tags</label>
+          <input
+            id="live-fm-tags"
+            type="text"
+            value={(draftFm.tags ?? []).join(", ")}
+            onChange={(e) => {
+              const tags = e.target.value
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+              patchDraftFm((p) => ({ ...p, tags }));
+            }}
+            placeholder="comma-separated"
+            autoComplete="off"
+          />
+        </div>
+        <div className="article-live-editor__prop-row">
+          <label htmlFor="live-fm-created">created</label>
+          <input
+            id="live-fm-created"
+            type="text"
+            value={draftFm.created ?? ""}
+            onChange={(e) =>
+              patchDraftFm((p) => ({ ...p, created: e.target.value }))
+            }
+            placeholder="ISO 8601 date"
+            autoComplete="off"
+          />
+        </div>
+        <div className="article-live-editor__prop-row">
+          <label>updated</label>
+          <p className="article-live-editor__prop-hint">
+            {draftFm.modified
+              ? new Date(draftFm.modified).toLocaleString()
+              : "Set automatically when you save"}
+          </p>
+        </div>
+        {Object.entries(draftFm)
+          .filter(
+            ([k, v]) => !FM_SNAPSHOT_SKIP.has(k) && typeof v === "string",
+          )
+          .map(([k, v]) => (
+            <div key={k} className="article-live-editor__prop-row">
+              <label htmlFor={`live-fm-${k}`}>{k}</label>
+              <input
+                id={`live-fm-${k}`}
+                type="text"
+                value={v as string}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  patchDraftFm((p) => ({ ...p, [k]: val }));
+                }}
+                autoComplete="off"
+              />
+            </div>
+          ))}
+        {Object.entries(draftFm)
+          .filter(([k, v]) => !FM_SNAPSHOT_SKIP.has(k) && Array.isArray(v))
+          .map(([k, v]) => (
+            <div key={k} className="article-live-editor__prop-row">
+              <label htmlFor={`live-fm-arr-${k}`}>{k}</label>
+              <textarea
+                id={`live-fm-arr-${k}`}
+                value={(v as unknown[]).map(String).join("\n")}
+                onChange={(e) => {
+                  const lines = e.target.value
+                    .split("\n")
+                    .map((l) => l.trim())
+                    .filter((l) => l.length > 0);
+                  patchDraftFm((p) => ({ ...p, [k]: lines }));
+                }}
+              />
+            </div>
+          ))}
       </div>
 
       <div className="article-live-editor__surface article-editor__cm-wrapper">

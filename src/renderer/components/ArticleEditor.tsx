@@ -7,6 +7,7 @@ import { useNavigation } from './AppShell';
 import { serializeArticleFile } from '../../shared/markdown-parser';
 import { obsidianSyntaxExtensions } from '../extensions/obsidian-syntax';
 import { wikilinkAutocomplete } from '../extensions/wikilink-autocomplete';
+import { luminaMarkdownSyntaxHighlightExtensions } from '../extensions/cm-syntax-heading-no-underline';
 import type { ArticleFile, FrontmatterData } from '../../shared/types';
 import LLMAssistPanel from './LLMAssistPanel';
 import { useCodeMirrorFindBackend } from '../find/use-codemirror-find-backend';
@@ -228,6 +229,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
       doc: '',
       extensions: [
         basicSetup,
+        ...luminaMarkdownSyntaxHighlightExtensions,
         markdown(),
         saveKeymap,
         EditorView.lineWrapping,
@@ -435,11 +437,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
     saveStatus === 'idle' ? '' :
       `article-editor__status--${saveStatus}`;
 
-  const docLabel =
-    embedded && editingFilename
-      ? editingFilename.split('/').pop()?.replace(/\.md$/i, '') ?? editingFilename
-      : null;
-
   return (
     <div
       className={
@@ -455,15 +452,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
             type="button"
             className="article-editor__back-btn"
             onClick={handleBack}
-            aria-label={embedded ? 'Back to preview' : 'Back to articles'}
+            aria-label={embedded ? 'Cancel editing and return to preview' : 'Back to articles'}
           >
-            {embedded ? 'Done' : '← Back'}
+            {embedded ? 'Cancel' : '← Back'}
           </button>
-          {docLabel && (
-            <span className="article-editor__doc-label" title={editingFilename ?? undefined}>
-              {docLabel}
-            </span>
-          )}
         </div>
         <div className="article-editor__toolbar-right">
           {embedded && (

@@ -19,12 +19,39 @@ function slugify(text: string): string {
     .trim();
 }
 
+/** Trailing whitespace ignored for fenced-block delimiter lines (CommonMark). */
+function lineTrimEnd(s: string): string {
+  return s.replace(/\s+$/, "");
+}
+
 export function extractHeadings(markdown: string): TocHeading[] {
   const headings: TocHeading[] = [];
   const idCounts: Record<string, number> = {};
+  /** When set, we are inside a fenced code block (``` or ~~~). */
+  let fence: { char: "`" | "~"; len: number } | null = null;
 
   for (const line of markdown.split("\n")) {
-    const match = line.match(/^(#{1,6})\s+(.+)$/);
+    const endStripped = lineTrimEnd(line);
+
+    if (fence) {
+      const ch = fence.char;
+      const closeRe = ch === "`" ? /^ {0,3}(`+)\s*$/ : /^ {0,3}(~+)\s*$/;
+      const cm = endStripped.match(closeRe);
+      if (cm && cm[1][0] === ch && cm[1].length >= fence.len) {
+        fence = null;
+      }
+      continue;
+    }
+
+    const open = endStripped.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (open) {
+      const run = open[1];
+      fence = { char: run[0] as "`" | "~", len: run.length };
+      continue;
+    }
+
+    // ATX headings: up to 3 leading spaces (CommonMark); skip inside code (handled above).
+    const match = line.match(/^ {0,3}(#{1,6})\s+(.+)$/);
     if (!match) continue;
     const level = match[1].length;
     const text = match[2]

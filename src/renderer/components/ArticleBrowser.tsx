@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { ArticleFile } from '../../shared/types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { ArticleFile, FrontmatterData } from '../../shared/types';
 import { markdownArticleBodyToHtml } from '../lib/article-markdown-preview-html';
 import { titleToFilename } from '../../shared/markdown-parser';
 import { useNavigation } from './AppShell';
@@ -8,21 +8,22 @@ import { AlignLeft, Calendar, List, Tag, X } from 'lucide-react';
 import hljs from 'highlight.js';
 import { useDomFindBackend } from '../find/use-dom-find-backend';
 import ArticleLiveEditor from './ArticleLiveEditor';
+import { ArticleFrontmatterFields, cloneFrontmatter } from './ArticleFrontmatterFields';
 
 const markdownToHtml = markdownArticleBodyToHtml;
 
 // ── Date formatting ────────────────────────────────────────────
 
+/** Local calendar date as `YYYY-MM-DD` (numeric only). */
 const formatDate = (iso: string): string => {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   } catch {
     return '—';
   }
@@ -139,6 +140,45 @@ const FileViewer: React.FC<{ filename: string }> = ({ filename }) => {
   }
 
   return <div className="article-browser__status">Preview not available for this file type.</div>;
+};
+
+/** Inline markdown edit: properties stay in the preview slot; editor only edits body here. */
+const InlineArticleLiveBlock: React.FC<{
+  filename: string;
+  article: ArticleFile;
+  findRootRef: React.RefObject<HTMLDivElement | null>;
+  onLiveFindVersionBump?: () => void;
+  onAfterSave?: () => void;
+}> = ({ filename, article, findRootRef, onLiveFindVersionBump, onAfterSave }) => {
+  const [fm, setFm] = useState(() => cloneFrontmatter(article.frontmatter));
+
+  useEffect(() => {
+    setFm(cloneFrontmatter(article.frontmatter));
+  }, [article.frontmatter.modified, filename]);
+
+  const onPatch = useCallback((mutate: (prev: FrontmatterData) => FrontmatterData) => {
+    setFm((prev) => mutate(prev));
+  }, []);
+
+  const externalFm = useMemo(() => ({ draft: fm, onPatch }), [fm, onPatch]);
+
+  return (
+    <div className="article-browser__inline-live article-live-editor">
+      <div className="article-live-editor__properties" data-article-properties>
+        <h3 className="article-live-editor__properties-title">Properties</h3>
+        <ArticleFrontmatterFields draftFm={fm} onPatch={onPatch} />
+      </div>
+      <ArticleLiveEditor
+        filename={filename}
+        article={{ ...article, frontmatter: fm }}
+        findRootRef={findRootRef}
+        onLiveFindVersionBump={onLiveFindVersionBump}
+        onAfterSave={onAfterSave}
+        externalFrontmatter={externalFm}
+        hidePropertiesPanel
+      />
+    </div>
+  );
 };
 
 // ── ArticleBrowser (viewer-only) ───────────────────────────────
@@ -335,8 +375,17 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
 
   // ── Render ─────────────────────────────────────────────────────
 
+  const isFilePreview =
+    !!selectedFilename &&
+    !selectedFilename.toLowerCase().endsWith('.md') &&
+    !articleLoading &&
+    !articleError &&
+    !article;
+
   return (
-    <section className="article-browser__view">
+    <section
+      className={`article-browser__view${isFilePreview ? ' article-browser__view--no-top-mask' : ''}`}
+    >
       {!selectedFilename && (
         <div className="article-browser__empty">Select an article to view</div>
       )}
@@ -371,7 +420,8 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
             </h1>
           )}
 
-          {/* Properties panel */}
+          {/* Properties panel — read-only preview; inline edit uses the same slot above the editor */}
+          {!inlineEditActive && (
           <div className="mb-6 pb-4 border-b border-border">
             <h2 className="text-sm font-semibold text-text-primary mb-3">Properties</h2>
             <div className="flex flex-col gap-2.5">
@@ -459,9 +509,10 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
               )}
             </div>
           </div>
+          )}
 
           {inlineEditActive && currentFilename ? (
-            <ArticleLiveEditor
+            <InlineArticleLiveBlock
               filename={currentFilename}
               article={article}
               findRootRef={liveEditorFindRootRef}

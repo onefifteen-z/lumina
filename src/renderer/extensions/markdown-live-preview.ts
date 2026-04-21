@@ -13,19 +13,49 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
+import hljs from "highlight.js";
 import {
   findPipeTableBlockRangesInDoc,
   markdownTableBlockToHtmlTableElement,
 } from "./markdown-live-preview-table";
 
-/** Inline + theme: syntax highlighting sets color on nested spans, so we must win with !important. */
-const HIDDEN = Decoration.mark({
-  attributes: {
-    class: "cm-lp-mark-hidden",
-    style:
-      "color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;",
-  },
-});
+/**
+ * Split a `FencedCode` node’s document slice into language info (if any) and
+ * inner body text (no opening / closing fence lines).
+ */
+export function fencedCodeSliceToBodyAndLang(raw: string): {
+  lang: string | null;
+  body: string;
+} {
+  const lines = raw.split("\n");
+  if (lines.length === 0) return { lang: null, body: "" };
+  const first = lines[0]!;
+  const m = first.match(/^(\s*)(`{3,}|~{3,})(.*)$/);
+  if (!m) return { lang: null, body: raw };
+  const fenceCh = m[2]![0]!;
+  const openLen = m[2]!.length;
+  const langPart = m[3]!.trim();
+  const lang = langPart.length > 0 ? langPart : null;
+  const closeRe = new RegExp(
+    "^\\s*" + (fenceCh === "`" ? "`" : "~") + `{${openLen},}\\s*$`,
+  );
+  let end = lines.length;
+  if (lines.length >= 2 && closeRe.test(lines[lines.length - 1]!)) {
+    end = lines.length - 1;
+  }
+  const body = lines.slice(1, end).join("\n");
+  return { lang, body };
+}
+
+/**
+ * Collapse hidden markdown markers (ATX `#`, `**`, link brackets, …) so they
+ * do not reserve horizontal space. `Decoration.mark` + transparent text still
+ * advances the layout; `Decoration.replace({})` removes the range from line
+ * width (see CM docs: replace with no widget “simply hides” the span).
+ */
+function hiddenSyntaxReplace(): Decoration {
+  return Decoration.replace({});
+}
 
 const HIDE_NODE_NAMES = new Set([
   "HeaderMark",
@@ -37,6 +67,28 @@ const HIDE_NODE_NAMES = new Set([
 
 function hasNonEmptySelection(state: EditorState): boolean {
   return state.selection.ranges.some((r) => !r.empty);
+}
+
+/** Include ATX / setext `#` or `=-` marks plus following horizontal spaces in the hide range. */
+function headerMarkHideExtent(
+  doc: EditorState["doc"],
+  from: number,
+  to: number,
+): { from: number; to: number } {
+  const mark = doc.sliceString(from, to);
+  if (!mark.length) return { from, to };
+  const isAtx = /^#+$/.test(mark);
+  const isSetextUnderline = /^[=-]+$/.test(mark);
+  if (!isAtx && !isSetextUnderline) return { from, to };
+
+  let end = to;
+  while (end < doc.length) {
+    const c = doc.sliceString(end, end + 1);
+    if (c === "\n" || c === "\r") break;
+    if (c !== " " && c !== "\t") break;
+    end++;
+  }
+  return { from, to: end };
 }
 
 function emphasisRangeAt(tree: ReturnType<typeof syntaxTree>, pos: number) {
@@ -155,6 +207,103 @@ class TablePreviewWidget extends WidgetType {
   }
 }
 
+function caretPosWhenEditingCodeBlock(
+  doc: EditorState["doc"],
+  from: number,
+  to: number,
+  kind: "fence" | "indent",
+): number {
+  if (kind === "indent") return Math.min(from + 1, doc.length);
+  const first = doc.lineAt(from);
+  if (first.to + 1 < to) return Math.min(first.to + 1, doc.length);
+  return Math.min(from + 1, doc.length);
+}
+
+class CodeBlockPreviewWidget extends WidgetType {
+  constructor(
+    readonly blockFrom: number,
+    readonly blockTo: number,
+    readonly source: string,
+    readonly kind: "fence" | "indent",
+  ) {
+    super();
+  }
+
+  eq(other: WidgetType): boolean {
+    return (
+      other instanceof CodeBlockPreviewWidget &&
+      other.blockFrom === this.blockFrom &&
+      other.blockTo === this.blockTo &&
+      other.source === this.source &&
+      other.kind === this.kind
+    );
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const root = document.createElement("div");
+    root.className = "cm-lp-code-preview";
+
+    const pre = document.createElement("pre");
+    const codeEl = document.createElement("code");
+    pre.appendChild(codeEl);
+
+    if (this.kind === "fence") {
+      const { lang, body } = fencedCodeSliceToBodyAndLang(this.source);
+      if (lang) {
+        const toolbar = document.createElement("div");
+        toolbar.className = "cm-lp-code-preview__toolbar";
+        const lab = document.createElement("span");
+        lab.className = "cm-lp-code-preview__lang";
+        lab.textContent = lang;
+        toolbar.appendChild(lab);
+        root.appendChild(toolbar);
+      }
+      let html: string | null = null;
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          html = hljs.highlight(body, { language: lang, ignoreIllegals: true }).value;
+        } catch {
+          html = null;
+        }
+      }
+      if (html === null && body.length > 0) {
+        try {
+          html = hljs.highlightAuto(body).value;
+        } catch {
+          html = null;
+        }
+      }
+      if (html !== null) {
+        codeEl.innerHTML = html;
+      } else {
+        codeEl.textContent = body;
+      }
+      codeEl.className = "hljs";
+    } else {
+      codeEl.textContent = this.source;
+      codeEl.className = "cm-lp-code-preview__plain";
+    }
+
+    root.appendChild(pre);
+
+    root.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      view.focus();
+      const pos = caretPosWhenEditingCodeBlock(
+        view.state.doc,
+        this.blockFrom,
+        this.blockTo,
+        this.kind,
+      );
+      view.dispatch({
+        selection: { anchor: pos, head: pos },
+        scrollIntoView: true,
+      });
+    });
+    return root;
+  }
+}
+
 function rangesOverlap(
   a: { from: number; to: number },
   b: { from: number; to: number },
@@ -222,9 +371,60 @@ function buildTableDecorationSet(state: EditorState): DecorationSet {
   return pieces.length ? Decoration.set(pieces, true) : Decoration.none;
 }
 
+function buildCodeBlockDecorationSet(state: EditorState): DecorationSet {
+  if (hasNonEmptySelection(state)) return Decoration.none;
+
+  const doc = state.doc;
+  const parseUpto = doc.length;
+  if (!syntaxTreeAvailable(state, parseUpto)) {
+    ensureSyntaxTree(state, parseUpto, 200);
+  }
+
+  const tree = syntaxTree(state);
+  const head = state.selection.main.head;
+
+  const blocks: { from: number; to: number; kind: "fence" | "indent" }[] = [];
+  tree.iterate({
+    from: 0,
+    to: doc.length,
+    enter: (ref) => {
+      if (ref.type.name === "FencedCode") {
+        blocks.push({ from: ref.from, to: ref.to, kind: "fence" });
+        return false;
+      }
+      if (ref.type.name === "CodeBlock") {
+        blocks.push({ from: ref.from, to: ref.to, kind: "indent" });
+        return false;
+      }
+    },
+  });
+
+  const pieces: { from: number; to: number; value: Decoration }[] = [];
+  for (const block of blocks) {
+    if (head >= block.from && head <= block.to) continue;
+    const slice = doc.sliceString(block.from, block.to);
+    pieces.push({
+      from: block.from,
+      to: block.to,
+      value: Decoration.replace({
+        block: true,
+        widget: new CodeBlockPreviewWidget(block.from, block.to, slice, block.kind),
+      }),
+    });
+  }
+
+  return pieces.length ? Decoration.set(pieces, true) : Decoration.none;
+}
+
 const tablePreviewDecoField = StateField.define<DecorationSet>({
   create: buildTableDecorationSet,
   update: (_deco, tr) => buildTableDecorationSet(tr.state),
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+const codeBlockPreviewDecoField = StateField.define<DecorationSet>({
+  create: buildCodeBlockDecorationSet,
+  update: (_deco, tr) => buildCodeBlockDecorationSet(tr.state),
   provide: (f) => EditorView.decorations.from(f),
 });
 
@@ -265,7 +465,9 @@ function buildMarkDecorations(view: EditorView): DecorationSet {
       const name = ref.type.name;
 
       if (name === "FencedCode" || name === "CodeBlock") return false;
-      if (name === "Table") return false;
+      // Descend into Table so `**bold**` and other inline marks inside cells get
+      // the same live-preview treatment as outside tables (skipping used to
+      // leave literal `**` visible and layout-inconsistent).
 
       if (name === "ListMark") {
         if (cursorOnSameLine(doc, head, from)) return;
@@ -289,7 +491,8 @@ function buildMarkDecorations(view: EditorView): DecorationSet {
 
       if (name === "HeaderMark") {
         if (cursorOnSameLine(doc, head, from)) return;
-        push(from, to);
+        const span = headerMarkHideExtent(doc, from, to);
+        push(span.from, span.to);
         return;
       }
 
@@ -338,7 +541,7 @@ function buildMarkDecorations(view: EditorView): DecorationSet {
 
   const pieces: { from: number; to: number; value: Decoration }[] = [];
   for (const { from, to } of ranges) {
-    pieces.push({ from, to, value: HIDDEN });
+    pieces.push({ from, to, value: hiddenSyntaxReplace() });
   }
   pieces.push(...inlinePieces);
 
@@ -347,16 +550,6 @@ function buildMarkDecorations(view: EditorView): DecorationSet {
 }
 
 const livePreviewTheme = EditorView.baseTheme({
-  ".cm-lp-mark-hidden": {
-    textShadow: "none",
-    fontSize: "inherit",
-  },
-  ".cm-lp-mark-hidden, .cm-lp-mark-hidden *": {
-    color: "transparent !important",
-    textShadow: "none !important",
-    // Highlighting uses this on Safari / some themes
-    WebkitTextFillColor: "transparent !important",
-  },
   ".cm-lp-list-bullet-widget": {
     display: "inline-block",
     minWidth: "0.55em",
@@ -387,6 +580,40 @@ const livePreviewTheme = EditorView.baseTheme({
     fontSize: "0.85em",
     whiteSpace: "pre-wrap",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  },
+  ".cm-lp-code-preview": {
+    cursor: "pointer",
+    marginBottom: "0.6em",
+    borderRadius: "8px",
+    border: "1px solid var(--color-border)",
+    background: "var(--color-bg-secondary)",
+    overflow: "hidden",
+  },
+  ".cm-lp-code-preview__toolbar": {
+    padding: "4px 10px",
+    borderBottom: "1px solid var(--color-border)",
+    fontSize: "11px",
+    color: "var(--color-text-secondary)",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  },
+  ".cm-lp-code-preview__lang": {
+    opacity: 0.9,
+  },
+  ".cm-lp-code-preview pre": {
+    margin: "0",
+    padding: "10px 12px",
+    overflowX: "auto",
+    fontSize: "0.85em",
+    lineHeight: 1.45,
+    background: "transparent",
+  },
+  ".cm-lp-code-preview pre code": {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    padding: "0",
+    background: "none",
+  },
+  ".cm-lp-code-preview__plain": {
+    whiteSpace: "pre",
   },
 });
 
@@ -420,7 +647,14 @@ const livePreviewPlugin = ViewPlugin.fromClass(
  * selection shows raw markdown everywhere. GFM pipe tables render as HTML
  * (via a StateField decoration set) while the caret is outside the table;
  * click the preview or move the caret into the block to edit the source.
+ * Fenced / indented code blocks likewise render as highlighted previews when
+ * the caret is outside the block.
  */
 export function markdownLivePreview(): Extension {
-  return [livePreviewTheme, tablePreviewDecoField, livePreviewPlugin];
+  return [
+    livePreviewTheme,
+    tablePreviewDecoField,
+    codeBlockPreviewDecoField,
+    livePreviewPlugin,
+  ];
 }

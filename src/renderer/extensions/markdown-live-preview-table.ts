@@ -64,7 +64,7 @@ export function parseMarkdownPipeTableBlock(src: string): ParsedPipeTable | null
 
 /**
  * Parse a GFM-style pipe table block (as in the editor) into an HTML table.
- * Cell text is plain text only (no inline markdown). Browser only.
+ * Cell text supports `**bold**` spans; other content is plain text. Browser only.
  */
 export function markdownTableBlockToHtmlTableElement(
   src: string,
@@ -77,7 +77,7 @@ export function markdownTableBlockToHtmlTableElement(
   const thr = document.createElement("tr");
   for (const h of parsed.headers) {
     const th = document.createElement("th");
-    th.textContent = h;
+    appendTableCellInlineMd(th, h);
     thr.appendChild(th);
   }
   thead.appendChild(thr);
@@ -88,13 +88,32 @@ export function markdownTableBlockToHtmlTableElement(
     const tr = document.createElement("tr");
     for (const cell of row) {
       const td = document.createElement("td");
-      td.textContent = cell;
+      appendTableCellInlineMd(td, cell);
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
   return table;
+}
+
+/**
+ * Render `**bold**` inside a table cell (preview widget only). Other markdown
+ * stays plain text so we avoid XSS from HTML-like cell content.
+ */
+function appendTableCellInlineMd(el: HTMLElement, raw: string): void {
+  const parts = raw.split(/(\*\*[^*]+\*\*)/g);
+  for (const p of parts) {
+    if (!p) continue;
+    const m = p.match(/^\*\*([^*]+)\*\*$/);
+    if (m) {
+      const strong = document.createElement("strong");
+      strong.textContent = m[1]!;
+      el.appendChild(strong);
+    } else {
+      el.appendChild(document.createTextNode(p));
+    }
+  }
 }
 
 function splitPipeRow(line: string): string[] {

@@ -10,10 +10,21 @@ import { normalizeLiveMarkdownForVault } from "../lib/live-editor-markdown";
 import { obsidianSyntaxExtensions } from "../extensions/obsidian-syntax";
 import { wikilinkAutocomplete } from "../extensions/wikilink-autocomplete";
 import { markdownLivePreview } from "../extensions/markdown-live-preview";
+import { luminaMarkdownSyntaxHighlightExtensions } from "../extensions/cm-syntax-heading-no-underline";
+import {
+  ArticleFrontmatterFields,
+  FM_SNAPSHOT_SKIP,
+  cloneFrontmatter,
+} from "./ArticleFrontmatterFields";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 const FIND_BUMP_DEBOUNCE_MS = 200;
+
+export type ExternalFrontmatterBinding = {
+  draft: FrontmatterData;
+  onPatch: (mutate: (prev: FrontmatterData) => FrontmatterData) => void;
+};
 
 export interface ArticleLiveEditorProps {
   filename: string;
@@ -21,22 +32,14 @@ export interface ArticleLiveEditorProps {
   findRootRef: React.RefObject<HTMLDivElement | null>;
   onLiveFindVersionBump?: () => void;
   onAfterSave?: () => void;
+  /** Parent-owned frontmatter draft (e.g. inline edit in ArticleBrowser). */
+  externalFrontmatter?: ExternalFrontmatterBinding;
+  /** Hide the Properties block here — parent renders fields in-place. */
+  hidePropertiesPanel?: boolean;
 }
 
 const sameNormalized = (a: string, b: string): boolean =>
   normalizeLiveMarkdownForVault(a) === normalizeLiveMarkdownForVault(b);
-
-const FM_SNAPSHOT_SKIP = new Set([
-  "title",
-  "tags",
-  "created",
-  "modified",
-  "_corrupted",
-]);
-
-function cloneFrontmatter(fm: FrontmatterData): FrontmatterData {
-  return JSON.parse(JSON.stringify(fm)) as FrontmatterData;
-}
 
 function snapshotFrontmatter(fm: FrontmatterData): string {
   const extra: Record<string, unknown> = {};
@@ -62,6 +65,8 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   findRootRef,
   onLiveFindVersionBump,
   onAfterSave,
+  externalFrontmatter,
+  hidePropertiesPanel = false,
 }) => {
   const { navigate } = useNavigation();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -72,13 +77,16 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const savedMarkdownRef = useRef(article.content);
   const [liveBody, setLiveBody] = useState(article.content);
-  const [draftFm, setDraftFm] = useState<FrontmatterData>(() =>
+  const [internalDraftFm, setInternalDraftFm] = useState<FrontmatterData>(() =>
     cloneFrontmatter(article.frontmatter),
   );
   const prevFilenameRef = useRef<string | null>(null);
   const savedFmSnapshotRef = useRef(snapshotFrontmatter(article.frontmatter));
-  const draftFmRef = useRef(draftFm);
-  draftFmRef.current = draftFm;
+  const effectiveDraftFm = externalFrontmatter?.draft ?? internalDraftFm;
+  const draftFmRef = useRef(effectiveDraftFm);
+  draftFmRef.current = effectiveDraftFm;
+  const externalFmRef = useRef(externalFrontmatter);
+  externalFmRef.current = externalFrontmatter;
 
   const bumpFindRef = useRef(onLiveFindVersionBump);
   bumpFindRef.current = onLiveFindVersionBump;
@@ -105,7 +113,13 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
 
   const patchDraftFm = useCallback(
     (mutate: (prev: FrontmatterData) => FrontmatterData) => {
-      setDraftFm((prev) => {
+      const ext = externalFmRef.current;
+      if (ext) {
+        ext.onPatch(mutate);
+        queueMicrotask(syncDirty);
+        return;
+      }
+      setInternalDraftFm((prev) => {
         const next = mutate(prev);
         draftFmRef.current = next;
         queueMicrotask(syncDirty);
@@ -115,9 +129,6 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
     [syncDirty],
   );
 
-  const docLabel =
-    filename.split("/").pop()?.replace(/\.md$/i, "") ?? filename;
-
   const bodyFromParent = article.content;
   useEffect(() => {
     const switchedFile = prevFilenameRef.current !== filename;
@@ -126,9 +137,14 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
     if (switchedFile) {
       savedMarkdownRef.current = bodyFromParent;
       setLiveBody(bodyFromParent);
-      setDraftFm(fm);
-      draftFmRef.current = fm;
+      if (!externalFmRef.current) {
+        setInternalDraftFm(fm);
+        draftFmRef.current = fm;
+      }
       savedFmSnapshotRef.current = snapshotFrontmatter(fm);
+      if (externalFmRef.current) {
+        draftFmRef.current = externalFmRef.current.draft;
+      }
       setIsDirty(false);
       return;
     }
@@ -137,9 +153,14 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       savedMarkdownRef.current = bodyFromParent;
       setLiveBody(bodyFromParent);
     }
-    setDraftFm(fm);
-    draftFmRef.current = fm;
+    if (!externalFmRef.current) {
+      setInternalDraftFm(fm);
+      draftFmRef.current = fm;
+    }
     savedFmSnapshotRef.current = snapshotFrontmatter(fm);
+    if (externalFmRef.current) {
+      draftFmRef.current = externalFmRef.current.draft;
+    }
     setIsDirty(false);
   }, [filename, bodyFromParent, article, isDirty]);
 
@@ -167,6 +188,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       doc: savedMarkdownRef.current,
       extensions: [
         basicSetup,
+        ...luminaMarkdownSyntaxHighlightExtensions,
         markdown(),
         saveKeymap,
         EditorView.lineWrapping,
@@ -209,7 +231,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
   const handleSave = useCallback(async () => {
     const raw = viewRef.current?.state.doc.toString() ?? "";
     const editorContent = normalizeLiveMarkdownForVault(raw);
-    const fm0 = draftFmRef.current;
+    const fm0 = externalFmRef.current?.draft ?? draftFmRef.current;
     const trimmedTitle = (fm0.title ?? "").trim();
     if (!trimmedTitle) {
       setSaveStatus("error");
@@ -224,7 +246,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
         title: trimmedTitle,
         tags: fm0.tags ?? [],
         created: (fm0.created ?? "").trim() || now,
-        modified: now,
+        modified: (fm0.modified ?? "").trim() || now,
       };
 
       const toSave: ArticleFile = {
@@ -237,8 +259,10 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       await window.api.saveArticle(toSave);
       savedMarkdownRef.current = editorContent;
       setLiveBody(editorContent);
-      setDraftFm(cloneFrontmatter(frontmatter));
-      draftFmRef.current = cloneFrontmatter(frontmatter);
+      if (!externalFmRef.current) {
+        setInternalDraftFm(cloneFrontmatter(frontmatter));
+        draftFmRef.current = cloneFrontmatter(frontmatter);
+      }
       savedFmSnapshotRef.current = snapshotFrontmatter(frontmatter);
       setIsDirty(false);
       onAfterSave?.();
@@ -299,8 +323,13 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
           savedMarkdownRef.current = next.content;
           setLiveBody(next.content);
           const fm = cloneFrontmatter(next.frontmatter);
-          setDraftFm(fm);
-          draftFmRef.current = fm;
+          if (externalFmRef.current) {
+            externalFmRef.current.onPatch(() => fm);
+            draftFmRef.current = fm;
+          } else {
+            setInternalDraftFm(fm);
+            draftFmRef.current = fm;
+          }
           savedFmSnapshotRef.current = snapshotFrontmatter(fm);
           setIsDirty(false);
         });
@@ -350,7 +379,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       : saveStatus === "saved"
         ? "Saved"
         : saveStatus === "error"
-          ? draftFm.title?.trim()
+          ? effectiveDraftFm.title?.trim()
             ? "Error saving"
             : "Title is required"
           : "";
@@ -369,13 +398,10 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
             type="button"
             className="article-editor__back-btn"
             onClick={handleBack}
-            aria-label="Back to preview"
+            aria-label="Cancel editing and return to preview"
           >
-            Done
+            Cancel
           </button>
-          <span className="article-editor__doc-label" title={filename}>
-            {docLabel}
-          </span>
         </div>
         <div className="article-editor__toolbar-right">
           <span className="article-editor__kbd-hint" aria-hidden="true">
@@ -397,97 +423,12 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
         </div>
       </div>
 
-      <div className="article-live-editor__properties" data-article-properties>
-        <h3 className="article-live-editor__properties-title">Properties</h3>
-        <div className="article-live-editor__prop-row">
-          <label htmlFor="live-fm-title">title</label>
-          <input
-            id="live-fm-title"
-            type="text"
-            value={draftFm.title ?? ""}
-            onChange={(e) =>
-              patchDraftFm((p) => ({ ...p, title: e.target.value }))
-            }
-            placeholder="Article title"
-            autoComplete="off"
-          />
+      {!hidePropertiesPanel && (
+        <div className="article-live-editor__properties" data-article-properties>
+          <h3 className="article-live-editor__properties-title">Properties</h3>
+          <ArticleFrontmatterFields draftFm={effectiveDraftFm} onPatch={patchDraftFm} />
         </div>
-        <div className="article-live-editor__prop-row">
-          <label htmlFor="live-fm-tags">tags</label>
-          <input
-            id="live-fm-tags"
-            type="text"
-            value={(draftFm.tags ?? []).join(", ")}
-            onChange={(e) => {
-              const tags = e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              patchDraftFm((p) => ({ ...p, tags }));
-            }}
-            placeholder="comma-separated"
-            autoComplete="off"
-          />
-        </div>
-        <div className="article-live-editor__prop-row">
-          <label htmlFor="live-fm-created">created</label>
-          <input
-            id="live-fm-created"
-            type="text"
-            value={draftFm.created ?? ""}
-            onChange={(e) =>
-              patchDraftFm((p) => ({ ...p, created: e.target.value }))
-            }
-            placeholder="ISO 8601 date"
-            autoComplete="off"
-          />
-        </div>
-        <div className="article-live-editor__prop-row">
-          <label>updated</label>
-          <p className="article-live-editor__prop-hint">
-            {draftFm.modified
-              ? new Date(draftFm.modified).toLocaleString()
-              : "Set automatically when you save"}
-          </p>
-        </div>
-        {Object.entries(draftFm)
-          .filter(
-            ([k, v]) => !FM_SNAPSHOT_SKIP.has(k) && typeof v === "string",
-          )
-          .map(([k, v]) => (
-            <div key={k} className="article-live-editor__prop-row">
-              <label htmlFor={`live-fm-${k}`}>{k}</label>
-              <input
-                id={`live-fm-${k}`}
-                type="text"
-                value={v as string}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  patchDraftFm((p) => ({ ...p, [k]: val }));
-                }}
-                autoComplete="off"
-              />
-            </div>
-          ))}
-        {Object.entries(draftFm)
-          .filter(([k, v]) => !FM_SNAPSHOT_SKIP.has(k) && Array.isArray(v))
-          .map(([k, v]) => (
-            <div key={k} className="article-live-editor__prop-row">
-              <label htmlFor={`live-fm-arr-${k}`}>{k}</label>
-              <textarea
-                id={`live-fm-arr-${k}`}
-                value={(v as unknown[]).map(String).join("\n")}
-                onChange={(e) => {
-                  const lines = e.target.value
-                    .split("\n")
-                    .map((l) => l.trim())
-                    .filter((l) => l.length > 0);
-                  patchDraftFm((p) => ({ ...p, [k]: lines }));
-                }}
-              />
-            </div>
-          ))}
-      </div>
+      )}
 
       <div className="article-live-editor__surface article-editor__cm-wrapper">
         <div className="article-editor__cm article-live-editor__cm" ref={editorRef} />

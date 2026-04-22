@@ -18,6 +18,7 @@
   "guideKicker": "文档",
   "guideTitle": "使用说明",
   "guideLeadHtml": "<p>本文说明 Lumina 中 <strong>原始资料 → wiki → 问答 → 质检</strong> 的闭环。聊天行为遵循 vault 根目录 <code>CLAUDE.md</code> 的约定（若为空，运行时会使用内置模板）。抽取内容仅通过内置 <code>ingest_source</code> 工具，并遵循应用内置的 INGEST 协议。</p>",
+  "installMacNoteHtml": "<p><strong>macOS 内测版。</strong>当前分发版本尚未经 Apple 公证，系统会为应用打上隔离标记。将 <code>Lumina.app</code> 安装到 <code>/Applications</code> 后，请在终端执行一次：</p><div class=\"pre-block\"><pre>xattr -dr com.apple.quarantine /Applications/Lumina.app</pre></div><p>然后从 Finder 打开 Lumina 即可。</p>",
   "s1Title": "1. 创建 vault（知识库文件夹）",
   "s1Html": "<p><strong>Vault</strong> 即磁盘上的一个文件夹，作为整库根目录。</p><ol><li>首次启动或更换库时，在欢迎流程中<strong>选择文件夹</strong>；可用已有目录（如 Obsidian 库），也可先建空文件夹再选中。</li><li>若目录中<strong>没有 <code>CLAUDE.md</code></strong>，会出现 <strong>Initialize Vault</strong> 对话框：创建空的 <code>CLAUDE.md</code>、<code>raw/</code>（原始资料，助手侧不修改）、<code>wiki/</code>（结构化页面）。</li><li>若点 <strong>Skip</strong>，需自行创建 <code>CLAUDE.md</code>、<code>raw/</code>、<code>wiki/</code>，否则后续 ingest 与 wiki 流程无处写入。</li><li>建议将 vault 放在 <strong>Box</strong>、<strong>SharePoint 同步目录</strong> 或 <strong>Git 工作区</strong>，便于备份与协作。</li></ol>",
   "s2Title": "2. 配置",

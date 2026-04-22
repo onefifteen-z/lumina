@@ -8,7 +8,7 @@
 
 *Own your knowledge. Think with AI. Never leave your machine.*
 
-**Current version: 0.8.2**
+**Current version: 0.8.3**
 
 [![CI](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/McK-Playground/prj-lumina/actions/workflows/ci.yml)
 [![Last commit](https://img.shields.io/github/last-commit/McK-Playground/prj-lumina/main?color=D4731A)](https://github.com/McK-Playground/prj-lumina/commits/main)
@@ -59,6 +59,16 @@ You should not need to run `build:renderer` / `build:main` separately during
 development — saving any source file is enough.
 
 On first launch, select a folder as your vault. Lumina will watch it for changes and keep the file tree in sync.
+
+### macOS (private beta)
+
+Box builds are **not Apple-notarized** yet, so macOS applies a **quarantine** flag to `Lumina.app`. After copying the app to `/Applications`, run **once** in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Lumina.app
+```
+
+Then open Lumina from Finder. This is only required while Lumina is in internal beta.
 
 To configure LLM features, open **Settings** and enter your endpoint URL, API key, and model name. Supports any OpenAI-compatible API including LiteLLM proxies, Gemini, and Claude.
 

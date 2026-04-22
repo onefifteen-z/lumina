@@ -18,6 +18,7 @@
   "guideKicker": "ドキュメント",
   "guideTitle": "ユーザーガイド",
   "guideLeadHtml": "<p>本ガイドは Lumina での <strong>raw → wiki → 質問 → lint</strong> の流れを説明します。チャットの振る舞いはボールト直下の <code>CLAUDE.md</code> に従います（空のときは実行時に同梱テンプレートが使われます）。取り込みは組み込みの <code>ingest_source</code> ツールと INGEST プロトコルのみが正規ルートです。</p>",
+  "installMacNoteHtml": "<p><strong>macOS（プライベートベータ）。</strong>配布版はまだ Apple の公証がありません。<code>Lumina.app</code> を <code>/Applications</code> に入れたら、ターミナルで一度だけ実行してください：</p><div class=\"pre-block\"><pre>xattr -dr com.apple.quarantine /Applications/Lumina.app</pre></div><p>その後、Finder から Lumina を開いてください。</p>",
   "s1Title": "1. ボールト（vault）を作る",
   "s1Html": "<p><strong>Vault</strong> は Lumina がライブラリのルートとして扱う、ディスク上のフォルダです。</p><ol><li>初回起動（またはボールト切替）のウェルカム画面で<strong>フォルダを選択</strong>します。既存（Obsidian ボールト等）でも、空フォルダを作ってから選んでも構いません。</li><li><strong><code>CLAUDE.md</code> がまだない</strong>場合、<strong>Initialize Vault</strong> ダイアログが出ます。確定すると空の <code>CLAUDE.md</code>、ソース用 <code>raw/</code>（アシスタントは書き換えません）、構造化ページ用 <code>wiki/</code> が作成されます。</li><li><strong>Skip</strong> した場合は、後続の ingest / wiki のために <code>CLAUDE.md</code>・<code>raw/</code>・<code>wiki/</code> を自分で用意してください。</li><li>バックアップと共同作業のため、<strong>Box</strong> / <strong>SharePoint 同期</strong> / <strong>Git 作業ツリー</strong> 上に置くことを推奨します。</li></ol>",
   "s2Title": "2. 設定",

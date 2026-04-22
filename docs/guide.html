@@ -77,6 +77,17 @@
       <p class="section__eyebrow reveal" data-i18n="guideKicker">Documentation</p>
       <h1 class="section__title reveal" data-i18n="guideTitle">User guide</h1>
       <div class="guide-lead section__intro reveal" data-i18n-html="guideLeadHtml"></div>
+      <div
+        class="guide-install section__intro reveal"
+        data-i18n-html="installMacNoteHtml"
+      >
+        <p>
+          <strong>macOS (private beta).</strong> The distributed app is not Apple-notarized yet. After installing
+          <code>Lumina.app</code> to <code>/Applications</code>, run once in Terminal:
+        </p>
+        <div class="pre-block"><pre>xattr -dr com.apple.quarantine /Applications/Lumina.app</pre></div>
+        <p>Then open Lumina from Finder.</p>
+      </div>
 
       <section class="guide-section reveal" aria-labelledby="g-s1">
         <h2 id="g-s1" data-i18n="s1Title">1. Create a vault</h2>

@@ -7,10 +7,12 @@ import type {
   ArticleMeta,
   ChatSendCommand,
   ChatContentBlock,
+  ConfirmationRequest,
 } from '../../shared/types';
 import { MessageList } from './chat/MessageList';
 import { ChatInput, parseSlashCommand } from './chat/ChatInput';
 import { CodeBlock } from './chat/CodeBlock';
+import { ConfirmationBanner } from './chat/ConfirmationBanner';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useNavigation } from './AppShell';
 
@@ -637,6 +639,12 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   const [historyList, setHistoryList] = useState<ChatHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [articleIndex, setArticleIndex] = useState<Map<string, ArticleMeta>>(new Map());
+  // Outstanding confirmation prompts from the main process (venv install,
+  // model-issued `request_user_confirmation`, future destructive actions).
+  // We keep a queue rather than a single request so back-to-back prompts
+  // can't quietly clobber each other; in practice the queue is almost
+  // always 0 or 1 deep since tool calls are sequential.
+  const [confirmationQueue, setConfirmationQueue] = useState<ConfirmationRequest[]>([]);
 
   const { isOffline } = useNetworkStatus();
   const { viewArticle } = useNavigation();
@@ -1055,8 +1063,15 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       setTimeout(() => setWarning(null), 5000);
     });
 
+    window.api.onConfirmRequest((request) => {
+      setConfirmationQueue((prev) =>
+        prev.some((r) => r.id === request.id) ? prev : [...prev, request],
+      );
+    });
+
     return () => {
       window.api.removeChatListeners();
+      window.api.removeConfirmRequestListener();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1074,6 +1089,21 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Handlers ───────────────────────────────────────────────── */
+
+  const respondConfirmation = useCallback(
+    async (approved: boolean) => {
+      // Respond to (and dequeue) the frontmost prompt. Each click resolves
+      // exactly one request; if a second prompt is pending it slides up
+      // into place without the user having to do anything special.
+      setConfirmationQueue((prev) => {
+        if (prev.length === 0) return prev;
+        const [head, ...rest] = prev;
+        void window.api.replyConfirm(head.id, approved);
+        return rest;
+      });
+    },
+    [],
+  );
 
   const handleNewSession = useCallback(async () => {
     if (isGenerating) {
@@ -1496,6 +1526,16 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
           </div>
         </div>
       )}
+
+      {/* Generic confirmation banner — shows whatever yes/no prompt is at
+          the head of the queue (venv install, model-issued
+          request_user_confirmation, etc.). Sits directly above the input
+          so the prompt reads as a precondition to the current turn. */}
+      <ConfirmationBanner
+        request={confirmationQueue[0] ?? null}
+        onRespond={(approved) => { void respondConfirmation(approved); }}
+        colStyle={colStyle}
+      />
 
       {/* Chat input */}
       <ChatInput

@@ -55,6 +55,40 @@ export interface EmbedRef {
   position: { start: number; end: number }; // Character offsets in content
 }
 
+/**
+ * Visual tone for a confirmation prompt. Drives banner border / button
+ * color in the renderer. Keep this tiny and stable — each new tone is a
+ * design decision, not a free-form colour choice.
+ */
+export type ConfirmationTone = "default" | "warning" | "danger";
+
+/**
+ * A confirm/cancel prompt issued by the main process. The renderer shows
+ * it above the chat input and replies with an approval boolean. `id`
+ * uniquely pairs the request with the reply so concurrent prompts can't
+ * clobber each other's resolvers.
+ *
+ * Used for anything where Lumina needs an explicit user yes/no before
+ * performing a side-effectful action: installing the Python venv,
+ * overwriting wiki pages, deleting files, etc.
+ */
+export interface ConfirmationRequest {
+  id: string;
+  /** One-line headline shown in the banner's title row. Keep ≤ ~60 chars. */
+  title: string;
+  /**
+   * Supporting body text. Plain text only — the renderer will render it
+   * as-is inside a <p>, no markdown parsing. Multi-line allowed.
+   */
+  description?: string;
+  /** Button label for the confirm action. Defaults to "Continue" on the renderer. */
+  confirmLabel?: string;
+  /** Button label for the cancel action. Defaults to "Cancel" on the renderer. */
+  cancelLabel?: string;
+  /** Visual tone; defaults to "default". Use "danger" for destructive actions. */
+  tone?: ConfirmationTone;
+}
+
 /** Content of the .lumina-vault marker file. */
 export interface VaultMarker {
   createdAt: string; // ISO 8601
@@ -303,6 +337,32 @@ export interface WikiAPI {
   // Ingest
   ingestFile(request: IngestRequest): Promise<IngestResult>;
   renameChatSession(sessionId: string, newTitle: string): Promise<void>;
+
+  /**
+   * Subscribe to generic confirmation prompts from the main process.
+   * Used for any action that needs an explicit user yes/no: the Python
+   * venv install gate, the `request_user_confirmation` chat tool, future
+   * destructive operations. Reply with `replyConfirm(id, approved)` —
+   * the awaiting caller proceeds only when `approved === true`.
+   */
+  onConfirmRequest(callback: (request: ConfirmationRequest) => void): void;
+  removeConfirmRequestListener(): void;
+  replyConfirm(id: string, approved: boolean): Promise<void>;
+
+  /**
+   * Dev-only: open a confirmation banner with arbitrary contents so you
+   * can iterate on the UI without driving a real ingest / tool call.
+   * Resolves to the user's choice (or rejects in a packaged build, where
+   * the main-process handler isn't registered). Safe to call from the
+   * DevTools console as `window.api.__debugTriggerConfirmation(...)`.
+   */
+  __debugTriggerConfirmation(opts?: {
+    title?: string;
+    description?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    tone?: ConfirmationTone;
+  }): Promise<boolean>;
 
   // Lifecycle
   onUnsavedChanges(callback: (hasChanges: boolean) => void): void;

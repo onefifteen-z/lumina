@@ -17,6 +17,7 @@ import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
 import { ChatHistoryService } from "./services/chat-history-service";
+import { ConfirmationService } from "./services/confirmation-service";
 import { IngestService } from "./services/ingest-service";
 import { debugLog, getDebugLogBacklog } from "./debug-log";
 
@@ -37,10 +38,25 @@ export function registerIpcHandlers(services: {
   searchIndex: SearchIndexService | null;
   llm: LLMService | null;
   config: ConfigService;
-  mainWindow: BrowserWindow | null;
+  /**
+   * Live handle to the main window. May be a `BrowserWindow` (or `null`
+   * before the first `createWindow()`, and again after every `closed`
+   * event) — handlers re-read this on each invocation rather than closing
+   * over a snapshot, so IPC registered before `createWindow()` still
+   * resolves to the real window when the user eventually triggers it.
+   *
+   * Accepts either a direct reference (legacy call sites) or a getter.
+   * Getters are strongly preferred for anything that might fire after a
+   * window reload or in the window-is-null startup gap.
+   */
+  mainWindow: BrowserWindow | null | (() => BrowserWindow | null);
   chat?: ChatService | null;
   chatHistory?: ChatHistoryService | null;
 }): void {
+  const getMainWindow = (): BrowserWindow | null =>
+    typeof services.mainWindow === "function"
+      ? services.mainWindow()
+      : services.mainWindow;
   let fileSystem = services.fileSystem;
   let searchIndex = services.searchIndex;
   const { config } = services;
@@ -94,7 +110,7 @@ export function registerIpcHandlers(services: {
     searchIndex = newSearchIndex;
 
     fileSystem.watchVault((event) => {
-      services.mainWindow?.webContents.send("wiki:vaultChange", event);
+      getMainWindow()?.webContents.send("wiki:vaultChange", event);
     });
 
     chat?.setFileSystemService(fileSystem);
@@ -424,6 +440,53 @@ export function registerIpcHandlers(services: {
     return llm?.isAvailable() ?? false;
   });
 
+  // ── Confirmation prompts ──────────────────────────────────────
+  // Generic yes/no prompt channel. Any caller (venv-install consent, the
+  // `request_user_confirmation` chat tool, future destructive actions)
+  // routes through the same ConfirmationService + banner UI so the user
+  // sees one consistent "confirm above the input" affordance.
+  const confirmations = new ConfirmationService(getMainWindow);
+
+  ipcMain.handle(
+    "wiki:confirmReply",
+    async (_event, payload: { id: string; approved: boolean }) => {
+      confirmations.resolve(payload.id, Boolean(payload.approved));
+    },
+  );
+
+  // Dev-only: lets you trigger a confirmation prompt from DevTools without
+  // having to drive an actual ingest / tool call. Lives behind a
+  // NODE_ENV=development guard so it can't be invoked from a packaged
+  // build. Call `await window.api.__debugTriggerConfirmation({ … })` from
+  // the renderer console to see the banner in isolation.
+  if (process.env.NODE_ENV === "development") {
+    ipcMain.handle(
+      "wiki:__debugTriggerConfirmation",
+      async (
+        _event,
+        opts: {
+          title?: string;
+          description?: string;
+          confirmLabel?: string;
+          cancelLabel?: string;
+          tone?: "default" | "warning" | "danger";
+        } = {},
+      ) => {
+        return confirmations.request({
+          title: opts.title ?? "Debug: proceed with this action?",
+          description:
+            opts.description ??
+            "This is a demo confirmation prompt. It's wired through the real ConfirmationService and the real banner component — what you see here is exactly what users see. Click either button to resolve the pending promise.",
+          confirmLabel: opts.confirmLabel,
+          cancelLabel: opts.cancelLabel,
+          tone: opts.tone,
+        });
+      },
+    );
+  }
+
+  chat?.setConfirmationService(confirmations);
+
   // ── Chat ──────────────────────────────────────────────────────
 
   ipcMain.handle("wiki:startChatSession", async (event) => {
@@ -633,7 +696,7 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("wiki:switchVault", async (_event, vaultPath: string): Promise<void> => {
     await initializeVaultServices(vaultPath);
     config.saveConfig({ vaultPath });
-    services.mainWindow?.webContents.send("wiki:vaultSwitched", vaultPath);
+    getMainWindow()?.webContents.send("wiki:vaultSwitched", vaultPath);
   });
 
   ipcMain.handle("wiki:removeVaultFromHistory", (_event, vaultPath: string): void => {

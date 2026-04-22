@@ -153,13 +153,21 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Register all IPC handlers
+  // Register all IPC handlers.
+  //
+  // `mainWindow` here is still `null` — `createWindow()` runs a few lines
+  // down. Passing it by value would freeze every IPC handler on that
+  // initial `null`, breaking any feature that needs to push to the
+  // renderer (e.g. the confirmation banner for venv install). Passing a
+  // getter makes handlers re-read the *current* module-level reference
+  // on each invocation, so they see the window once it exists and keep
+  // working across future window reloads.
   registerIpcHandlers({
     fileSystem: fileSystemService,
     searchIndex: searchIndexService,
     llm: llmService,
     config: configService,
-    mainWindow: mainWindow,
+    mainWindow: () => mainWindow,
     chat: chatService,
     chatHistory: chatHistoryService,
   });

@@ -644,3 +644,138 @@ describe("clampShellTimeout", () => {
     expect(clampShellTimeout(600)).toBe(600);
   });
 });
+
+// ── request_user_confirmation tool ───────────────────────────────
+
+/**
+ * `request_user_confirmation` is the shared entrypoint for any model-
+ * initiated yes/no prompt. Exercising it via the private `executeTool`
+ * shim keeps the surface narrow — we don't need to drive a full LLM
+ * round-trip to pin the contract the renderer depends on.
+ */
+describe("ChatService request_user_confirmation tool", () => {
+  type ConfirmCall = Parameters<Parameters<ChatService["setConfirmationService"]>[0] extends null ? never : NonNullable<Parameters<ChatService["setConfirmationService"]>[0]>["request"]>[0];
+
+  function buildService(
+    respond: (opts: ConfirmCall) => Promise<boolean> | boolean,
+  ): { chat: ChatService; calls: ConfirmCall[] } {
+    const chat = new ChatService(
+      mockLLMService([]),
+      mockFileSystem(""),
+    );
+    const calls: ConfirmCall[] = [];
+    chat.setConfirmationService({
+      request: async (opts) => {
+        calls.push(opts);
+        return Promise.resolve(respond(opts));
+      },
+    });
+    return { chat, calls };
+  }
+
+  async function invokeTool(
+    chat: ChatService,
+    args: Record<string, unknown>,
+  ): Promise<string> {
+    // Reach into the private method — the public tool surface is driven
+    // by the LLM stream, which is overkill for a unit test.
+    const run = (chat as unknown as {
+      executeTool: (name: string, argsJson: string) => Promise<string>;
+    }).executeTool;
+    return run.call(chat, "request_user_confirmation", JSON.stringify(args));
+  }
+
+  it("returns [confirm ok] on approval and forwards all fields", async () => {
+    const { chat, calls } = buildService(() => true);
+    const out = await invokeTool(chat, {
+      title: "Overwrite index.md?",
+      description: "Replaces 12 entries with 15.",
+      confirm_label: "Overwrite",
+      cancel_label: "Abort",
+      tone: "warning",
+    });
+    expect(out).toMatch(/^\[confirm ok\]/);
+    expect(out).toContain("approved");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      title: "Overwrite index.md?",
+      description: "Replaces 12 entries with 15.",
+      confirmLabel: "Overwrite",
+      cancelLabel: "Abort",
+      tone: "warning",
+    });
+  });
+
+  it("returns [confirm cancelled] on decline", async () => {
+    const { chat } = buildService(() => false);
+    const out = await invokeTool(chat, { title: "Delete 7 files?" });
+    expect(out).toMatch(/^\[confirm cancelled\]/);
+    expect(out).toContain("Do NOT proceed");
+  });
+
+  it("rejects missing title with bad-args", async () => {
+    const { chat, calls } = buildService(() => true);
+    const out = await invokeTool(chat, { description: "no title" });
+    expect(out).toMatch(/^\[confirm error bad-args\]/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects empty/whitespace title with bad-args", async () => {
+    const { chat, calls } = buildService(() => true);
+    const out = await invokeTool(chat, { title: "   " });
+    expect(out).toMatch(/^\[confirm error bad-args\]/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("returns no-channel when no confirmation service is wired", async () => {
+    const chat = new ChatService(mockLLMService([]), mockFileSystem(""));
+    // Explicitly leave the confirmation service unset — simulates the CLI
+    // / test harness where there's no renderer to talk to.
+    const run = (chat as unknown as {
+      executeTool: (name: string, argsJson: string) => Promise<string>;
+    }).executeTool;
+    const out = await run.call(
+      chat,
+      "request_user_confirmation",
+      JSON.stringify({ title: "x" }),
+    );
+    expect(out).toMatch(/^\[confirm error no-channel\]/);
+  });
+
+  it("treats thrown dispatch errors as cancel to avoid fail-open", async () => {
+    const chat = new ChatService(mockLLMService([]), mockFileSystem(""));
+    chat.setConfirmationService({
+      request: async () => {
+        throw new Error("webContents went away");
+      },
+    });
+    const out = await invokeTool(chat, { title: "x" });
+    expect(out).toMatch(/^\[confirm error dispatch-failed\]/);
+    expect(out).toContain("webContents went away");
+    expect(out).toContain("cancel");
+  });
+
+  it("silently drops invalid tone instead of passing it through", async () => {
+    const { chat, calls } = buildService(() => true);
+    await invokeTool(chat, { title: "x", tone: "nuclear" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].tone).toBeUndefined();
+  });
+
+  it("ignores non-string label / description fields", async () => {
+    const { chat, calls } = buildService(() => true);
+    await invokeTool(chat, {
+      title: "x",
+      description: 42,
+      confirm_label: true,
+      cancel_label: null,
+    });
+    expect(calls[0]).toEqual({
+      title: "x",
+      description: undefined,
+      confirmLabel: undefined,
+      cancelLabel: undefined,
+      tone: undefined,
+    });
+  });
+});

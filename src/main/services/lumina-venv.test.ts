@@ -9,6 +9,10 @@ import {
   buildPipInstallCommand,
   buildVenvCreateCommand,
   buildMarkitdownCheckCommand,
+  parsePythonVersion,
+  isPythonVersionOk,
+  MIN_PYTHON_MAJOR,
+  MIN_PYTHON_MINOR,
 } from "./lumina-venv";
 
 /**
@@ -83,6 +87,47 @@ describe("shQuote", () => {
     expect(shQuote("/path/$HOME/and && more")).toBe(
       "'/path/$HOME/and && more'",
     );
+  });
+});
+
+describe("parsePythonVersion", () => {
+  it("extracts major.minor from standard `python --version` output", () => {
+    expect(parsePythonVersion("Python 3.11.6")).toEqual({ major: 3, minor: 11 });
+  });
+
+  it("tolerates trailing whitespace + CRLF (Windows)", () => {
+    expect(parsePythonVersion("Python 3.12.2\r\n")).toEqual({ major: 3, minor: 12 });
+  });
+
+  it("returns null for non-Python strings (guards against shim output)", () => {
+    expect(parsePythonVersion("bash: python3: command not found")).toBeNull();
+    expect(parsePythonVersion("")).toBeNull();
+  });
+});
+
+describe("isPythonVersionOk", () => {
+  it("accepts versions at or above the current minimum", () => {
+    expect(
+      isPythonVersionOk({ major: MIN_PYTHON_MAJOR, minor: MIN_PYTHON_MINOR }),
+    ).toBe(true);
+    expect(
+      isPythonVersionOk({ major: MIN_PYTHON_MAJOR, minor: MIN_PYTHON_MINOR + 3 }),
+    ).toBe(true);
+    expect(isPythonVersionOk({ major: MIN_PYTHON_MAJOR + 1, minor: 0 })).toBe(true);
+  });
+
+  it("rejects anything below the minimum (stale venvs must be recreated)", () => {
+    expect(
+      isPythonVersionOk({
+        major: MIN_PYTHON_MAJOR,
+        minor: MIN_PYTHON_MINOR - 1,
+      }),
+    ).toBe(false);
+    expect(isPythonVersionOk({ major: 2, minor: 7 })).toBe(false);
+  });
+
+  it("rejects null (parse failure → rebuild, don't limp along)", () => {
+    expect(isPythonVersionOk(null)).toBe(false);
   });
 });
 

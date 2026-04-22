@@ -35,7 +35,7 @@ import * as path from "path";
 import * as fs from "fs/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { ensureLuminaVenv, shQuote } from "./lumina-venv";
+import { ensureLuminaVenv, luminaVenvNeedsBootstrap, shQuote } from "./lumina-venv";
 import type { EnsureVenvResult } from "./lumina-venv";
 import { rasterizePdfToPngs } from "./pdf-rasterize";
 
@@ -121,6 +121,21 @@ export interface IngestContext {
   pdfImageIngest?: boolean;
   /** Override the venv-bootstrap step. Tests inject a stub. */
   ensureVenv?: () => Promise<EnsureVenvResult>;
+  /**
+   * Consent gate for the venv bootstrap. Called *only* when the shared
+   * `~/.lumina/venv/` needs to be created, rebuilt, or have markitdown
+   * (re)installed — i.e. operations that shell out to pip and download
+   * ~200MB of transitive dependencies. When omitted, bootstrap proceeds
+   * without prompting (matches previous silent behaviour; used by tests
+   * and the legacy `IngestService`).
+   *
+   * Implementations should return `true` to proceed, `false` to abort the
+   * current ingest. The probe for "is bootstrap needed?" is separate from
+   * this callback so cached/ready venvs never trigger a prompt.
+   */
+  requestVenvConsent?: () => Promise<boolean>;
+  /** Override `luminaVenvNeedsBootstrap` for tests. */
+  probeVenvNeedsBootstrap?: () => Promise<boolean>;
   /** Override the rasterize call. Tests inject a stub. */
   rasterize?: typeof rasterizePdfToPngs;
   /** Override exec. Tests inject a stub so markitdown never actually runs. */
@@ -144,6 +159,35 @@ export async function extractMarkdownViaMarkitdown(
   opts?: { includeVisionRetryHint?: boolean },
 ): Promise<ExtractMarkdownResult> {
   const includeVisionRetryHint = opts?.includeVisionRetryHint !== false;
+  // Consent gate: if a bootstrap step is needed AND the caller wired a
+  // consent callback, ask before shelling out to pip. When the user
+  // declines we return a distinct `office-consent-declined` header so the
+  // model can relay a friendly "no action taken" message instead of
+  // pretending the file was un-ingestable.
+  if (ctx.requestVenvConsent) {
+    const probe = ctx.probeVenvNeedsBootstrap ?? luminaVenvNeedsBootstrap;
+    let needsBootstrap = false;
+    try {
+      needsBootstrap = await probe();
+    } catch {
+      // Probe errors are pessimistic by design — treat as "needs bootstrap"
+      // so we prompt rather than skipping consent silently.
+      needsBootstrap = true;
+    }
+    if (needsBootstrap) {
+      const approved = await ctx.requestVenvConsent();
+      if (!approved) {
+        return {
+          ok: false,
+          headerKind: "office-consent-declined",
+          message:
+            `Lumina needs to create a local Python venv at ~/.lumina/venv/ and install markitdown to parse "${rel}", ` +
+            `but the user declined the installation prompt. Ask the user to re-try this ingest and approve the prompt, ` +
+            `or to install markitdown manually and retry. No files were changed.`,
+        };
+      }
+    }
+  }
   const ensure = ctx.ensureVenv ?? ensureLuminaVenv;
   const venv = await ensure();
   if (!venv.ok) {

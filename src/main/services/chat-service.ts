@@ -160,12 +160,92 @@ const INGEST_TOOL = {
   },
 } as const;
 
+/**
+ * `request_user_confirmation` pops a confirm/cancel prompt above the chat
+ * input and returns the user's choice. Meant for *anything* that would
+ * mutate the user's vault or system in a way they might not want — e.g.
+ * "about to overwrite wiki/index.md", "about to delete 3 files", etc.
+ *
+ * The tool returns one of two strings; see CLAUDE.md for the protocol.
+ * We explicitly don't include a free-form "reason" separate from the
+ * title/description because the model's only job after calling this is
+ * to wait for the reply and branch.
+ */
+const CONFIRM_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "request_user_confirmation",
+    description:
+      "Show the user a confirm/cancel prompt directly above the chat input and " +
+      "wait for their response. Returns \"[confirm ok]\" on approval or " +
+      "\"[confirm cancelled]\" on decline. Use before any destructive or " +
+      "user-visible change: overwriting a wiki page, deleting files, running " +
+      "a non-trivial migration. DO NOT use for routine reads or small edits " +
+      "the user already asked for — it wastes a round-trip and annoys them.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description:
+            "Short headline shown at the top of the prompt (≤ ~60 chars). " +
+            "Phrase it as a yes/no question, e.g. \"Update wiki/index.md with 4 new entries?\".",
+        },
+        description: {
+          type: "string",
+          description:
+            "Optional supporting text (plain text, no markdown). Use it to list " +
+            "specifics — filenames, counts, anything the user needs to decide.",
+        },
+        confirm_label: {
+          type: "string",
+          description:
+            "Optional label for the confirm button. Defaults to \"Continue\". " +
+            "Prefer a verb that names the action: \"Update\", \"Delete\", \"Overwrite\".",
+        },
+        cancel_label: {
+          type: "string",
+          description:
+            "Optional label for the cancel button. Defaults to \"Cancel\".",
+        },
+        tone: {
+          type: "string",
+          enum: ["default", "warning", "danger"],
+          description:
+            "Visual tone. Use \"danger\" for destructive actions (delete, overwrite " +
+            "without backup), \"warning\" for changes that alter shape but not lose " +
+            "data, and \"default\" otherwise.",
+        },
+      },
+      required: ["title"],
+    },
+  },
+} as const;
+
 export class ChatService {
   private session: ChatSession | null = null;
   private abortController: AbortController | null = null;
   private llm: LLMService | null;
   private fileSystem: FileSystemService | null;
   private pdfImageIngest = false;
+  /**
+   * Generic user-confirmation channel (renderer-backed yes/no prompt).
+   * Injected by the IPC layer. `null` means "don't prompt" — matches the
+   * legacy silent behaviour used by unit tests that don't run a renderer.
+   *
+   * Used for:
+   *   - the one-time Python venv + markitdown install consent gate,
+   *   - the model-callable `request_user_confirmation` tool.
+   */
+  private confirmations: {
+    request: (opts: {
+      title: string;
+      description?: string;
+      confirmLabel?: string;
+      cancelLabel?: string;
+      tone?: "default" | "warning" | "danger";
+    }) => Promise<boolean>;
+  } | null = null;
   /**
    * Loader for the bundled CLAUDE.md template, used as a system-prompt
    * fallback when the vault has no CLAUDE.md (or the file is empty). Injected
@@ -309,7 +389,16 @@ export class ChatService {
       // Both tools require a vault (shell needs a cwd; ingest_source needs
       // a vault root to resolve relative paths). When no vault is open we
       // pass undefined and the model is in chat-only mode.
-      const tools = this.fileSystem ? [SHELL_TOOL, INGEST_TOOL] : undefined;
+      // `request_user_confirmation` needs the renderer-backed prompt
+      // channel. Without it the tool couldn't actually display anything,
+      // so we only advertise it to the model when a confirmation service
+      // has been wired (i.e. when running in the real app, not in unit
+      // tests that stand up a ChatService directly).
+      const tools = this.fileSystem
+        ? this.confirmations
+          ? [SHELL_TOOL, INGEST_TOOL, CONFIRM_TOOL]
+          : [SHELL_TOOL, INGEST_TOOL]
+        : undefined;
       const extraMessages: Array<{
         role: string;
         content: string | null | ChatContentBlock[];
@@ -551,6 +640,27 @@ export class ChatService {
   }
 
   /**
+   * Register (or clear) the confirmation service used for user yes/no
+   * prompts. When `null`, ingest skips the venv-install consent prompt
+   * and the `request_user_confirmation` tool returns an error explaining
+   * it's unavailable. We take a structural type rather than importing
+   * `ConfirmationService` directly to keep this module test-friendly.
+   */
+  setConfirmationService(
+    service: {
+      request: (opts: {
+        title: string;
+        description?: string;
+        confirmLabel?: string;
+        cancelLabel?: string;
+        tone?: "default" | "warning" | "danger";
+      }) => Promise<boolean>;
+    } | null,
+  ): void {
+    this.confirmations = service;
+  }
+
+  /**
    * Dispatch a tool call. Two tools are exposed:
    *   - `shell` — run a shell command with vault root as cwd, with optional
    *     `timeout_seconds` clamped to [1, SHELL_MAX_TIMEOUT_S].
@@ -572,6 +682,9 @@ export class ChatService {
     if (name === "shell") {
       return this.executeShell(args);
     }
+    if (name === "request_user_confirmation") {
+      return this.executeConfirmation(args);
+    }
     if (name === "ingest_source") {
       // ingest-tool always returns a string and never throws — it formats
       // every failure into a `[ingest_source error kind=...]` body the
@@ -579,9 +692,75 @@ export class ChatService {
       return runIngestTool(args, {
         vaultRoot: this.fileSystem.getVaultPath(),
         pdfImageIngest: this.pdfImageIngest,
+        requestVenvConsent: this.confirmations
+          ? () =>
+              this.confirmations!.request({
+                title: "Install Python tools for document ingestion?",
+                description:
+                  "Lumina needs to create a Python virtual environment at ~/.lumina/venv and install markitdown to read PDFs, Office files, and similar formats. This downloads ~200 MB and only happens once.",
+                confirmLabel: "Install",
+                cancelLabel: "Cancel",
+                tone: "default",
+              })
+          : undefined,
       });
     }
     return `Error: unknown tool "${name}".`;
+  }
+
+  /**
+   * Run the `request_user_confirmation` tool. Returns a short status line
+   * the model can branch on, keeping the contract symmetrical with the
+   * other tools (first line = machine-readable header, rest = detail).
+   */
+  private async executeConfirmation(args: Record<string, unknown>): Promise<string> {
+    if (!this.confirmations) {
+      return (
+        `[confirm error no-channel]\nThis build of Lumina has no UI channel ` +
+        `for confirmations — proceed without asking, or surface the decision ` +
+        `to the user as a chat message.`
+      );
+    }
+
+    const title = typeof args.title === "string" ? args.title.trim() : "";
+    if (!title) {
+      return `[confirm error bad-args]\n"title" is required and must be a non-empty string.`;
+    }
+
+    const description =
+      typeof args.description === "string" ? args.description : undefined;
+    const confirmLabel =
+      typeof args.confirm_label === "string" ? args.confirm_label : undefined;
+    const cancelLabel =
+      typeof args.cancel_label === "string" ? args.cancel_label : undefined;
+    let tone: "default" | "warning" | "danger" | undefined;
+    if (args.tone === "default" || args.tone === "warning" || args.tone === "danger") {
+      tone = args.tone;
+    }
+
+    let approved = false;
+    try {
+      approved = await this.confirmations.request({
+        title,
+        description,
+        confirmLabel,
+        cancelLabel,
+        tone,
+      });
+    } catch (err) {
+      // The confirmation service is designed not to throw, but belt-and-
+      // suspenders: a failed prompt should never crash the tool loop. We
+      // treat failures as "cancel" so the model doesn't accidentally
+      // proceed with a destructive action on error.
+      return (
+        `[confirm error dispatch-failed]\nFailed to show confirmation prompt: ` +
+        `${(err as Error).message ?? "unknown error"}. Treating as cancel.`
+      );
+    }
+
+    return approved
+      ? `[confirm ok]\nThe user approved the action. Proceed.`
+      : `[confirm cancelled]\nThe user declined the action. Do NOT proceed; explain what was not done and ask what they'd like instead.`;
   }
 
   /**

@@ -108,32 +108,72 @@ export function buildMarkitdownCheckCommand(pythonBin: string): string {
 }
 
 /**
+/**
+ * Minimum Python (major, minor) usable as the venv base. markitdown 0.1.x
+ * declares `requires_python>=3.10`, and its transitive deps (pdfminer.six,
+ * pdfplumber, magika) have all moved on from 3.9 as well. If we accept a 3.9
+ * system Python we end up with a venv that pip refuses to install into, and
+ * the user sees an opaque "could not find a version that satisfies …" error.
+ * Keep this in sync with the minimum declared by the latest markitdown on
+ * PyPI.
+ */
+export const MIN_PYTHON_MAJOR = 3;
+export const MIN_PYTHON_MINOR = 10;
+
+/** Parse `python --version` stdout. Exported for testability + reuse. */
+export function parsePythonVersion(stdout: string): { major: number; minor: number } | null {
+  // Output looks like "Python 3.11.6". Tolerate trailing patch + whitespace.
+  const m = /^Python\s+(\d+)\.(\d+)/.exec(stdout.trim());
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2]) };
+}
+
+/** True when `v` satisfies the Lumina minimum. */
+export function isPythonVersionOk(v: { major: number; minor: number } | null): boolean {
+  if (!v) return false;
+  if (v.major < MIN_PYTHON_MAJOR) return false;
+  if (v.major === MIN_PYTHON_MAJOR && v.minor < MIN_PYTHON_MINOR) return false;
+  return true;
+}
+
+/**
  * Find a usable system `python3`. We try `python3` first (the modern
  * convention), then `python` (some Linux distros only ship the bare name
  * after the python2-EOL purge).
  *
- * Returns null if neither resolves to python ≥ 3.8 — we need at least 3.8
- * because markitdown's transitive deps (e.g. `azure-ai-document-intelligence`)
- * dropped support for older Pythons.
+ * Returns null if neither resolves to python ≥ {@link MIN_PYTHON_MAJOR}.{@link MIN_PYTHON_MINOR}.
  */
 export async function findSystemPython(): Promise<string | null> {
   for (const candidate of ["python3", "python"]) {
     try {
       const { stdout } = await execAsync(`${candidate} --version`, { timeout: 5_000 });
-      const version = stdout.trim();
-      // Output looks like "Python 3.11.6". Reject Python 2.x explicitly.
-      const m = /^Python\s+(\d+)\.(\d+)/.exec(version);
-      if (!m) continue;
-      const major = Number(m[1]);
-      const minor = Number(m[2]);
-      if (major < 3) continue;
-      if (major === 3 && minor < 8) continue;
-      return candidate;
+      if (isPythonVersionOk(parsePythonVersion(stdout))) return candidate;
     } catch {
       // command not found / non-zero exit → try next
     }
   }
   return null;
+}
+
+/**
+ * Inspect the Python inside an existing venv and decide whether it still
+ * meets the current Lumina minimum. We call the venv's own python binary
+ * rather than reading `pyvenv.cfg` — `python --version` is the source of
+ * truth, and it works even if the cfg was hand-edited.
+ *
+ * Returns true when the venv is usable, false when it should be recreated.
+ * On any error (missing binary, permission issue) returns false so the
+ * caller takes the "rebuild the venv" path instead of limping along.
+ */
+export async function venvPythonMeetsMinimum(venvPython: string): Promise<boolean> {
+  try {
+    const { stdout } = await execAsync(`${shQuote(venvPython)} --version`, {
+      timeout: 5_000,
+    });
+    return isPythonVersionOk(parsePythonVersion(stdout));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -168,21 +208,66 @@ export function ensureLuminaVenv(): Promise<EnsureVenvResult> {
   return memoised;
 }
 
+/**
+ * Non-intrusive probe: does `ensureLuminaVenv()` still need to do destructive
+ * work (create a venv, wipe + rebuild a stale one, run `pip install`)? Used
+ * by callers that need to prompt the user for consent **before** the first
+ * heavy operation, without kicking off that operation as a side effect.
+ *
+ * "Ready" means: venv binary exists, its Python meets the minimum, and
+ * markitdown imports cleanly. Anything else — missing binary, stale Python,
+ * broken install — counts as "needs bootstrap". We deliberately return the
+ * pessimistic answer on any probe error so the consent prompt fires instead
+ * of silently trying to install.
+ */
+export async function luminaVenvNeedsBootstrap(): Promise<boolean> {
+  const venvDir = getLuminaVenvDir();
+  const venvPython = getLuminaPythonBin(venvDir);
+  if (!(await pathExists(venvPython))) return true;
+  if (!(await venvPythonMeetsMinimum(venvPython))) return true;
+  const check = await runMarkitdownCheck(venvPython);
+  return !check.ok;
+}
+
 async function doEnsure(): Promise<EnsureVenvResult> {
   const venvDir = getLuminaVenvDir();
   const venvPython = getLuminaPythonBin(venvDir);
 
-  // Fast path: venv already bootstrapped + markitdown already installed.
+  // Fast path: venv already bootstrapped. Before trusting it, confirm its
+  // Python still meets our minimum — stale venvs created with an older
+  // system Python (e.g. 3.9 before we bumped markitdown to require 3.10)
+  // will pass the binary-exists check but fail pip install. We wipe and
+  // rebuild in that case instead of reporting an install failure the user
+  // can't act on.
   if (await pathExists(venvPython)) {
-    const check = await runMarkitdownCheck(venvPython);
-    if (check.ok) {
+    if (await venvPythonMeetsMinimum(venvPython)) {
+      const check = await runMarkitdownCheck(venvPython);
+      if (check.ok) {
+        return { ok: true, pythonBin: venvPython, venvDir };
+      }
+      // venv exists, Python ok, but markitdown is gone (user tampered, or
+      // a partial install). Re-install into the existing venv — no reason
+      // to pay the rebuild cost.
+      const installed = await tryInstallMarkitdown(venvPython);
+      if (!installed.ok) return installed;
       return { ok: true, pythonBin: venvPython, venvDir };
     }
-    // venv exists but markitdown is gone (user tampered, partial install).
-    // Fall through to the install branch — no need to recreate the venv.
-    const installed = await tryInstallMarkitdown(venvPython);
-    if (!installed.ok) return installed;
-    return { ok: true, pythonBin: venvPython, venvDir };
+    // Venv Python is too old for current markitdown. Remove the stale venv
+    // so the cold-path below can create a fresh one off the current
+    // system Python.
+    try {
+      await fs.rm(venvDir, { recursive: true, force: true });
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException & { stderr?: string };
+      return {
+        ok: false,
+        reason: "venv-failed",
+        message:
+          `Lumina's Python venv at ${venvDir} was created with Python < ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR} ` +
+          `(required by markitdown) but could not be removed: ${e.stderr ?? e.message ?? "unknown error"}. ` +
+          `Please delete ${venvDir} manually and retry.`,
+      };
+    }
   }
 
   // Cold path: need a system python first.
@@ -192,7 +277,8 @@ async function doEnsure(): Promise<EnsureVenvResult> {
       ok: false,
       reason: "no-python",
       message:
-        "python3 was not found on PATH. Install Python 3.8+ (e.g. `brew install python3` on macOS) and retry.",
+        `Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ was not found on PATH. ` +
+        `Install it (e.g. \`brew install python@${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}\` on macOS) and retry.`,
     };
   }
 

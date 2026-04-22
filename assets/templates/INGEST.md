@@ -71,10 +71,11 @@ Forces the markitdown path even on file types where `auto` would not pick it. Yo
 If `ingest_source` returns `[ingest_source error ...]`:
 
 1. Read the error message — it is written for you to act on
-2. If it says "python3 not found": tell the user to install python3 (e.g. `brew install python3` on macOS) and stop the ingest
+2. If it mentions Python was not found on PATH: tell the user to install Python 3.10+ (e.g. `brew install python@3.10` on macOS) and stop the ingest
 3. If it says "markitdown install failed": surface the underlying pip error to the user verbatim
-4. If it says "rasterize failed": the PDF is corrupt or password-protected — tell the user
-5. If it says "unsupported extension": tell the user which extensions are supported
+4. If the header is `kind=office-consent-declined`: the user clicked Cancel on the venv install prompt. Relay the message calmly — do **not** try a workaround or retry. Tell them to run `ingest` again and click Install if they want to proceed.
+5. If it says "rasterize failed": the PDF is corrupt or password-protected — tell the user
+6. If it says "unsupported extension": tell the user which extensions are supported
 
 Never retry an error blindly. Never invent a workaround that involves shelling out for content extraction — `ingest_source` is the only sanctioned path.
 

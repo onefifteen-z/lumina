@@ -5,6 +5,17 @@
     "output": "build"
   },
   "files": ["dist/**/*", "package.json"],
+  "asarUnpack": [
+    "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    "node_modules/@napi-rs/canvas/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "assets/templates",
+      "to": "templates",
+      "filter": ["**/*"]
+    }
+  ],
   "mac": {
     "target": "dmg",
     "icon": "assets/icons/mac/icon.icns"

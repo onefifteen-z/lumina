@@ -319,6 +319,91 @@ describe("runIngestTool venv failures (office path)", () => {
   });
 });
 
+// ── consent gate ──────────────────────────────────────────────────
+
+describe("runIngestTool venv consent gate (office path)", () => {
+  it("skips the prompt when the venv is already ready", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    let probeCalls = 0;
+    let consentCalls = 0;
+    const out = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        probeVenvNeedsBootstrap: async () => {
+          probeCalls++;
+          return false;
+        },
+        requestVenvConsent: async () => {
+          consentCalls++;
+          return true;
+        },
+      }),
+    );
+    expect(probeCalls).toBe(1);
+    expect(consentCalls).toBe(0);
+    expect(out).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+
+  it("prompts when bootstrap is needed and proceeds on approval", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    let consentCalls = 0;
+    const out = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        probeVenvNeedsBootstrap: async () => true,
+        requestVenvConsent: async () => {
+          consentCalls++;
+          return true;
+        },
+      }),
+    );
+    expect(consentCalls).toBe(1);
+    expect(out).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+
+  it("returns kind=office-consent-declined when the user cancels", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    let ensureVenvCalled = false;
+    const out = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        probeVenvNeedsBootstrap: async () => true,
+        requestVenvConsent: async () => false,
+        ensureVenv: async () => {
+          ensureVenvCalled = true;
+          return {
+            ok: true,
+            pythonBin: "/fake/python",
+            venvDir: "/fake/venv",
+          };
+        },
+      }),
+    );
+    expect(out).toMatch(/^\[ingest_source error kind=office-consent-declined\]/);
+    expect(out).toContain("declined");
+    expect(ensureVenvCalled).toBe(false);
+  });
+
+  it("treats probe errors pessimistically and still prompts", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    let consentCalls = 0;
+    const out = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        probeVenvNeedsBootstrap: async () => {
+          throw new Error("probe exploded");
+        },
+        requestVenvConsent: async () => {
+          consentCalls++;
+          return true;
+        },
+      }),
+    );
+    expect(consentCalls).toBe(1);
+    expect(out).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+});
+
 // ── markitdown failure surfaces ───────────────────────────────────
 
 describe("runIngestTool markitdown failure (office path)", () => {

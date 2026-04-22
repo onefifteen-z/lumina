@@ -9,6 +9,7 @@ import type {
   ChatTraceChunk,
   DebugLogEntry,
   ChatContentBlock,
+  ConfirmationRequest,
   IngestRequest,
 } from "../shared/types";
 
@@ -382,6 +383,37 @@ const api: WikiAPI = {
 
   renameChatSession(sessionId: string, newTitle: string) {
     return ipcRenderer.invoke("wiki:renameChatSession", sessionId, newTitle);
+  },
+
+  onConfirmRequest(callback: (request: ConfirmationRequest) => void) {
+    ipcRenderer.on(
+      "wiki:confirmRequest",
+      (_event: Electron.IpcRendererEvent, request: ConfirmationRequest) => {
+        callback(request);
+      },
+    );
+  },
+
+  removeConfirmRequestListener() {
+    ipcRenderer.removeAllListeners("wiki:confirmRequest");
+  },
+
+  replyConfirm(id: string, approved: boolean) {
+    return ipcRenderer.invoke("wiki:confirmReply", { id, approved });
+  },
+
+  // Dev-only helper: trigger a confirmation prompt directly from the
+  // renderer console (`await window.api.__debugTriggerConfirmation(...)`).
+  // The main-process handler only exists in NODE_ENV=development, so in
+  // a packaged build this invoke will reject harmlessly.
+  __debugTriggerConfirmation(opts?: {
+    title?: string;
+    description?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    tone?: "default" | "warning" | "danger";
+  }): Promise<boolean> {
+    return ipcRenderer.invoke("wiki:__debugTriggerConfirmation", opts ?? {});
   },
 
   // ── Lifecycle ────────────────────────────────────────────────────

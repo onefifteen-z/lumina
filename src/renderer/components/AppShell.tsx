@@ -158,6 +158,7 @@ const SidebarLayout: React.FC<{
   onHistoryForward: () => void;
   onNewArticle: () => void;
   onNewFolder: (folderPath: string) => void;
+  onRefreshFileTree: () => void | Promise<void>;
   currentTheme: 'light' | 'dark' | 'system';
   onToggleTheme: () => void;
   headings: TocHeading[];
@@ -186,6 +187,7 @@ const SidebarLayout: React.FC<{
   onHistoryForward,
   onNewArticle,
   onNewFolder,
+  onRefreshFileTree,
   currentTheme,
   onToggleTheme,
   headings,
@@ -513,6 +515,7 @@ const SidebarLayout: React.FC<{
                       onSelectArticle={(f) => { selectWithHistory(f); if (activeView === 'graph') onViewChange('files'); }}
                       onNewArticle={onNewArticle}
                       onNewFolder={onNewFolder}
+                      onRefresh={onRefreshFileTree}
                       onOpenInNewTab={openInNewTab}
                       onToggleBookmark={onToggleBookmark}
                       isBookmarked={(f) => bookmarks.has(f)}
@@ -919,11 +922,44 @@ const AppShell: React.FC = () => {
     setEditingFilename('');
   }, []);
 
-  const createNewFolder = useCallback(async (folderName: string) => {
+  const createNewFolder = useCallback(async (relativePath: string) => {
     try {
-      await window.api.createFolder(folderName);
-    } catch { /* folder may already exist */ }
+      await window.api.createFolder(relativePath);
+      const list = await window.api.listArticles();
+      setArticles(list);
+      setArticlesError(null);
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Could not create folder");
+    }
   }, []);
+
+  const refreshFileTree = useCallback(async () => {
+    try {
+      const list = await window.api.listArticles();
+      setArticles(list);
+      setArticlesError(null);
+    } catch (err) {
+      setArticlesError(err instanceof Error ? err.message : "Failed to refresh file list");
+    }
+  }, []);
+
+  const prevSidebarViewRef = useRef<SidebarView>(activeView);
+
+  // When leaving settings/chat/search/etc. for Files or Graph, rescan the vault
+  // so the sidebar tree and graph stay in sync with disk.
+  useEffect(() => {
+    if (firstRun === null || firstRun) return;
+
+    const prev = prevSidebarViewRef.current;
+    prevSidebarViewRef.current = activeView;
+
+    const isFilesOrGraph = activeView === "files" || activeView === "graph";
+    const wasFilesOrGraph = prev === "files" || prev === "graph";
+    if (!isFilesOrGraph || wasFilesOrGraph) return;
+
+    void refreshFileTree();
+  }, [activeView, firstRun, refreshFileTree]);
 
   const handleSelectArticle = useCallback((filename: string) => {
     setSelectedFilename(filename || null);
@@ -1096,6 +1132,7 @@ const AppShell: React.FC = () => {
               onHistoryForward={handleHistoryForward}
               onNewArticle={createNewArticle}
               onNewFolder={createNewFolder}
+              onRefreshFileTree={refreshFileTree}
               currentTheme={theme}
               onToggleTheme={handleToggleTheme}
               headings={headings}

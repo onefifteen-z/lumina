@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useMemo, useCallback } from "react";
-import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText } from "lucide-react";
+import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, RefreshCw } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
@@ -16,6 +16,34 @@ function vaultParentDir(filename: string): string {
 
 function normPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/** True when the drag likely carries importable OS files (Electron/Chromium varies `types`). */
+function dragHasExternalFiles(e: React.DragEvent): boolean {
+  const types = e.dataTransfer.types;
+  if (typeof types?.includes === "function" && types.includes("Files")) return true;
+  try {
+    const arr = Array.from(types ?? []);
+    if (arr.includes("Files")) return true;
+  } catch {
+    /* DOMStringList */
+  }
+  const items = e.dataTransfer.items;
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].kind === "file") return true;
+    }
+  }
+  return false;
+}
+
+/** Build `wiki/…` or `raw/…` from a prompt; rejects empty or unsafe segments. */
+function folderPathForTab(tab: FileCategory, input: string): string | null {
+  const normalized = input.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!normalized) return null;
+  const parts = normalized.split("/").filter((p) => p.length > 0 && p !== "." && p !== "..");
+  if (parts.length === 0) return null;
+  return `${tab}/${parts.join("/")}`;
 }
 
 // ── Tree data model ────────────────────────────────────────────
@@ -219,7 +247,11 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         <span className="truncate font-medium">{node.name}</span>
       </button>
       {isExpanded && (
-        <div className="relative">
+        <div
+          className="relative min-h-[28px]"
+          onDragOver={(e) => onDragOverTarget(e, node.path)}
+          onDrop={(e) => onDropOnTarget(e, node.path)}
+        >
           {/* Vertical guide line */}
           <div
             className="absolute top-0 bottom-0 w-px bg-border/50"
@@ -260,6 +292,8 @@ export interface FilesViewProps {
   onSelectArticle: (filename: string) => void;
   onNewArticle: () => void;
   onNewFolder: (folderPath: string) => void;
+  /** Rescan vault file list (e.g. after external changes). */
+  onRefresh?: () => void | Promise<void>;
   onOpenInNewTab?: (filename: string) => void;
   onToggleBookmark?: (filename: string) => void;
   isBookmarked?: (filename: string) => boolean;
@@ -347,6 +381,7 @@ export function FilesView({
   onSelectArticle,
   onNewArticle,
   onNewFolder,
+  onRefresh,
   onOpenInNewTab,
   onToggleBookmark,
   isBookmarked,
@@ -418,7 +453,7 @@ export function FilesView({
 
   const onDragOverTarget = useCallback(
     (e: React.DragEvent, targetFolderPath: string) => {
-      const hasFiles = e.dataTransfer.types.includes("Files");
+      const hasFiles = dragHasExternalFiles(e);
       const fromTree = dragSourcePath !== null;
       if (!hasFiles && !fromTree) return;
 
@@ -481,7 +516,7 @@ export function FilesView({
 
   const onTreePaneDragOver = useCallback(
     (e: React.DragEvent) => {
-      const hasFiles = e.dataTransfer.types.includes("Files");
+      const hasFiles = dragHasExternalFiles(e);
       const fromTree = dragSourcePath !== null;
       if (!hasFiles && !fromTree) return;
 
@@ -580,19 +615,32 @@ export function FilesView({
     setPerTabExpanded((prev) => ({ ...prev, [activeTab]: new Set<string>() }));
   }, [activeTab]);
 
-  // New folder prompt
+  // New folder prompt — paths are scoped to the active Wiki / Raw tab root
   const handleNewFolder = useCallback(() => {
-    const name = window.prompt("Folder name:");
+    const name = window.prompt("Folder name (under current tab):");
     if (!name?.trim()) return;
-    onNewFolder(name.trim());
-  }, [onNewFolder]);
+    const rel = folderPathForTab(activeTab, name.trim());
+    if (!rel) {
+      window.alert("Invalid folder name.");
+      return;
+    }
+    void onNewFolder(rel);
+  }, [onNewFolder, activeTab]);
 
   const toggleSort = useCallback(() => {
     setSortMode((prev) => (prev === "modified" ? "alpha" : "modified"));
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    if (!onRefresh) return;
+    void Promise.resolve(onRefresh()).catch((err) => {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Refresh failed");
+    });
+  }, [onRefresh]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0 min-w-0">
       {/* Tab Bar */}
       <div className="px-0 pt-3 pb-1">
         <TabBar
@@ -620,12 +668,17 @@ export function FilesView({
         <ToolbarButton title="Collapse All" onClick={handleCollapseAll}>
           <ChevronsDownUp size={15} />
         </ToolbarButton>
+        {onRefresh && (
+          <ToolbarButton title="Refresh file tree" onClick={handleRefresh}>
+            <RefreshCw size={15} />
+          </ToolbarButton>
+        )}
       </div>
 
       {/* Tree */}
       <div
         className={cn(
-          "flex-1 overflow-y-auto py-1 min-h-[120px]",
+          "flex flex-1 min-h-0 flex-col overflow-y-auto py-1",
           treeDropTarget !== null &&
             normPath(treeDropTarget) === normPath(tabRootPrefix) &&
             "bg-primary-bg/25 rounded-md",
@@ -634,13 +687,13 @@ export function FilesView({
         onDrop={onTreePaneDrop}
       >
         {loading && (
-          <p className="px-4 py-6 text-sm text-text-secondary">Loading…</p>
+          <p className="px-4 py-6 text-sm text-text-secondary pointer-events-none shrink-0">Loading…</p>
         )}
         {!loading && error && (
-          <p className="px-4 py-6 text-sm text-red-400">{error}</p>
+          <p className="px-4 py-6 text-sm text-red-400 pointer-events-none shrink-0">{error}</p>
         )}
         {!loading && !error && tree.length === 0 && (
-          <p className="px-4 py-6 text-sm text-text-secondary">No articles yet — drop files here</p>
+          <p className="px-4 py-6 text-sm text-text-secondary pointer-events-none shrink-0">No articles yet — drop files here</p>
         )}
         {!loading &&
           !error &&

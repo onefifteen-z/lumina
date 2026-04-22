@@ -47,6 +47,21 @@ Body`;
     expect(data.created).toBe("");
     expect(data.modified).toBe("");
   });
+
+  it("coerces YAML date scalars on created/modified to ISO strings", () => {
+    const raw = `---
+title: Dated
+tags: []
+created: 2024-06-10
+modified: 2024-06-11
+---
+x`;
+    const { data } = parseFrontmatter(raw);
+    expect(typeof data.created).toBe("string");
+    expect(typeof data.modified).toBe("string");
+    expect(data.created).toMatch(/^2024-06-10/);
+    expect(data.modified).toMatch(/^2024-06-11/);
+  });
 });
 
 describe("serializeFrontmatter", () => {

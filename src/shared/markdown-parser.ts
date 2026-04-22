@@ -8,6 +8,15 @@ import type {
 
 // ─── Frontmatter Parsing & Serialization (Task 2.1) ────────────────────────
 
+/** js-yaml (via gray-matter) may deserialize bare dates/numbers to non-strings. */
+function normalizeFrontmatterScalar(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  return String(value);
+}
+
 /**
  * Parse YAML frontmatter from a raw Markdown string.
  * Returns the extracted data and the body content after the frontmatter block.
@@ -18,12 +27,17 @@ export function parseFrontmatter(raw: string): {
 } {
   const parsed = matter(raw);
   const data = parsed.data as FrontmatterData;
+  const extra = data as Record<string, unknown>;
 
   // Ensure required fields have sensible defaults
+  data.title = normalizeFrontmatterScalar(data.title);
   if (!data.title) data.title = "";
   if (!Array.isArray(data.tags)) data.tags = [];
+  data.created = normalizeFrontmatterScalar(data.created);
   if (!data.created) data.created = "";
-  if (!data.modified) data.modified = (data as Record<string, unknown>).updated as string ?? "";
+  const modifiedOrUpdated = data.modified ?? extra.updated;
+  data.modified = normalizeFrontmatterScalar(modifiedOrUpdated);
+  if (!data.modified) data.modified = "";
 
   return { data, content: parsed.content };
 }

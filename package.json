@@ -1,5 +1,5 @@
 {
-  "name": "llm-wiki",
+  "name": "Lumina",
   "version": "0.8.3",
   "description": "A local, AI-powered wiki desktop application built with Electron",
   "main": "dist/main/main/main.js",

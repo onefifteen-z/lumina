@@ -134,7 +134,8 @@ export function excerptPreviewLines(excerpt: string, maxLines: number): string {
 }
 
 export function formatArticleDateForGraph(iso: unknown): string {
-  const raw = metaString(iso).trim();
+  // `String(...)` guards against any non-string return if callers bypass normalization.
+  const raw = String(metaString(iso)).trim();
   if (!raw) return "—";
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw.length >= 10 ? raw.slice(0, 10) : raw;

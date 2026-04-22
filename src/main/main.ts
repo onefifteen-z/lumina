@@ -74,7 +74,7 @@ function handleFatalError(error: unknown, context: string): never {
   logToFile(`FATAL [${context}]: ${message}\n${stack}`);
 
   dialog.showErrorBox(
-    "LLM Wiki — Fatal Error",
+    "Lumina — Fatal Error",
     `${context}\n\n${message}\n\nThe application will now exit. Check the log at:\n${LOG_FILE}`,
   );
 

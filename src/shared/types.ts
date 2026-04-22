@@ -267,10 +267,14 @@ export interface WikiAPI {
   deleteArticle(title: string): Promise<void>;
   articleExists(title: string): Promise<boolean>;
   createFolder(relativePath: string): Promise<void>;
+  /** Paths like `wiki/inbox` that exist on disk but contain no indexed files. */
+  listEmptyWikiRawFolders(): Promise<string[]>;
   /** Move a vault file or folder into another folder (vault-relative paths). */
   moveVaultEntry(from: string, toDir: string): Promise<void>;
   /** Copy or move OS paths into a vault folder (`toDir` vault-relative). */
   importExternalPaths(absolutePaths: string[], toDir: string): Promise<void>;
+  /** Absolute filesystem path for a dropped or picked `File` (Electron `webUtils.getPathForFile`). */
+  getPathForFile(file: File): string;
   getAbsolutePath(filename: string): Promise<string>;
   readFile(filename: string): Promise<string>;
   revealInFinder(filename: string): Promise<void>;

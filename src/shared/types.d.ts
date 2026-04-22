@@ -81,6 +81,7 @@ export interface BookmarksFile {
 /** Typed IPC bridge API exposed to the renderer via contextBridge. */
 export interface WikiAPI {
     listArticles(): Promise<ArticleMeta[]>;
+    listEmptyWikiRawFolders(): Promise<string[]>;
     getArticle(title: string): Promise<ArticleFile>;
     saveArticle(article: ArticleFile): Promise<void>;
     deleteArticle(title: string): Promise<void>;

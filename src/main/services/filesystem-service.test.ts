@@ -33,6 +33,20 @@ afterEach(async () => {
 
 // ─── scanVault ──────────────────────────────────────────────────────────────
 
+describe("listEmptyWikiRawFolders", () => {
+  it("lists wiki/raw directories that contain no indexed files", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "inbox", "nested-empty"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "wiki", "note.md"),
+      makeArticleRaw("N", [], "x"),
+    );
+    const empty = await service.listEmptyWikiRawFolders();
+    expect(empty).toContain("wiki/inbox");
+    expect(empty).toContain("wiki/inbox/nested-empty");
+    expect(empty).not.toContain("wiki");
+  });
+});
+
 describe("scanVault", () => {
   it("returns empty array for empty vault", async () => {
     const result = await service.scanVault();

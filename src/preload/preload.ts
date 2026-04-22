@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   ArticleFile,
   AppConfig,
@@ -49,12 +49,20 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:createFolder", relativePath);
   },
 
+  listEmptyWikiRawFolders() {
+    return ipcRenderer.invoke("wiki:listEmptyWikiRawFolders");
+  },
+
   moveVaultEntry(from: string, toDir: string) {
     return ipcRenderer.invoke("wiki:moveVaultEntry", from, toDir);
   },
 
   importExternalPaths(absolutePaths: string[], toDir: string) {
     return ipcRenderer.invoke("wiki:importExternalPaths", absolutePaths, toDir);
+  },
+
+  getPathForFile(file: File) {
+    return webUtils.getPathForFile(file);
   },
 
   getAbsolutePath(filename: string) {

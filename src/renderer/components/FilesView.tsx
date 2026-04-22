@@ -37,7 +37,45 @@ function dragHasExternalFiles(e: React.DragEvent): boolean {
   return false;
 }
 
-/** Build `wiki/…` or `raw/…` from a prompt; rejects empty or unsafe segments. */
+/** Resolve OS path for a dropped external file (Electron ≥22 hides `File#path`). */
+function absolutePathForDroppedFile(file: File): string | null {
+  try {
+    return window.api.getPathForFile(file);
+  } catch {
+    /* not a filesystem-backed File in this context */
+  }
+  const legacy = file as File & { path?: string };
+  return legacy.path ?? null;
+}
+
+/** Collect absolute paths from a drop (handles `files` and `items` lists). */
+function collectDroppedExternalPaths(e: React.DragEvent): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const push = (p: string | null) => {
+    if (!p || seen.has(p)) return;
+    seen.add(p);
+    paths.push(p);
+  };
+
+  const { files, items } = e.dataTransfer;
+  if (files?.length) {
+    for (let i = 0; i < files.length; i++) {
+      push(absolutePathForDroppedFile(files[i]!));
+    }
+  }
+  if (paths.length === 0 && items) {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it?.kind !== "file") continue;
+      const f = it.getAsFile();
+      if (f) push(absolutePathForDroppedFile(f));
+    }
+  }
+  return paths;
+}
+
+/** Build `wiki/…` or `raw/…` from user input; rejects empty or unsafe segments. */
 function folderPathForTab(tab: FileCategory, input: string): string | null {
   const normalized = input.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   if (!normalized) return null;
@@ -69,9 +107,48 @@ function fileDisplayName(article: ArticleMeta): string {
   return basename.toLowerCase().endsWith(".md") ? basename.replace(/\.md$/i, "") : basename;
 }
 
+/** Last path segment with extension — used for A–Z / tie-break sorting (real filename). */
+function fileBasenameForSort(article: ArticleMeta): string {
+  const i = article.filename.lastIndexOf("/");
+  return i === -1 ? article.filename : article.filename.slice(i + 1);
+}
+
+const NAME_SORT_LOCALE: Intl.LocalesArgument = undefined;
+const NAME_SORT_OPTS: Intl.CollatorOptions = { sensitivity: "base", numeric: true };
+
+function compareNameKeys(a: string, b: string): number {
+  return a.localeCompare(b, NAME_SORT_LOCALE, NAME_SORT_OPTS);
+}
+
+/** Ensure folder nodes exist for a vault-relative path (e.g. `wiki/inbox`). */
+function ensureFolderPathInTree(root: FolderNode, folderPath: string): void {
+  const parts = folderPath.split("/").filter((p) => p.length > 0);
+  let current = root;
+  for (let i = 0; i < parts.length; i++) {
+    const folderName = parts[i]!;
+    const pathSeg = parts.slice(0, i + 1).join("/");
+    let folder = current.children.find(
+      (n): n is FolderNode => n.type === "folder" && n.name === folderName,
+    );
+    if (!folder) {
+      folder = { type: "folder", name: folderName, path: pathSeg, children: [] };
+      current.children.push(folder);
+    }
+    current = folder;
+  }
+}
+
 /** Build a nested tree from a flat list of ArticleMeta. */
-function buildTree(articles: ArticleMeta[], sortMode: "modified" | "alpha" = "modified"): TreeNode[] {
+function buildTree(
+  articles: ArticleMeta[],
+  sortMode: "modified" | "alpha" = "modified",
+  extraFolderPaths: readonly string[] = [],
+): TreeNode[] {
   const root: FolderNode = { type: "folder", name: "", path: "", children: [] };
+
+  for (const fp of extraFolderPaths) {
+    ensureFolderPathInTree(root, fp.replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""));
+  }
 
   for (const article of articles) {
     const parts = article.filename.split("/");
@@ -97,21 +174,33 @@ function buildTree(articles: ArticleMeta[], sortMode: "modified" | "alpha" = "mo
   return sortNodes(root.children, sortMode);
 }
 
-/** Folders first (alpha), then files sorted by chosen mode. */
-function sortNodes(nodes: TreeNode[], sortMode: "modified" | "alpha" = "modified"): TreeNode[] {
+/**
+ * Sort tree siblings for display. Folders always precede files at each level.
+ * - **alpha**: folders A–Z by name; files A–Z by basename (numeric-aware), then full path.
+ * - **modified**: folders A–Z by name; files by `modified` (newest first), then basename when dates tie or are missing.
+ */
+export function sortNodes(nodes: TreeNode[], sortMode: "modified" | "alpha" = "modified"): TreeNode[] {
   return [...nodes].sort((a, b) => {
     if (a.type === "folder" && b.type === "file") return -1;
     if (a.type === "file" && b.type === "folder") return 1;
     if (a.type === "folder" && b.type === "folder") {
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      return compareNameKeys(a.name, b.name);
     }
+    const fa = a as FileNode;
+    const fb = b as FileNode;
     if (sortMode === "alpha") {
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      const c = compareNameKeys(fileBasenameForSort(fa.article), fileBasenameForSort(fb.article));
+      if (c !== 0) return c;
+      return compareNameKeys(fa.article.filename, fb.article.filename);
     }
-    // Both files — most recently modified first
-    const ta = new Date((a as FileNode).article.modified).getTime();
-    const tb = new Date((b as FileNode).article.modified).getTime();
-    return tb - ta;
+    const ta = new Date(fa.article.modified).getTime();
+    const tb = new Date(fb.article.modified).getTime();
+    const validA = Number.isFinite(ta);
+    const validB = Number.isFinite(tb);
+    if (validA && validB && ta !== tb) return tb - ta;
+    if (validA && !validB) return -1;
+    if (!validA && validB) return 1;
+    return compareNameKeys(fileBasenameForSort(fa.article), fileBasenameForSort(fb.article));
   });
 }
 
@@ -182,7 +271,10 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   onDragOverTarget,
   onDropOnTarget,
 }) => {
+  /** Same base indent as folder rows so files line up with the folder chevron column. */
   const indent = 6 + depth * 16;
+  /** Folder row: chevron (11px) + gap-1 (4px) — reserve the same width before file label for text alignment with folder names. */
+  const fileLeadingReserve = "w-[15px] shrink-0";
 
   if (node.type === "file") {
     const isSelected = node.article.filename === selectedFilename;
@@ -200,9 +292,9 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         onDrop={(e) => onDropOnTarget(e, dropInto)}
         onClick={() => onSelectArticle(node.article.filename)}
         onContextMenu={(e) => onContextMenu?.(e, node.article.filename)}
-        style={{ paddingLeft: `${indent + 18}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
+        style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
-          "flex items-center gap-1.5 w-full text-left truncate transition-colors",
+          "flex items-center gap-1 w-full text-left truncate transition-colors",
           "focus-visible:outline-none cursor-grab active:cursor-grabbing",
           isDropHighlight && "bg-primary-bg/40",
           isSelected
@@ -210,7 +302,13 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
             : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
         )}
       >
-        {isPdf && <FileText size={13} className="shrink-0 text-red-400" />}
+        {isPdf ? (
+          <span className={`${fileLeadingReserve} flex items-center justify-start`}>
+            <FileText size={13} className="shrink-0 text-red-400" />
+          </span>
+        ) : (
+          <span className={fileLeadingReserve} aria-hidden />
+        )}
         <span className="truncate">{node.name}</span>
       </button>
     );
@@ -231,32 +329,36 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         onClick={() => onToggleFolder(node.path)}
         style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
-          "flex items-center gap-1 w-full",
+          "flex items-center gap-0 w-full",
           "text-text-primary hover:bg-surface-hover transition-colors cursor-grab active:cursor-grabbing",
           "focus-visible:outline-none",
           isDropHighlight && "bg-primary-bg/40"
         )}
       >
-        <ChevronRight
-          size={11}
-          className={cn(
-            "shrink-0 text-text-secondary transition-transform duration-150 pointer-events-none",
-            isExpanded && "rotate-90"
-          )}
-        />
-        <span className="truncate font-medium">{node.name}</span>
+        <span className={`${fileLeadingReserve} flex items-center justify-start pointer-events-none`}>
+          <ChevronRight
+            size={11}
+            className={cn(
+              "shrink-0 text-text-secondary transition-transform duration-150",
+              isExpanded && "rotate-90"
+            )}
+          />
+        </span>
+        <span className="truncate font-medium min-w-0">{node.name}</span>
       </button>
       {isExpanded && (
         <div
-          className="relative min-h-[28px]"
+          className={cn("relative min-h-0", node.children.length === 0 && "py-1")}
           onDragOver={(e) => onDragOverTarget(e, node.path)}
           onDrop={(e) => onDropOnTarget(e, node.path)}
         >
-          {/* Vertical guide line */}
-          <div
-            className="absolute top-0 bottom-0 w-px bg-border/50"
-            style={{ left: `${indent + 5}px` }}
-          />
+          {/* Vertical guide line — only when there are children (empty expanded folders stay compact). */}
+          {node.children.length > 0 && (
+            <div
+              className="absolute top-0 bottom-0 w-px bg-border/50"
+              style={{ left: `${indent + 5}px` }}
+            />
+          )}
           {sortNodes(node.children, sortMode).map((child) => (
             <TreeNodeRow
               key={child.type === "file" ? child.article.filename : child.path}
@@ -286,6 +388,8 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
 
 export interface FilesViewProps {
   articles: ArticleMeta[];
+  /** Folders under wiki/ or raw/ that exist on disk but contain no files (shown in tree). */
+  emptyFolderPaths?: string[];
   selectedFilename: string | null;
   loading: boolean;
   error: string | null;
@@ -375,6 +479,7 @@ function TabBar({ activeTab, wikiCount, rawCount, onTabChange }: TabBarProps) {
 
 export function FilesView({
   articles,
+  emptyFolderPaths = [],
   selectedFilename,
   loading,
   error,
@@ -412,6 +517,33 @@ export function FilesView({
   const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
   const [sortMode, setSortMode] = useState<"modified" | "alpha">("modified");
 
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderError, setNewFolderError] = useState<string | null>(null);
+  const newFolderInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (!newFolderOpen) return;
+    const t = window.setTimeout(() => {
+      newFolderInputRef.current?.focus();
+      newFolderInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [newFolderOpen]);
+
+  React.useEffect(() => {
+    if (!newFolderOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setNewFolderOpen(false);
+        setNewFolderError(null);
+        setNewFolderName("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [newFolderOpen]);
+
   // Per-tab selection tracking — stores the last selected filename per tab for highlight restoration
   const [tabSelections, setTabSelections] = useState<{
     wiki: string | null;
@@ -430,8 +562,22 @@ export function FilesView({
   // Filter articles by active tab (excludes config files automatically)
   const wikiArticles = useMemo(() => filterArticlesForTab(articles, "wiki"), [articles]);
   const rawArticles = useMemo(() => filterArticlesForTab(articles, "raw"), [articles]);
-  const wikiTree = useMemo(() => buildTree(wikiArticles, sortMode), [wikiArticles, sortMode]);
-  const rawTree = useMemo(() => buildTree(rawArticles, sortMode), [rawArticles, sortMode]);
+  const wikiExtraFolders = useMemo(
+    () => emptyFolderPaths.filter((p) => p === "wiki" || p.startsWith("wiki/")),
+    [emptyFolderPaths],
+  );
+  const rawExtraFolders = useMemo(
+    () => emptyFolderPaths.filter((p) => p === "raw" || p.startsWith("raw/")),
+    [emptyFolderPaths],
+  );
+  const wikiTree = useMemo(
+    () => buildTree(wikiArticles, sortMode, wikiExtraFolders),
+    [wikiArticles, sortMode, wikiExtraFolders],
+  );
+  const rawTree = useMemo(
+    () => buildTree(rawArticles, sortMode, rawExtraFolders),
+    [rawArticles, sortMode, rawExtraFolders],
+  );
   const tree = activeTab === "wiki" ? wikiTree : rawTree;
 
   const tabRootPrefix = useMemo(() => {
@@ -495,12 +641,8 @@ export function FilesView({
           if (normPath(vaultParentDir(src)) === normPath(targetFolderPath)) return;
           await window.api.moveVaultEntry(src, targetFolderPath);
           expandTarget();
-        } else if (e.dataTransfer.files?.length) {
-          const paths: string[] = [];
-          for (let i = 0; i < e.dataTransfer.files.length; i++) {
-            const f = e.dataTransfer.files[i] as File & { path?: string };
-            if (f.path) paths.push(f.path);
-          }
+        } else {
+          const paths = collectDroppedExternalPaths(e);
           if (paths.length) {
             await window.api.importExternalPaths(paths, targetFolderPath);
             expandTarget();
@@ -615,17 +757,29 @@ export function FilesView({
     setPerTabExpanded((prev) => ({ ...prev, [activeTab]: new Set<string>() }));
   }, [activeTab]);
 
-  // New folder prompt — paths are scoped to the active Wiki / Raw tab root
-  const handleNewFolder = useCallback(() => {
-    const name = window.prompt("Folder name (under current tab):");
-    if (!name?.trim()) return;
-    const rel = folderPathForTab(activeTab, name.trim());
+  const openNewFolderDialog = useCallback(() => {
+    setNewFolderName("");
+    setNewFolderError(null);
+    setNewFolderOpen(true);
+  }, []);
+
+  const cancelNewFolderDialog = useCallback(() => {
+    setNewFolderOpen(false);
+    setNewFolderError(null);
+    setNewFolderName("");
+  }, []);
+
+  const submitNewFolder = useCallback(() => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
+    const rel = folderPathForTab(activeTab, trimmed);
     if (!rel) {
-      window.alert("Invalid folder name.");
+      setNewFolderError("Invalid name — use safe segments only (no .. or empty parts).");
       return;
     }
     void onNewFolder(rel);
-  }, [onNewFolder, activeTab]);
+    cancelNewFolderDialog();
+  }, [newFolderName, activeTab, onNewFolder, cancelNewFolderDialog]);
 
   const toggleSort = useCallback(() => {
     setSortMode((prev) => (prev === "modified" ? "alpha" : "modified"));
@@ -656,7 +810,7 @@ export function FilesView({
         <ToolbarButton title="New Markdown" onClick={onNewArticle}>
           <FilePlus size={15} />
         </ToolbarButton>
-        <ToolbarButton title="New Folder" onClick={handleNewFolder}>
+        <ToolbarButton title="New Folder" onClick={openNewFolderDialog}>
           <FolderPlus size={15} />
         </ToolbarButton>
         <ToolbarButton title={sortMode === "modified" ? "Sort: Recent" : "Sort: A-Z"} onClick={toggleSort}>
@@ -686,17 +840,18 @@ export function FilesView({
         onDragOver={onTreePaneDragOver}
         onDrop={onTreePaneDrop}
       >
-        {loading && (
+        {loading && articles.length === 0 && (
           <p className="px-4 py-6 text-sm text-text-secondary pointer-events-none shrink-0">Loading…</p>
         )}
-        {!loading && error && (
+        {error && (
           <p className="px-4 py-6 text-sm text-red-400 pointer-events-none shrink-0">{error}</p>
         )}
-        {!loading && !error && tree.length === 0 && (
+        {!error && !loading && tree.length === 0 && (
           <p className="px-4 py-6 text-sm text-text-secondary pointer-events-none shrink-0">No articles yet — drop files here</p>
         )}
-        {!loading &&
-          !error &&
+        {!error &&
+          tree.length > 0 &&
+          (!loading || articles.length > 0) &&
           tree.map((node) => (
             <TreeNodeRow
               key={node.type === "file" ? node.article.filename : node.path}
@@ -719,6 +874,67 @@ export function FilesView({
       </div>
 
       {/* Context menu */}
+      {newFolderOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) cancelNewFolderDialog();
+          }}
+        >
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lumina-new-folder-title"
+            className="w-full max-w-sm rounded-lg border border-border bg-sidebar-bg p-4 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitNewFolder();
+            }}
+          >
+            <h2 id="lumina-new-folder-title" className="text-sm font-semibold text-text-primary">
+              New folder
+            </h2>
+            <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+              Path is under{" "}
+              <code className="rounded bg-surface-hover px-1 py-0.5 text-text-primary">{activeTab}/</code> in the
+              current vault. Nothing is created until you enter a name and choose Create; Cancel closes without
+              changes.
+            </p>
+            <input
+              ref={newFolderInputRef}
+              type="text"
+              value={newFolderName}
+              onChange={(e) => {
+                setNewFolderName(e.target.value);
+                setNewFolderError(null);
+              }}
+              className="mt-3 w-full rounded-md border border-border bg-main-bg px-2.5 py-2 text-sm text-text-primary placeholder:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-border"
+              placeholder="e.g. inbox or notes/2025"
+              autoComplete="off"
+            />
+            {newFolderError ? <p className="mt-2 text-xs text-red-400">{newFolderError}</p> : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelNewFolderDialog}
+                className="rounded-md border border-border bg-main-bg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!newFolderName.trim()}
+                className="rounded-md border border-primary-border bg-accent/15 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+              >
+                Create
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {ctxMenu && (
         <div
           className="fixed z-50 bg-sidebar-bg border border-border rounded-lg shadow-xl py-1 w-fit"

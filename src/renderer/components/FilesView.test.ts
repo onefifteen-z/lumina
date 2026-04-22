@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ArticleMeta } from "../../shared/types";
 import { filterArticlesForTab } from "../lib/file-classification";
+import { sortNodes } from "./FilesView";
 
 /**
  * Unit tests for FilesView TabBar logic.
@@ -136,5 +137,64 @@ describe("Tab filtering integration", () => {
   it("empty article list produces zero counts for both tabs", () => {
     expect(filterArticlesForTab([], "wiki")).toHaveLength(0);
     expect(filterArticlesForTab([], "raw")).toHaveLength(0);
+  });
+});
+
+function articleMeta(overrides: Partial<ArticleMeta> & { filename: string }): ArticleMeta {
+  return {
+    title: overrides.title ?? "t",
+    filename: overrides.filename,
+    tags: overrides.tags ?? [],
+    created: overrides.created ?? "",
+    modified: overrides.modified ?? "",
+    wikilinks: overrides.wikilinks ?? [],
+    excerpt: overrides.excerpt ?? "",
+  };
+}
+
+describe("sortNodes", () => {
+  it("alpha mode keeps folders above files and sorts files by basename", () => {
+    const nodes = [
+      { type: "folder" as const, name: "projects", path: "wiki/projects", children: [] },
+      { type: "file" as const, name: "apple", article: articleMeta({ filename: "wiki/apple.md" }) },
+    ];
+    const sorted = sortNodes(nodes, "alpha");
+    expect(sorted[0]?.type).toBe("folder");
+    expect(sorted[1]?.type).toBe("file");
+  });
+
+  it("alpha mode still reorders sibling folders when there are no files", () => {
+    const nodes = [
+      { type: "folder" as const, name: "zebra", path: "wiki/zebra", children: [] },
+      { type: "folder" as const, name: "alpha", path: "wiki/alpha", children: [] },
+    ];
+    const sorted = sortNodes(nodes, "alpha");
+    expect(sorted.map((n) => (n.type === "folder" ? n.name : ""))).toEqual(["alpha", "zebra"]);
+  });
+
+  it("modified mode keeps folders before files", () => {
+    const nodes = [
+      {
+        type: "file" as const,
+        name: "new",
+        article: articleMeta({ filename: "wiki/new.md", modified: "2099-01-01T00:00:00Z" }),
+      },
+      { type: "folder" as const, name: "old", path: "wiki/old", children: [] },
+    ];
+    const sorted = sortNodes(nodes, "modified");
+    expect(sorted[0]?.type).toBe("folder");
+    expect(sorted[1]?.type).toBe("file");
+  });
+
+  it("alpha mode uses numeric order in basenames", () => {
+    const nodes = [
+      { type: "file" as const, name: "a10", article: articleMeta({ filename: "wiki/n10.md" }) },
+      { type: "file" as const, name: "a2", article: articleMeta({ filename: "wiki/n2.md" }) },
+    ];
+    const sorted = sortNodes(nodes, "alpha");
+    expect(sorted[0]?.type).toBe("file");
+    expect(sorted[0]?.type === "file" && sorted[0].article.filename).toBe("wiki/n2.md");
+    expect(sorted[1]?.type).toBe("file");
+    expect(sorted[1]?.type === "file" && sorted[1].article.filename).toBe("wiki/n10.md");
   });
 });

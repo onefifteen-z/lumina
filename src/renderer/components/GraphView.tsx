@@ -1,5 +1,14 @@
-import React, { useEffect, useRef, useCallback, useState } from "react";
-import { Scan } from "lucide-react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  Suspense,
+  lazy,
+} from "react";
+import { Scan, LayoutGrid, Box, ListFilter } from "lucide-react";
 import {
   forceSimulation,
   forceLink,
@@ -12,14 +21,35 @@ import {
   type SimulationLinkDatum,
 } from "d3-force";
 import type { ArticleMeta } from "../../shared/types";
+import {
+  buildWikiGraph,
+  buildWikiGraphTooltipMap,
+  discoverWikiGraphFilterBuckets,
+  filterArticlesForWikiGraph,
+  wikiGraphFilterDiscoveryKey,
+  DEFAULT_WIKI_GRAPH_FILTER_ENABLED,
+  type WikiGraphData,
+  type WikiGraphNodeTooltip,
+} from "./graph/wikiGraph";
+import { GraphNodeTooltip } from "./graph/GraphNodeTooltip";
+import {
+  getGraphHighlightPalette,
+  buildAdjacencyStringLinks,
+  bfsHopDistances,
+  graph2DEdgeLineWidth,
+  graph2DNodeRingLineWidth,
+  graphEdgeStrokeColor,
+  graphLabelColor,
+  graphNodeFillColor,
+  graphNodeRingColor,
+  edgeHoverTier,
+} from "./graph/graphHighlightPalette";
 
-/** Show only the leaf name — strip folder prefix if title is path-derived. */
-function displayTitle(article: ArticleMeta): string {
-  if (article.title.includes("/")) {
-    const basename = article.filename.split("/").pop() ?? article.filename;
-    return basename.replace(/\.md$/i, "");
-  }
-  return article.title;
+const GraphView3D = lazy(() => import("./graph/GraphView3D"));
+
+function wikiGraphFilterRowLabel(id: string, kind: "folder" | "root"): string {
+  if (kind === "root") return `${id}.md`;
+  return id;
 }
 
 interface GraphNode extends SimulationNodeDatum {
@@ -39,7 +69,16 @@ interface GraphViewProps {
   onSelectArticle: (filename: string) => void;
 }
 
-export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
+type GraphMode = "2d" | "3d";
+
+interface GraphView2DCanvasProps {
+  graphData: WikiGraphData;
+  tooltips: Map<string, WikiGraphNodeTooltip>;
+  onSelectArticle: (filename: string) => void;
+  onFitRequestRef?: React.MutableRefObject<(() => void) | null>;
+}
+
+function GraphView2DCanvas({ graphData, tooltips, onSelectArticle, onFitRequestRef }: GraphView2DCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<GraphNode[]>([]);
   const linksRef = useRef<GraphLink[]>([]);
@@ -50,78 +89,7 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
   const hoveredRef = useRef<GraphNode | null>(null);
   const sizeRef = useRef({ w: 0, h: 0 });
   const [hovered, setHovered] = useState<string | null>(null);
-
-  // Build graph data from articles
-  useEffect(() => {
-    // Only show articles under the wiki/ folder
-    const wikiArticles = articles.filter((a) => a.filename.startsWith("wiki/") && !a.filename.split("/").some((s) => s.startsWith(".")));
-
-    // Build multiple lookup keys per article to maximise wikilink resolution:
-    //   1. full title (exact)
-    //   2. basename stem (for path-derived titles like "raw/MoM/file")
-    //   3. filename stem
-    const titleMap = new Map<string, string>(); // key -> filename
-    for (const a of wikiArticles) {
-      titleMap.set(a.title.toLowerCase(), a.filename);
-      const stem = a.filename.split("/").pop()?.replace(/\.md$/i, "") ?? "";
-      if (stem) titleMap.set(stem.toLowerCase(), a.filename);
-      if (a.title.includes("/")) {
-        const baseStem = a.title.split("/").pop()?.trim() ?? "";
-        if (baseStem) titleMap.set(baseStem.toLowerCase(), a.filename);
-      }
-    }
-
-    const nodes: GraphNode[] = wikiArticles.map((a) => ({
-      id: a.filename,
-      title: displayTitle(a),
-      filename: a.filename,
-      linkCount: 0,
-    }));
-
-    const links: GraphLink[] = [];
-    const seen = new Set<string>();
-    for (const a of wikiArticles) {
-      for (const target of a.wikilinks) {
-        const targetFilename = titleMap.get(target.toLowerCase());
-        if (!targetFilename || targetFilename === a.filename) continue;
-        const key = [a.filename, targetFilename].sort().join("→");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        links.push({ source: a.filename, target: targetFilename });
-      }
-    }
-
-    // Update link counts based on actual resolved links
-    const countMap = new Map<string, number>();
-    for (const l of links) {
-      const s = typeof l.source === "string" ? l.source : l.source.id;
-      const t = typeof l.target === "string" ? l.target : l.target.id;
-      countMap.set(s, (countMap.get(s) ?? 0) + 1);
-      countMap.set(t, (countMap.get(t) ?? 0) + 1);
-    }
-    for (const n of nodes) n.linkCount = countMap.get(n.id) ?? 0;
-
-    nodesRef.current = nodes;
-    linksRef.current = links;
-
-    const sim = forceSimulation<GraphNode>(nodes)
-      .alphaDecay(0.015)
-      .velocityDecay(0.55)
-      .force("link", forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(220).strength(0.3))
-      .force("charge", forceManyBody().strength(-900).distanceMax(900))
-      .force("center", forceCenter(0, 0).strength(0.015))
-      .force("x", forceX(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
-      .force("y", forceY(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
-      .force("collide", forceCollide(65))
-      .on("tick", draw)
-      .on("end", () => {
-        fitAll();
-        draw();
-      });
-
-    simRef.current = sim;
-    return () => { sim.stop(); };
-  }, [articles]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [tooltipClient, setTooltipClient] = useState<{ x: number; y: number } | null>(null);
 
   const fitAll = useCallback(() => {
     const nodes = nodesRef.current;
@@ -129,7 +97,10 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     const { w, h } = sizeRef.current;
     if (w === 0 || h === 0) return;
 
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       minX = Math.min(minX, n.x);
@@ -157,68 +128,117 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     const { x: tx, y: ty, k } = transformRef.current;
     const nodes = nodesRef.current;
     const links = linksRef.current;
-    const hovId = hoveredRef.current?.id;
+    const hovId = hoveredRef.current?.id ?? null;
 
-    // Detect theme
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    const edgeColor = isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)";
-    const edgeHoverColor = isDark ? "rgba(212,115,26,0.7)" : "rgba(184,94,16,0.7)";
-    const nodeColor = isDark ? "#a0a0a0" : "#646464";
-    const nodeHoverColor = isDark ? "#D4731A" : "#B85E10";
-    const nodeBorderColor = isDark ? "#dcdcdc" : "#505050";
-    const labelColor = isDark ? "#d2d2d2" : "#282828";
+    const p = getGraphHighlightPalette(isDark);
+
+    const adj = buildAdjacencyStringLinks(
+      links.map((l) => ({
+        source: (l.source as GraphNode).id,
+        target: (l.target as GraphNode).id,
+      })),
+    );
+    const dist = hovId ? bfsHopDistances(adj, hovId, 2) : null;
 
     ctx.clearRect(0, 0, w, h);
     ctx.save();
     ctx.translate(w / 2 + tx, h / 2 + ty);
     ctx.scale(k, k);
 
-    // Draw edges
     for (const l of links) {
       const s = l.source as GraphNode;
       const t = l.target as GraphNode;
       if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
-      const highlight = hovId && (s.id === hovId || t.id === hovId);
-      ctx.strokeStyle = highlight ? edgeHoverColor : edgeColor;
-      ctx.lineWidth = highlight ? 1.5 : 1;
+      const tier = edgeHoverTier(l, dist, hovId);
+      ctx.strokeStyle = graphEdgeStrokeColor(p, dist, hovId, l);
+      ctx.lineWidth = graph2DEdgeLineWidth(hovId, tier);
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
       ctx.stroke();
     }
 
-    // Draw nodes
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       const r = 3 + Math.min(n.linkCount, 12) * 1.2;
-      const isHov = n.id === hovId;
 
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = isHov ? nodeHoverColor : nodeColor;
+      ctx.fillStyle = graphNodeFillColor(p, dist, hovId, n.id);
       ctx.fill();
 
-      // Border ring
-      ctx.strokeStyle = isHov ? (isDark ? "#EFA03C" : "#D4731A") : nodeBorderColor;
-      ctx.lineWidth = isHov ? 2 : 0.5;
+      ctx.strokeStyle = graphNodeRingColor(p, dist, hovId, n.id);
+      ctx.lineWidth = graph2DNodeRingLineWidth(hovId, n.id, dist);
       ctx.stroke();
     }
 
-    // Draw labels — always show title
     ctx.font = `${Math.max(9, 10 / k)}px system-ui, sans-serif`;
     ctx.textAlign = "center";
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
       const r = 3 + Math.min(n.linkCount, 12) * 1.2;
-      const isHov = n.id === hovId;
-      ctx.fillStyle = isHov ? (isDark ? "#EFA03C" : "#D4731A") : labelColor;
+      ctx.fillStyle = graphLabelColor(p, dist, hovId, n.id);
       ctx.fillText(n.title, n.x, n.y + r + 12);
     }
 
     ctx.restore();
   }, []);
 
-  // Resize observer
+  useEffect(() => {
+    const nodes: GraphNode[] = graphData.nodes.map((n) => ({ ...n }));
+    const links: GraphLink[] = graphData.links.map((l) => ({ source: l.source, target: l.target }));
+
+    nodesRef.current = nodes;
+    linksRef.current = links;
+
+    const sim = forceSimulation<GraphNode>(nodes)
+      .alphaDecay(0.015)
+      .velocityDecay(0.55)
+      .force("link", forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(220).strength(0.3))
+      .force("charge", forceManyBody().strength(-900).distanceMax(900))
+      .force("center", forceCenter(0, 0).strength(0.015))
+      .force("x", forceX(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
+      .force("y", forceY(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
+      .force("collide", forceCollide(65));
+
+    sim.stop();
+    // Settle layout synchronously so the first paint is already stable + fit (no visible “flying” dots).
+    if (nodes.length > 0) {
+      const maxTicks = Math.min(5000, Math.max(400, nodes.length * 25));
+      let ticks = 0;
+      while (sim.alpha() > sim.alphaMin() && ticks < maxTicks) {
+        sim.tick();
+        ticks += 1;
+      }
+    }
+
+    fitAll();
+    draw();
+
+    sim.on("tick", draw).on("end", () => {
+      fitAll();
+      draw();
+    });
+
+    simRef.current = sim;
+    return () => {
+      sim.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draw/fitAll stable; graph identity tracks article-driven rebuilds
+  }, [graphData, draw, fitAll]);
+
+  useEffect(() => {
+    const runFit = () => {
+      fitAll();
+      draw();
+    };
+    if (onFitRequestRef) onFitRequestRef.current = runFit;
+    return () => {
+      if (onFitRequestRef) onFitRequestRef.current = null;
+    };
+  }, [onFitRequestRef, fitAll, draw]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -229,13 +249,13 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
       canvas.height = height * dpr;
       canvas.getContext("2d")?.scale(dpr, dpr);
       sizeRef.current = { w: width, h: height };
+      fitAll();
       draw();
     });
     ro.observe(canvas.parentElement!);
     return () => ro.disconnect();
-  }, [draw]);
+  }, [draw, fitAll]);
 
-  // Hit test helper
   const hitTest = useCallback((clientX: number, clientY: number): GraphNode | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -246,57 +266,66 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     const my = (clientY - rect.top - h / 2 - ty) / k;
     for (const n of nodesRef.current) {
       if (n.x == null || n.y == null) continue;
-      const r = 4 + Math.min(n.linkCount, 10) * 1.5 + 4; // extra padding
+      const r = 4 + Math.min(n.linkCount, 10) * 1.5 + 4;
       if ((mx - n.x) ** 2 + (my - n.y) ** 2 < r * r) return n;
     }
     return null;
   }, []);
 
-  // Mouse handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    const node = hitTest(e.clientX, e.clientY);
-    if (node && node.x != null && node.y != null) {
-      const canvas = canvasRef.current!;
-      const rect = canvas.getBoundingClientRect();
-      const { w, h } = sizeRef.current;
-      const { x: tx, y: ty, k } = transformRef.current;
-      const mx = (e.clientX - rect.left - w / 2 - tx) / k;
-      const my = (e.clientY - rect.top - h / 2 - ty) / k;
-      dragRef.current = { node, offsetX: node.x - mx, offsetY: node.y - my };
-      node.fx = node.x;
-      node.fy = node.y;
-      simRef.current?.alphaTarget(0.08).restart();
-    } else {
-      panRef.current = { startX: e.clientX, startY: e.clientY, tx: transformRef.current.x, ty: transformRef.current.y };
-    }
-  }, [hitTest]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      const node = hitTest(e.clientX, e.clientY);
+      if (node && node.x != null && node.y != null) {
+        const canvas = canvasRef.current!;
+        const rect = canvas.getBoundingClientRect();
+        const { w, h } = sizeRef.current;
+        const { x: tx, y: ty, k } = transformRef.current;
+        const mx = (e.clientX - rect.left - w / 2 - tx) / k;
+        const my = (e.clientY - rect.top - h / 2 - ty) / k;
+        dragRef.current = { node, offsetX: node.x - mx, offsetY: node.y - my };
+        node.fx = node.x;
+        node.fy = node.y;
+        simRef.current?.alphaTarget(0.08).restart();
+      } else {
+        panRef.current = { startX: e.clientX, startY: e.clientY, tx: transformRef.current.x, ty: transformRef.current.y };
+      }
+    },
+    [hitTest],
+  );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (dragRef.current) {
-      const canvas = canvasRef.current!;
-      const rect = canvas.getBoundingClientRect();
-      const { w, h } = sizeRef.current;
-      const { x: tx, y: ty, k } = transformRef.current;
-      const mx = (e.clientX - rect.left - w / 2 - tx) / k;
-      const my = (e.clientY - rect.top - h / 2 - ty) / k;
-      dragRef.current.node.fx = mx + dragRef.current.offsetX;
-      dragRef.current.node.fy = my + dragRef.current.offsetY;
-      return;
-    }
-    if (panRef.current) {
-      transformRef.current.x = panRef.current.tx + (e.clientX - panRef.current.startX);
-      transformRef.current.y = panRef.current.ty + (e.clientY - panRef.current.startY);
-      draw();
-      return;
-    }
-    const node = hitTest(e.clientX, e.clientY);
-    const prev = hoveredRef.current;
-    if (node?.id !== prev?.id) {
-      hoveredRef.current = node;
-      setHovered(node?.id ?? null);
-      draw();
-    }
-  }, [hitTest, draw]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragRef.current) {
+        setTooltipClient(null);
+        const canvas = canvasRef.current!;
+        const rect = canvas.getBoundingClientRect();
+        const { w, h } = sizeRef.current;
+        const { x: tx, y: ty, k } = transformRef.current;
+        const mx = (e.clientX - rect.left - w / 2 - tx) / k;
+        const my = (e.clientY - rect.top - h / 2 - ty) / k;
+        dragRef.current.node.fx = mx + dragRef.current.offsetX;
+        dragRef.current.node.fy = my + dragRef.current.offsetY;
+        return;
+      }
+      if (panRef.current) {
+        setTooltipClient(null);
+        transformRef.current.x = panRef.current.tx + (e.clientX - panRef.current.startX);
+        transformRef.current.y = panRef.current.ty + (e.clientY - panRef.current.startY);
+        draw();
+        return;
+      }
+      const node = hitTest(e.clientX, e.clientY);
+      if (node) setTooltipClient({ x: e.clientX, y: e.clientY });
+      else setTooltipClient(null);
+      const prev = hoveredRef.current;
+      if (node?.id !== prev?.id) {
+        hoveredRef.current = node;
+        setHovered(node?.id ?? null);
+        draw();
+      }
+    },
+    [hitTest, draw],
+  );
 
   const handleMouseUp = useCallback(() => {
     if (dragRef.current) {
@@ -308,47 +337,272 @@ export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
     panRef.current = null;
   }, []);
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (panRef.current) return; // was panning
-    const node = hitTest(e.clientX, e.clientY);
-    if (node) onSelectArticle(node.filename);
-  }, [hitTest, onSelectArticle]);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const t = transformRef.current;
-    t.k = Math.max(0.1, Math.min(5, t.k * delta));
+  const handleCanvasLeave = useCallback(() => {
+    handleMouseUp();
+    hoveredRef.current = null;
+    setHovered(null);
+    setTooltipClient(null);
     draw();
-  }, [draw]);
+  }, [handleMouseUp, draw]);
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (panRef.current) return;
+      const node = hitTest(e.clientX, e.clientY);
+      if (node) onSelectArticle(node.filename);
+    },
+    [hitTest, onSelectArticle],
+  );
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const t = transformRef.current;
+      t.k = Math.max(0.1, Math.min(5, t.k * delta));
+      draw();
+    },
+    [draw],
+  );
+
+  const tipData = hovered && tooltipClient ? tooltips.get(hovered) : undefined;
 
   return (
-    <div className="relative w-full h-full bg-main-bg overflow-hidden">
+    <div className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        className="w-full h-full"
+        className="w-full h-full block"
         style={{ cursor: hovered ? "pointer" : "grab" }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleCanvasLeave}
         onClick={handleClick}
         onWheel={handleWheel}
       />
-      {/* Fit-to-view button */}
-      <button
-        type="button"
-        title="Fit all nodes"
-        onClick={() => { fitAll(); draw(); }}
-        className="absolute bottom-3 right-3 w-8 h-8 flex items-center justify-center rounded-md bg-surface-hover border border-border text-text-secondary hover:text-text-primary transition-colors"
-      >
-        <Scan size={15} />
-      </button>
-      {hovered && (
-        <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md border border-border text-xs text-text-primary pointer-events-none bg-sidebar-bg">
-          {nodesRef.current.find((n) => n.id === hovered)?.title}
-        </div>
+      {tipData && tooltipClient ? (
+        <GraphNodeTooltip data={tipData} clientX={tooltipClient.x} clientY={tooltipClient.y} />
+      ) : null}
+    </div>
+  );
+}
+
+export function GraphView({ articles, onSelectArticle }: GraphViewProps) {
+  const filterBuckets = useMemo(() => discoverWikiGraphFilterBuckets(articles), [articles]);
+  const filterDiscoveryKey = useMemo(() => wikiGraphFilterDiscoveryKey(filterBuckets), [filterBuckets]);
+
+  const [enabledWikiFilters, setEnabledWikiFilters] = useState<Set<string>>(() => {
+    const b = discoverWikiGraphFilterBuckets(articles);
+    const next = new Set<string>();
+    for (const id of [...b.folderIds, ...b.rootFileIds]) {
+      if (DEFAULT_WIKI_GRAPH_FILTER_ENABLED.has(id)) next.add(id);
+    }
+    return next;
+  });
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  const prevFilterDiscoveryKeyRef = useRef(filterDiscoveryKey);
+
+  useLayoutEffect(() => {
+    if (prevFilterDiscoveryKeyRef.current === filterDiscoveryKey) return;
+    prevFilterDiscoveryKeyRef.current = filterDiscoveryKey;
+    const all = new Set([...filterBuckets.folderIds, ...filterBuckets.rootFileIds]);
+    const next = new Set<string>();
+    for (const id of all) {
+      if (DEFAULT_WIKI_GRAPH_FILTER_ENABLED.has(id)) next.add(id);
+    }
+    setEnabledWikiFilters(next);
+  }, [filterDiscoveryKey, filterBuckets]);
+
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [filterMenuOpen]);
+
+  const filteredArticles = useMemo(
+    () => filterArticlesForWikiGraph(articles, enabledWikiFilters),
+    [articles, enabledWikiFilters],
+  );
+
+  const graphData = useMemo(() => buildWikiGraph(filteredArticles), [filteredArticles]);
+  const graphTooltips = useMemo(() => buildWikiGraphTooltipMap(filteredArticles), [filteredArticles]);
+
+  const toggleWikiFilter = useCallback((id: string) => {
+    setEnabledWikiFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const hasWikiFilterOptions =
+    filterBuckets.folderIds.length > 0 || filterBuckets.rootFileIds.length > 0;
+
+  const [mode, setMode] = useState<GraphMode>("2d");
+  const fit2dRef = useRef<(() => void) | null>(null);
+  const fit3dRef = useRef<(() => void) | null>(null);
+
+  const [isDark, setIsDark] = useState(
+    () => document.documentElement.getAttribute("data-theme") === "dark",
+  );
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div className="relative w-full h-full bg-main-bg overflow-hidden">
+      <div ref={filterMenuRef} className="absolute top-3 right-3 z-20">
+        <button
+          type="button"
+          title="Filter wiki scope"
+          aria-expanded={filterMenuOpen}
+          aria-haspopup="true"
+          onClick={() => setFilterMenuOpen((o) => !o)}
+          className={`w-8 h-8 flex items-center justify-center rounded-md border transition-colors ${
+            filterMenuOpen
+              ? "bg-surface-hover border-primary-border text-text-primary"
+              : "bg-surface-hover border-border text-text-secondary hover:text-text-primary"
+          }`}
+        >
+          <ListFilter size={15} aria-hidden />
+        </button>
+        {filterMenuOpen && (
+          <div
+            className="absolute right-0 mt-1 w-56 max-h-[min(70vh,22rem)] overflow-y-auto rounded-md border border-border bg-sidebar-bg shadow-lg py-2 px-1 text-sm"
+            role="menu"
+            aria-label="Wiki graph filters"
+          >
+            {!hasWikiFilterOptions ? (
+              <div className="px-3 py-2 text-text-secondary text-xs">No wiki folders or root pages found.</div>
+            ) : (
+              <>
+                {filterBuckets.folderIds.length > 0 && (
+                  <div className="px-2 pb-1">
+                    <div className="px-1 py-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+                      Wiki folders
+                    </div>
+                    {filterBuckets.folderIds.map((id) => (
+                      <label
+                        key={id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-hover"
+                      >
+                        <input
+                          type="checkbox"
+                          className="rounded border-border"
+                          checked={enabledWikiFilters.has(id)}
+                          onChange={() => toggleWikiFilter(id)}
+                        />
+                        <span className="text-text-primary truncate">{wikiGraphFilterRowLabel(id, "folder")}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {filterBuckets.rootFileIds.length > 0 && (
+                  <div className={`px-2 ${filterBuckets.folderIds.length > 0 ? "pt-2 border-t border-border" : ""}`}>
+                    <div className="px-1 py-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+                      Wiki root files
+                    </div>
+                    {filterBuckets.rootFileIds.map((id) => (
+                      <label
+                        key={id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-hover"
+                      >
+                        <input
+                          type="checkbox"
+                          className="rounded border-border"
+                          checked={enabledWikiFilters.has(id)}
+                          onChange={() => toggleWikiFilter(id)}
+                        />
+                        <span className="text-text-primary truncate">{wikiGraphFilterRowLabel(id, "root")}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {mode === "2d" ? (
+        <GraphView2DCanvas
+          graphData={graphData}
+          tooltips={graphTooltips}
+          onSelectArticle={onSelectArticle}
+          onFitRequestRef={fit2dRef}
+        />
+      ) : (
+        <Suspense
+          fallback={
+            <div className="w-full h-full flex items-center justify-center text-text-secondary text-sm">Loading 3D…</div>
+          }
+        >
+          <GraphView3D
+            graphData={graphData}
+            tooltips={graphTooltips}
+            onSelectArticle={onSelectArticle}
+            isDark={isDark}
+            onFitRequestRef={fit3dRef}
+          />
+        </Suspense>
       )}
+
+      <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+        <div
+          className="flex rounded-md border border-border overflow-hidden bg-sidebar-bg"
+          role="group"
+          aria-label="Graph layout"
+        >
+          <button
+            type="button"
+            title="2D graph"
+            aria-pressed={mode === "2d"}
+            onClick={() => setMode("2d")}
+            className={`px-2 py-1.5 flex items-center justify-center transition-colors ${
+              mode === "2d"
+                ? "bg-surface-hover text-text-primary"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            <LayoutGrid size={15} aria-hidden />
+          </button>
+          <button
+            type="button"
+            title="3D graph"
+            aria-pressed={mode === "3d"}
+            onClick={() => setMode("3d")}
+            className={`px-2 py-1.5 flex items-center justify-center transition-colors border-l border-border ${
+              mode === "3d"
+                ? "bg-surface-hover text-text-primary"
+                : "text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            <Box size={15} aria-hidden />
+          </button>
+        </div>
+        <button
+          type="button"
+          title={mode === "2d" ? "Fit all nodes" : "Fit camera to graph"}
+          onClick={() => {
+            if (mode === "2d") fit2dRef.current?.();
+            else fit3dRef.current?.();
+          }}
+          className="w-8 h-8 flex items-center justify-center rounded-md bg-surface-hover border border-border text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <Scan size={15} />
+        </button>
+      </div>
     </div>
   );
 }

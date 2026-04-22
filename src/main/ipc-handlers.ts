@@ -239,6 +239,11 @@ export function registerIpcHandlers(services: {
     },
   );
 
+  ipcMain.handle("wiki:listEmptyWikiRawFolders", async (): Promise<string[]> => {
+    if (!fileSystem) return [];
+    return fileSystem.listEmptyWikiRawFolders();
+  });
+
   async function refreshArticlesIndex(): Promise<void> {
     if (!fileSystem) return;
     const articles = await fileSystem.scanVault();

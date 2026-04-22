@@ -249,6 +249,60 @@ export class FileSystemService {
   }
 
   /**
+   * Wiki / Raw folder paths that exist on disk but have no vault files
+   * anywhere under them (so they would not appear in the file tree from
+   * `scanVault` alone). Used to show empty folders after "New folder".
+   */
+  async listEmptyWikiRawFolders(): Promise<string[]> {
+    const relPaths = await this.findAllRelativeFilePaths();
+    return this.collectEmptyWikiRawFolderPaths(relPaths);
+  }
+
+  private async findAllRelativeFilePaths(): Promise<string[]> {
+    const absPaths = await this.findAllFiles(this.vaultPath);
+    return absPaths.map((p) => path.relative(this.vaultPath, p).replace(/\\/g, "/"));
+  }
+
+  /** True if any indexed file path lies strictly under `dirRel` (POSIX). */
+  private hasDescendantFile(dirRel: string, fileRelPaths: readonly string[]): boolean {
+    const norm = dirRel.replace(/\\/g, "/").replace(/\/+$/, "");
+    const prefix = `${norm}/`;
+    return fileRelPaths.some((f) => f.startsWith(prefix));
+  }
+
+  private async collectEmptyWikiRawFolderPaths(fileRelPaths: readonly string[]): Promise<string[]> {
+    const roots = ["wiki", "raw"];
+    const acc: string[] = [];
+    for (const root of roots) {
+      await this.walkCollectEmptyDirs(root, fileRelPaths, acc);
+    }
+    return acc;
+  }
+
+  private async walkCollectEmptyDirs(
+    rel: string,
+    fileRelPaths: readonly string[],
+    acc: string[],
+  ): Promise<void> {
+    const abs = path.join(this.vaultPath, rel);
+    let entries;
+    try {
+      entries = await fs.readdir(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith(".")) continue;
+      const child = `${rel}/${e.name}`.replace(/\\/g, "/");
+      await this.walkCollectEmptyDirs(child, fileRelPaths, acc);
+      if (!this.hasDescendantFile(child, fileRelPaths)) {
+        acc.push(child);
+      }
+    }
+  }
+
+  /**
    * Move a file or folder to another folder inside the vault (basename preserved).
    * Paths are vault-relative POSIX (`wiki/Note.md`, `wiki/notes`).
    */

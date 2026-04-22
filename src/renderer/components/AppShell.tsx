@@ -152,6 +152,8 @@ const SidebarLayout: React.FC<{
   articlesError: string | null;
   onSelectArticle: (filename: string) => void;
   selectWithHistory: (filename: string) => void;
+  /** Open a vault file from the graph: keep `__view:graph` in the stack so Back returns to the graph. */
+  onOpenArticleFromGraph: (filename: string) => void;
   canGoBack: boolean;
   canGoForward: boolean;
   onHistoryBack: () => void;
@@ -159,6 +161,7 @@ const SidebarLayout: React.FC<{
   onNewArticle: () => void;
   onNewFolder: (folderPath: string) => void;
   onRefreshFileTree: () => void | Promise<void>;
+  emptyWikiRawFolders: string[];
   currentTheme: 'light' | 'dark' | 'system';
   onToggleTheme: () => void;
   headings: TocHeading[];
@@ -181,6 +184,7 @@ const SidebarLayout: React.FC<{
   articlesError,
   onSelectArticle,
   selectWithHistory,
+  onOpenArticleFromGraph,
   canGoBack,
   canGoForward,
   onHistoryBack,
@@ -188,6 +192,7 @@ const SidebarLayout: React.FC<{
   onNewArticle,
   onNewFolder,
   onRefreshFileTree,
+  emptyWikiRawFolders,
   currentTheme,
   onToggleTheme,
   headings,
@@ -509,10 +514,13 @@ const SidebarLayout: React.FC<{
                   {(activeView === 'files' || activeView === 'graph') && (
                     <FilesView
                       articles={articles}
+                      emptyFolderPaths={emptyWikiRawFolders}
                       selectedFilename={selectedFilename}
                       loading={articlesLoading}
                       error={articlesError}
-                      onSelectArticle={(f) => { selectWithHistory(f); if (activeView === 'graph') onViewChange('files'); }}
+                      onSelectArticle={(f) =>
+                        activeView === 'graph' ? onOpenArticleFromGraph(f) : selectWithHistory(f)
+                      }
                       onNewArticle={onNewArticle}
                       onNewFolder={onNewFolder}
                       onRefresh={onRefreshFileTree}
@@ -563,8 +571,11 @@ const SidebarLayout: React.FC<{
                 const toolbarFilename = isEditingMode
                   ? (editingFilename === '' ? null : editingFilename)
                   : selectedFilename;
-                const showToolbar = (toolbarFilename !== null || isNewArticle)
-                  && activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph';
+                const showToolbar =
+                  activeView !== 'settings' &&
+                  activeView !== 'chat' &&
+                  !isEditingMode &&
+                  (activeView === 'graph' || toolbarFilename !== null || isNewArticle);
                 if (!showToolbar) return null;
                 return (
                   <ContentToolbar
@@ -593,7 +604,7 @@ const SidebarLayout: React.FC<{
                 {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
                 {activeView === 'chat' && editingFilename === null && <ChatView onThinkingChange={setChatThinkingData} closeThinkingRef={closeThinkingRef} vaultKey={vaultReloadKey} />}
                 {activeView === 'graph' && editingFilename === null && (
-                  <GraphView articles={articles} onSelectArticle={(f) => { selectWithHistory(f); onViewChange('files'); }} />
+                  <GraphView articles={articles} onSelectArticle={onOpenArticleFromGraph} />
                 )}
                 {activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && editingFilename === null && selectedFilename === '__new__' && (
                   <NewTabPage onNewNote={onNewArticle} onGoToFile={() => onViewChange('search')} onClose={() => closeTab('__new__')} />
@@ -666,6 +677,7 @@ const AppShell: React.FC = () => {
 
   // Article list state (shared with FilesView)
   const [articles, setArticles] = useState<ArticleMeta[]>([]);
+  const [emptyWikiRawFolders, setEmptyWikiRawFolders] = useState<string[]>([]);
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [articlesLoading, setArticlesLoading] = useState(true);
   const [articlesError, setArticlesError] = useState<string | null>(null);
@@ -805,14 +817,23 @@ const AppShell: React.FC = () => {
     if (firstRun === null || firstRun) return;
 
     let cancelled = false;
+    /** Coalesce rapid file-watcher events so the sidebar tree does not flash "Loading…". */
+    let vaultRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const VAULT_REFRESH_DEBOUNCE_MS = 280;
 
-    const fetchArticles = async () => {
-      try {
+    const fetchArticles = async (showLoading: boolean) => {
+      if (showLoading) {
         setArticlesLoading(true);
         setArticlesError(null);
-        const list = await window.api.listArticles();
+      }
+      try {
+        const [list, emptyDirs] = await Promise.all([
+          window.api.listArticles(),
+          window.api.listEmptyWikiRawFolders(),
+        ]);
         if (!cancelled) {
           setArticles(list);
+          setEmptyWikiRawFolders(emptyDirs);
           // Check if vault has claude.md — if not, prompt initialization
           const claudeCandidates = ['.CLAUDE.md', 'CLAUDE.md', '.claude.md', 'claude.md'];
           const hasClaudeFile = list.some((a) =>
@@ -856,18 +877,28 @@ const AppShell: React.FC = () => {
       }
     };
 
-    fetchArticles();
-    fetchBookmarks();
+    void fetchArticles(true);
+    void fetchBookmarks();
+
+    const scheduleVaultRefresh = () => {
+      if (cancelled) return;
+      if (vaultRefreshTimer !== null) clearTimeout(vaultRefreshTimer);
+      vaultRefreshTimer = setTimeout(() => {
+        vaultRefreshTimer = null;
+        if (!cancelled) {
+          void fetchArticles(false);
+          void fetchBookmarks();
+        }
+      }, VAULT_REFRESH_DEBOUNCE_MS);
+    };
 
     window.api.onVaultChange(() => {
-      if (!cancelled) {
-        void fetchArticles();
-        void fetchBookmarks();
-      }
+      scheduleVaultRefresh();
     });
 
     return () => {
       cancelled = true;
+      if (vaultRefreshTimer !== null) clearTimeout(vaultRefreshTimer);
       window.api.removeVaultChangeListener();
     };
   }, [firstRun, vaultReloadKey]);
@@ -905,10 +936,28 @@ const AppShell: React.FC = () => {
       setSearchPopupOpen(true);
       return;
     }
-    setActiveView(v as SidebarView);
+
+    const next = v as SidebarView;
+    const topEntry = () => navStackRef.current[navIndexRef.current];
+
+    // Leaving the knowledge graph via the sidebar (not the history buttons):
+    // drop the synthetic graph marker so the stack matches "Back into graph" semantics.
+    if (activeView === 'graph' && next !== 'graph' && topEntry() === '__view:graph') {
+      navStackRef.current.pop();
+      navIndexRef.current = Math.max(-1, navStackRef.current.length - 1);
+      syncNavButtons();
+    } else if (next === 'graph' && activeView !== 'graph') {
+      // Entering graph: record so toolbar Back returns to files/bookmarks/etc.
+      navStackRef.current = navStackRef.current.slice(0, navIndexRef.current + 1);
+      navStackRef.current.push('__view:graph');
+      navIndexRef.current = navStackRef.current.length - 1;
+      syncNavButtons();
+    }
+
+    setActiveView(next);
     // Clear editing state when switching views via navigate
     setEditingFilename(null);
-  }, []);
+  }, [activeView]);
 
   const editArticle = useCallback((filename: string) => {
     setEditingFilename(filename);
@@ -925,8 +974,12 @@ const AppShell: React.FC = () => {
   const createNewFolder = useCallback(async (relativePath: string) => {
     try {
       await window.api.createFolder(relativePath);
-      const list = await window.api.listArticles();
+      const [list, emptyDirs] = await Promise.all([
+        window.api.listArticles(),
+        window.api.listEmptyWikiRawFolders(),
+      ]);
       setArticles(list);
+      setEmptyWikiRawFolders(emptyDirs);
       setArticlesError(null);
     } catch (err) {
       console.error(err);
@@ -936,8 +989,12 @@ const AppShell: React.FC = () => {
 
   const refreshFileTree = useCallback(async () => {
     try {
-      const list = await window.api.listArticles();
+      const [list, emptyDirs] = await Promise.all([
+        window.api.listArticles(),
+        window.api.listEmptyWikiRawFolders(),
+      ]);
       setArticles(list);
+      setEmptyWikiRawFolders(emptyDirs);
       setArticlesError(null);
     } catch (err) {
       setArticlesError(err instanceof Error ? err.message : "Failed to refresh file list");
@@ -986,6 +1043,16 @@ const AppShell: React.FC = () => {
     handleSelectArticle(filename);
   }, [handleSelectArticle]);
 
+  /** From graph node / file tree while graph is main: do not use `navigate('files')` — that pops `__view:graph`. */
+  const openArticleFromGraph = useCallback(
+    (filename: string) => {
+      selectArticleWithHistory(filename);
+      setActiveView("files");
+      setEditingFilename(null);
+    },
+    [selectArticleWithHistory],
+  );
+
   const handleHistoryBack = useCallback(() => {
     if (navIndexRef.current <= 0) return;
     navIndexRef.current--;
@@ -995,6 +1062,7 @@ const AppShell: React.FC = () => {
       setActiveView(entry.slice(7) as SidebarView);
     } else {
       handleSelectArticle(entry);
+      setActiveView('files');
     }
   }, [handleSelectArticle]);
 
@@ -1007,6 +1075,7 @@ const AppShell: React.FC = () => {
       setActiveView(entry.slice(7) as SidebarView);
     } else {
       handleSelectArticle(entry);
+      setActiveView('files');
     }
   }, [handleSelectArticle]);
 
@@ -1051,8 +1120,12 @@ const AppShell: React.FC = () => {
       console.error('Failed to create empty CLAUDE.md:', err);
       return;
     }
-    const list = await window.api.listArticles();
+    const [list, emptyDirs] = await Promise.all([
+      window.api.listArticles(),
+      window.api.listEmptyWikiRawFolders(),
+    ]);
     setArticles(list);
+    setEmptyWikiRawFolders(emptyDirs);
     const claudeFile = list.find((a) => a.filename.toLowerCase() === 'claude.md');
     if (claudeFile) {
       setSelectedFilename(claudeFile.filename);
@@ -1067,8 +1140,12 @@ const AppShell: React.FC = () => {
     await window.api.writeRawFile('CLAUDE.md', '');
     await window.api.createFolder('raw');
     await window.api.createFolder('wiki');
-    const list = await window.api.listArticles();
+    const [list, emptyDirs] = await Promise.all([
+      window.api.listArticles(),
+      window.api.listEmptyWikiRawFolders(),
+    ]);
     setArticles(list);
+    setEmptyWikiRawFolders(emptyDirs);
     setShowVaultInit(false);
     const claudeFile = list.find((a) => a.filename.toLowerCase() === 'claude.md');
     if (claudeFile) {
@@ -1126,6 +1203,7 @@ const AppShell: React.FC = () => {
               articlesError={articlesError}
               onSelectArticle={handleSelectArticle}
               selectWithHistory={selectArticleWithHistory}
+              onOpenArticleFromGraph={openArticleFromGraph}
               canGoBack={canGoBack}
               canGoForward={canGoForward}
               onHistoryBack={handleHistoryBack}
@@ -1133,6 +1211,7 @@ const AppShell: React.FC = () => {
               onNewArticle={createNewArticle}
               onNewFolder={createNewFolder}
               onRefreshFileTree={refreshFileTree}
+              emptyWikiRawFolders={emptyWikiRawFolders}
               currentTheme={theme}
               onToggleTheme={handleToggleTheme}
               headings={headings}

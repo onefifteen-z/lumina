@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ArticleMeta } from "../../../shared/types";
 import {
   DEFAULT_WIKI_GRAPH_FILTER_ENABLED,
+  WIKI_GRAPH_ENTITY_TAG_OPTIONS,
+  buildWikiGraph,
   buildWikiGraphTooltipMap,
   discoverWikiGraphFilterBuckets,
   excerptPreviewLines,
@@ -57,6 +59,22 @@ describe("filterArticlesForWikiGraph", () => {
     const out = filterArticlesForWikiGraph(articles, enabled);
     expect(out.map((a) => a.filename).sort()).toEqual(["wiki/concepts/a.md", "wiki/index.md"]);
   });
+
+  it("filters entities by enabled tag selections", () => {
+    const articles = [
+      meta("wiki/entities/acme.md", { tags: ["org"] }),
+      meta("wiki/entities/alice.md", { tags: ["person"] }),
+      meta("wiki/entities/misc.md", { tags: [] }),
+      meta("wiki/concepts/c1.md"),
+    ];
+    const enabledFolders = new Set(["entities", "concepts"]);
+    const out = filterArticlesForWikiGraph(articles, enabledFolders, new Set<typeof WIKI_GRAPH_ENTITY_TAG_OPTIONS[number]>(["org"]));
+    expect(out.map((a) => a.filename).sort()).toEqual([
+      "wiki/concepts/c1.md",
+      "wiki/entities/acme.md",
+      "wiki/entities/misc.md",
+    ]);
+  });
 });
 
 describe("DEFAULT_WIKI_GRAPH_FILTER_ENABLED", () => {
@@ -66,6 +84,12 @@ describe("DEFAULT_WIKI_GRAPH_FILTER_ENABLED", () => {
     expect(DEFAULT_WIKI_GRAPH_FILTER_ENABLED.has("topics")).toBe(true);
     expect(DEFAULT_WIKI_GRAPH_FILTER_ENABLED.has("analytics")).toBe(true);
     expect(DEFAULT_WIKI_GRAPH_FILTER_ENABLED.has("analyses")).toBe(true);
+  });
+});
+
+describe("WIKI_GRAPH_ENTITY_TAG_OPTIONS", () => {
+  it("includes org and person tags", () => {
+    expect(WIKI_GRAPH_ENTITY_TAG_OPTIONS).toEqual(["org", "person"]);
   });
 });
 
@@ -124,5 +148,21 @@ describe("buildWikiGraphTooltipMap", () => {
     const t = m.get("wiki/dated.md")!;
     expect(t.createdLabel).toMatch(/2024/);
     expect(t.fullTitle).toBe("D");
+  });
+});
+
+describe("buildWikiGraph", () => {
+  it("annotates entity nodes with org/person tags", () => {
+    const g = buildWikiGraph([
+      meta("wiki/entities/acme.md", { tags: ["org"] }),
+      meta("wiki/entities/alice.md", { tags: ["person"] }),
+      meta("wiki/entities/misc.md", { tags: [] }),
+      meta("wiki/concepts/c1.md", { tags: ["org"] }),
+    ]);
+    const tagById = new Map(g.nodes.map((n) => [n.id, n.entityTag]));
+    expect(tagById.get("wiki/entities/acme.md")).toBe("org");
+    expect(tagById.get("wiki/entities/alice.md")).toBe("person");
+    expect(tagById.get("wiki/entities/misc.md")).toBeNull();
+    expect(tagById.get("wiki/concepts/c1.md")).toBeNull();
   });
 });

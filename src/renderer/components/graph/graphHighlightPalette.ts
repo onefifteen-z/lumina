@@ -38,6 +38,11 @@ export interface GraphHighlightPalette {
   labelBlend2: number;
 }
 
+export interface GraphNodeColorOverride {
+  base: string;
+  hover: string;
+}
+
 export function getGraphHighlightPalette(isDark: boolean): GraphHighlightPalette {
   if (isDark) {
     return {
@@ -88,6 +93,21 @@ export function getGraphHighlightPalette(isDark: boolean): GraphHighlightPalette
     labelBlend1: 0.24,
     labelBlend2: 0.46,
   };
+}
+
+export function graphEntityNodeColorOverride(
+  entityTag: "org" | "person" | null | undefined,
+  isDark: boolean,
+): GraphNodeColorOverride | null {
+  if (!entityTag) return null;
+  if (entityTag === "org") {
+    return isDark
+      ? { base: "#60A5FA", hover: "#93C5FD" }
+      : { base: "#2563EB", hover: "#1D4ED8" };
+  }
+  return isDark
+    ? { base: "#34D399", hover: "#6EE7B7" }
+    : { base: "#059669", hover: "#047857" };
 }
 
 /** Resolve link endpoint ids (strings) after force-graph may replace ids with node refs. */
@@ -258,17 +278,29 @@ export function graphNodeFillColor(
   hoveredId: string | null,
   nodeId: string,
 ): string {
-  if (!hoveredId) return multiplyRgbaAlpha(p.node, p.idleAlphaMult);
+  return graphNodeFillColorWithOverride(p, dist, hoveredId, nodeId, null);
+}
+
+export function graphNodeFillColorWithOverride(
+  p: GraphHighlightPalette,
+  dist: Map<string, number> | null,
+  hoveredId: string | null,
+  nodeId: string,
+  colorOverride: GraphNodeColorOverride | null,
+): string {
+  const baseNodeColor = colorOverride?.base ?? p.node;
+  const hoverNodeColor = colorOverride?.hover ?? p.nodeHover;
+  if (!hoveredId) return multiplyRgbaAlpha(baseNodeColor, p.idleAlphaMult);
   const d = nodeDistanceOrInf(dist, nodeId);
-  if (d === 0) return p.nodeHover;
+  if (d === 0) return hoverNodeColor;
   if (p.neighborFillBlendStyle === "lightenFromHover") {
-    if (d === 1) return mixCssColors(p.nodeHover, p.neighborSofterTarget, p.nodeFillBlend1);
-    if (d === 2) return mixCssColors(p.nodeHover, p.neighborSofterTarget, p.nodeFillBlend2);
+    if (d === 1) return mixCssColors(hoverNodeColor, p.neighborSofterTarget, p.nodeFillBlend1);
+    if (d === 2) return mixCssColors(hoverNodeColor, p.neighborSofterTarget, p.nodeFillBlend2);
   } else {
-    if (d === 1) return mixCssColors(p.node, p.nodeHover, p.nodeFillBlend1);
-    if (d === 2) return mixCssColors(p.node, p.nodeHover, p.nodeFillBlend2);
+    if (d === 1) return mixCssColors(baseNodeColor, hoverNodeColor, p.nodeFillBlend1);
+    if (d === 2) return mixCssColors(baseNodeColor, hoverNodeColor, p.nodeFillBlend2);
   }
-  return multiplyRgbaAlpha(p.node, p.farAlphaMult);
+  return multiplyRgbaAlpha(baseNodeColor, p.farAlphaMult);
 }
 
 export function graphNodeRingColor(

@@ -22,6 +22,9 @@ export const DEFAULT_WIKI_GRAPH_FILTER_ENABLED = new Set([
   "analyses",
 ]);
 
+export const WIKI_GRAPH_ENTITY_TAG_OPTIONS = ["org", "person"] as const;
+export type WikiGraphEntityTag = (typeof WIKI_GRAPH_ENTITY_TAG_OPTIONS)[number];
+
 export interface WikiGraphFilterBuckets {
   /** First path segment under wiki/, lowercased (e.g. concepts, sources). */
   folderIds: string[];
@@ -60,8 +63,22 @@ export function wikiGraphFilterDiscoveryKey(buckets: WikiGraphFilterBuckets): st
   return `${buckets.folderIds.join("/")}\n${buckets.rootFileIds.join("/")}`;
 }
 
+function articleEntityTagForGraph(article: ArticleMeta): WikiGraphEntityTag | null {
+  if (!article.filename.toLowerCase().startsWith("wiki/entities/")) return null;
+  const tags = Array.isArray(article.tags) ? article.tags : [];
+  const norm = new Set(tags.map((t) => String(t).trim().toLowerCase()));
+  for (const tag of WIKI_GRAPH_ENTITY_TAG_OPTIONS) {
+    if (norm.has(tag)) return tag;
+  }
+  return null;
+}
+
 /** Keep only wiki articles whose folder or root stem is in `enabledIds`. */
-export function filterArticlesForWikiGraph(articles: ArticleMeta[], enabledIds: Set<string>): ArticleMeta[] {
+export function filterArticlesForWikiGraph(
+  articles: ArticleMeta[],
+  enabledIds: Set<string>,
+  enabledEntityTags: Set<WikiGraphEntityTag> = new Set(WIKI_GRAPH_ENTITY_TAG_OPTIONS),
+): ArticleMeta[] {
   return articles.filter((a) => {
     const f = a.filename;
     if (isWikiPathExcluded(f)) return false;
@@ -73,7 +90,10 @@ export function filterArticlesForWikiGraph(articles: ArticleMeta[], enabledIds: 
       return enabledIds.has(stem);
     }
     const folder = rest.slice(0, slash).toLowerCase();
-    return enabledIds.has(folder);
+    if (!enabledIds.has(folder)) return false;
+    const entityTag = articleEntityTagForGraph(a);
+    if (entityTag && !enabledEntityTags.has(entityTag)) return false;
+    return true;
   });
 }
 
@@ -92,6 +112,7 @@ export interface WikiGraphNode {
   title: string;
   filename: string;
   linkCount: number;
+  entityTag: WikiGraphEntityTag | null;
 }
 
 export interface WikiGraphLink {
@@ -183,7 +204,8 @@ export function buildWikiGraphTooltipMap(articles: ArticleMeta[]): Map<string, W
     map.set(a.filename, {
       filename: a.filename,
       fullTitle: metaString(a.title).trim() || a.filename,
-      excerpt: excerptPreviewLines(metaString(a.excerpt), 3),
+      // Keep enough lines so headings/tables survive markdown preview in graph popup.
+      excerpt: excerptPreviewLines(metaString(a.excerpt), 8),
       tags: Array.isArray(a.tags) ? a.tags.map((t) => (typeof t === "string" ? t : String(t))) : [],
       createdLabel: formatArticleDateForGraph(a.created),
       inCount: ins,
@@ -214,6 +236,7 @@ export function buildWikiGraph(articles: ArticleMeta[]): WikiGraphData {
     title: displayTitle(a),
     filename: a.filename,
     linkCount: 0,
+    entityTag: articleEntityTagForGraph(a),
   }));
 
   const links: WikiGraphLink[] = [];

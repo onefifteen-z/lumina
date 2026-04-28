@@ -781,8 +781,7 @@ const AppShell: React.FC = () => {
         // let the browser default (e.g. the chat view) take over.
         const isDocumentView =
           (activeViewRef.current !== "chat" &&
-            activeViewRef.current !== "settings" &&
-            activeViewRef.current !== "graph") ||
+            activeViewRef.current !== "settings") ||
           editingFilenameRef.current !== null;
         if (!isDocumentView) return;
         e.preventDefault();

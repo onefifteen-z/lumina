@@ -1,6 +1,6 @@
 {
   "name": "Lumina",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "A local, AI-powered wiki desktop application built with Electron",
   "main": "dist/main/main/main.js",
   "build": {
@@ -53,7 +53,7 @@
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "electron-builder --config electron-builder.json"
+    "package": "npm run build && electron-builder --config electron-builder.json"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.3.1",

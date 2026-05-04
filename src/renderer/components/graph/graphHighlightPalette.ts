@@ -100,14 +100,10 @@ export function graphEntityNodeColorOverride(
   isDark: boolean,
 ): GraphNodeColorOverride | null {
   if (!entityTag) return null;
-  if (entityTag === "org") {
-    return isDark
-      ? { base: "#60A5FA", hover: "#93C5FD" }
-      : { base: "#2563EB", hover: "#1D4ED8" };
-  }
+  // Keep all entity-tagged nodes visually unified regardless of subtype.
   return isDark
-    ? { base: "#34D399", hover: "#6EE7B7" }
-    : { base: "#059669", hover: "#047857" };
+    ? { base: "#60A5FA", hover: "#93C5FD" }
+    : { base: "#2563EB", hover: "#1D4ED8" };
 }
 
 /** Resolve link endpoint ids (strings) after force-graph may replace ids with node refs. */
@@ -191,6 +187,11 @@ export function mixRgba(c0: Rgba, c1: Rgba, t: number): Rgba {
 
 export function mixCssColors(a: string, b: string, t: number): string {
   return rgbaString(mixRgba(parseColorToRgba(a), parseColorToRgba(b), t));
+}
+
+export function opaqueCssColor(input: string): string {
+  const c = parseColorToRgba(input);
+  return rgbaString({ ...c, a: 1 });
 }
 
 /** Undirected adjacency from links whose endpoints are string ids. */
@@ -288,19 +289,19 @@ export function graphNodeFillColorWithOverride(
   nodeId: string,
   colorOverride: GraphNodeColorOverride | null,
 ): string {
-  const baseNodeColor = colorOverride?.base ?? p.node;
-  const hoverNodeColor = colorOverride?.hover ?? p.nodeHover;
-  if (!hoveredId) return multiplyRgbaAlpha(baseNodeColor, p.idleAlphaMult);
+  const baseNodeColor = opaqueCssColor(colorOverride?.base ?? p.node);
+  const hoverNodeColor = opaqueCssColor(colorOverride?.hover ?? p.nodeHover);
+  if (!hoveredId) return baseNodeColor;
   const d = nodeDistanceOrInf(dist, nodeId);
   if (d === 0) return hoverNodeColor;
   if (p.neighborFillBlendStyle === "lightenFromHover") {
-    if (d === 1) return mixCssColors(hoverNodeColor, p.neighborSofterTarget, p.nodeFillBlend1);
-    if (d === 2) return mixCssColors(hoverNodeColor, p.neighborSofterTarget, p.nodeFillBlend2);
+    if (d === 1) return opaqueCssColor(mixCssColors(hoverNodeColor, p.neighborSofterTarget, p.nodeFillBlend1));
+    if (d === 2) return opaqueCssColor(mixCssColors(hoverNodeColor, p.neighborSofterTarget, p.nodeFillBlend2));
   } else {
-    if (d === 1) return mixCssColors(baseNodeColor, hoverNodeColor, p.nodeFillBlend1);
-    if (d === 2) return mixCssColors(baseNodeColor, hoverNodeColor, p.nodeFillBlend2);
+    if (d === 1) return opaqueCssColor(mixCssColors(baseNodeColor, hoverNodeColor, p.nodeFillBlend1));
+    if (d === 2) return opaqueCssColor(mixCssColors(baseNodeColor, hoverNodeColor, p.nodeFillBlend2));
   }
-  return multiplyRgbaAlpha(baseNodeColor, p.farAlphaMult);
+  return baseNodeColor;
 }
 
 export function graphNodeRingColor(
@@ -337,7 +338,7 @@ export function graphLabelColor(
   hoveredId: string | null,
   nodeId: string,
 ): string {
-  if (!hoveredId) return multiplyRgbaAlpha(p.label, p.idleAlphaMult);
+  if (!hoveredId) return opaqueCssColor(p.label);
   const d = nodeDistanceOrInf(dist, nodeId);
   if (d === 0) return p.labelHover;
   if (p.neighborFillBlendStyle === "lightenFromHover") {

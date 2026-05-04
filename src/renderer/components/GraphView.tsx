@@ -83,17 +83,27 @@ interface GraphViewProps {
 
 type GraphMode = "2d" | "3d";
 
-const GRAPH_LOW_ZOOM_THRESHOLD_2D = 0.8;
-const GRAPH_LOW_ZOOM_TOP_RATIO = 0.1;
+const GRAPH_LABEL_FADE_START_ZOOM_2D = 0.85;
+const GRAPH_LABEL_HIDE_ZOOM_2D = 0.45;
 const GRAPH_DEFAULT_RADIAL_STEP = 140;
 const GRAPH_DEFAULT_RADIAL_STRENGTH = 0.26;
 const GRAPH_DEFAULT_RADIAL_PRIORITY_STEMS = new Set(["index", "glossary", "overview"]);
+const GRAPH_CENTER_FORCE_STRENGTH_2D = 0.045;
+const GRAPH_REPEL_FORCE_STRENGTH_2D = -240;
+const GRAPH_LINK_FORCE_INTRA_2D = 0.82;
+const GRAPH_LINK_FORCE_INTER_2D = 0.34;
+const GRAPH_LINK_DISTANCE_INTRA_2D = 44;
+const GRAPH_LINK_DISTANCE_INTER_2D = 62;
 
-function topLinkCountThreshold(nodes: Array<{ linkCount: number }>, topRatio: number): number {
-  if (nodes.length === 0) return 0;
-  const sorted = nodes.map((n) => n.linkCount).sort((a, b) => b - a);
-  const topN = Math.max(1, Math.ceil(sorted.length * topRatio));
-  return sorted[topN - 1] ?? 0;
+function graphLabelOpacityForZoom2D(k: number): number {
+  if (k <= GRAPH_LABEL_HIDE_ZOOM_2D) return 0;
+  if (k >= GRAPH_LABEL_FADE_START_ZOOM_2D) return 1;
+  return (k - GRAPH_LABEL_HIDE_ZOOM_2D) / (GRAPH_LABEL_FADE_START_ZOOM_2D - GRAPH_LABEL_HIDE_ZOOM_2D);
+}
+
+function graphNodeRadius2D(linkCount: number): number {
+  // Linear growth so higher-degree nodes remain proportionally larger.
+  return 3 + Math.max(0, linkCount) * 0.28;
 }
 
 function graphEndpointId(n: string | GraphNode): string {
@@ -226,10 +236,9 @@ function GraphView2DCanvas({
     const nodes = nodesRef.current;
     const links = linksRef.current;
     const hovId = activeIdRef.current ?? hoveredRef.current?.id ?? null;
-    const lowZoomMinLinkCount = topLinkCountThreshold(nodes, GRAPH_LOW_ZOOM_TOP_RATIO);
-
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
     const p = getGraphHighlightPalette(isDark);
+    const labelOpacity = graphLabelOpacityForZoom2D(k);
 
     const adj = buildAdjacencyStringLinks(
       links.map((l) => ({
@@ -238,12 +247,6 @@ function GraphView2DCanvas({
       })),
     );
     const dist = hovId ? bfsHopDistances(adj, hovId, 2) : null;
-    const isVisibleLabel = (n: GraphNode): boolean =>
-      n.id === hovId ||
-      GRAPH_DEFAULT_RADIAL_PRIORITY_STEMS.has(graphFilenameStem(n.filename)) ||
-      k >= GRAPH_LOW_ZOOM_THRESHOLD_2D ||
-      n.linkCount >= lowZoomMinLinkCount;
-
     ctx.clearRect(0, 0, w, h);
     ctx.save();
     ctx.translate(w / 2 + tx, h / 2 + ty);
@@ -255,16 +258,24 @@ function GraphView2DCanvas({
       if (s.x == null || s.y == null || t.x == null || t.y == null) continue;
       const tier = edgeHoverTier(l, dist, hovId);
       ctx.strokeStyle = graphEdgeStrokeColor(p, dist, hovId, l);
-      ctx.lineWidth = graph2DEdgeLineWidth(hovId, tier);
+      // Keep edge thickness stable in screen pixels regardless of zoom.
+      ctx.lineWidth = graph2DEdgeLineWidth(hovId, tier) / Math.max(k, 1e-3);
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
       ctx.stroke();
     }
 
+    // Layer 2: nodes (always above links).
     for (const n of nodes) {
       if (n.x == null || n.y == null) continue;
-      const r = 3 + Math.min(n.linkCount, 12) * 1.2;
+      const r = graphNodeRadius2D(n.linkCount);
+
+      // Opaque underpaint so links do not visually bleed through semi-transparent nodes.
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r + 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = p.canvasBg;
+      ctx.fill();
 
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
@@ -282,14 +293,19 @@ function GraphView2DCanvas({
       ctx.stroke();
     }
 
-    ctx.font = `${Math.max(9, 10 / k)}px system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    for (const n of nodes) {
-      if (n.x == null || n.y == null) continue;
-      if (!isVisibleLabel(n)) continue;
-      const r = 3 + Math.min(n.linkCount, 12) * 1.2;
-      ctx.fillStyle = graphLabelColor(p, dist, hovId, n.id);
-      ctx.fillText(n.title, n.x, n.y + r + 12);
+    // Layer 3: labels (always above nodes and links).
+    if (labelOpacity > 0) {
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = prevAlpha * labelOpacity;
+      ctx.font = `${Math.max(9, 10 / k)}px system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      for (const n of nodes) {
+        if (n.x == null || n.y == null) continue;
+        const r = graphNodeRadius2D(n.linkCount);
+        ctx.fillStyle = graphLabelColor(p, dist, hovId, n.id);
+        ctx.fillText(n.title, n.x, n.y + r + 12);
+      }
+      ctx.globalAlpha = prevAlpha;
     }
 
     ctx.restore();
@@ -333,11 +349,15 @@ function GraphView2DCanvas({
         "link",
         forceLink<GraphNode, GraphLink>(links)
           .id((d) => d.id)
-          .distance((l) => (linkClusterClass(l) === "intra" ? 72 : 96))
-          .strength((l) => (linkClusterClass(l) === "intra" ? 0.34 : 0.08)),
+          .distance((l) =>
+            linkClusterClass(l) === "intra" ? GRAPH_LINK_DISTANCE_INTRA_2D : GRAPH_LINK_DISTANCE_INTER_2D,
+          )
+          .strength((l) =>
+            linkClusterClass(l) === "intra" ? GRAPH_LINK_FORCE_INTRA_2D : GRAPH_LINK_FORCE_INTER_2D,
+          ),
       )
-      .force("charge", forceManyBody().strength(-320).distanceMax(720))
-      .force("center", forceCenter(0, 0).strength(0.015))
+      .force("charge", forceManyBody().strength(GRAPH_REPEL_FORCE_STRENGTH_2D).distanceMax(720))
+      .force("center", forceCenter(0, 0).strength(GRAPH_CENTER_FORCE_STRENGTH_2D))
       .force("x", forceX(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
       .force("y", forceY(0).strength((n) => (n as GraphNode).linkCount === 0 ? 0.12 : 0.01))
       .force(
@@ -372,10 +392,9 @@ function GraphView2DCanvas({
     fitAll();
     draw();
 
-    sim.on("tick", draw).on("end", () => {
-      fitAll();
-      draw();
-    });
+    // Keep auto-fit only for initial layout. Subsequent simulation end events
+    // (e.g. click/drag interactions) should not reset the user's camera.
+    sim.on("tick", draw).on("end", draw);
 
     simRef.current = sim;
     return () => {

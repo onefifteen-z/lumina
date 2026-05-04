@@ -29,6 +29,27 @@ const formatDate = (iso: string): string => {
   }
 };
 
+function isSourceField(key: string): boolean {
+  const k = key.trim().toLowerCase();
+  return k === 'source' || k === 'sources';
+}
+
+function normalizeSourceRef(value: string): string {
+  let ref = value.trim();
+  if (!ref) return '';
+  if (ref.startsWith('`') && ref.endsWith('`') && ref.length > 1) {
+    ref = ref.slice(1, -1).trim();
+  }
+  if (ref.startsWith('[[') && ref.endsWith(']]')) {
+    ref = ref.slice(2, -2).trim();
+  }
+  const pipe = ref.indexOf('|');
+  if (pipe >= 0) ref = ref.slice(0, pipe).trim();
+  if (ref.startsWith('./')) ref = ref.slice(2);
+  if (ref.startsWith('/')) ref = ref.slice(1);
+  return ref;
+}
+
 // ── Simple Markdown inside HTML ────────────────────────────────
 
 /** Convert basic Markdown syntax within HTML string (for note content). */
@@ -323,6 +344,60 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
     else selectArticle(filename);
   }, [selectArticle, onNavigate]);
 
+  const handleSourceClick = useCallback(
+    async (rawValue: string) => {
+      const normalized = normalizeSourceRef(rawValue);
+      if (!normalized) return;
+      const navigateTo = onNavigate || selectArticle;
+
+      try {
+        const articles = await window.api.listArticles();
+        const byFilename = new Map<string, string>();
+        const byBasename = new Map<string, string>();
+        for (const item of articles) {
+          const lowerFilename = item.filename.toLowerCase();
+          byFilename.set(lowerFilename, item.filename);
+          const basename = item.filename.split('/').pop()?.toLowerCase();
+          if (basename && !byBasename.has(basename)) {
+            byBasename.set(basename, item.filename);
+          }
+        }
+
+        const candidates = new Set<string>([normalized]);
+        if (!normalized.toLowerCase().endsWith('.md')) {
+          candidates.add(`${normalized}.md`);
+        }
+
+        for (const candidate of candidates) {
+          const exact = byFilename.get(candidate.toLowerCase());
+          if (exact) {
+            navigateTo(exact);
+            return;
+          }
+        }
+
+        for (const candidate of candidates) {
+          const base = candidate.split('/').pop()?.toLowerCase();
+          if (!base) continue;
+          const matched = byBasename.get(base);
+          if (matched) {
+            navigateTo(matched);
+            return;
+          }
+        }
+
+        const wikiTarget = normalized.replace(/\.md$/i, '');
+        const resolved = await window.api.resolveWikilink(wikiTarget);
+        if (resolved.exists && resolved.filename) {
+          navigateTo(resolved.filename);
+        }
+      } catch {
+        // Ignore lookup failures; source text remains visible even if unresolved.
+      }
+    },
+    [onNavigate, selectArticle],
+  );
+
   // Click handler for rendered content (wikilinks, tags, embeds)
   const handleContentClick = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -445,7 +520,18 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
                       <AlignLeft size={14} className="opacity-60" />
                       <span>{k}</span>
                     </div>
-                    <span className="text-text-primary">{v as string}</span>
+                    {isSourceField(k) ? (
+                      <button
+                        type="button"
+                        className="text-text-primary underline underline-offset-2 decoration-dotted hover:decoration-solid cursor-pointer text-left"
+                        onClick={() => { void handleSourceClick(v as string); }}
+                        title={`Open source file: ${v as string}`}
+                      >
+                        {v as string}
+                      </button>
+                    ) : (
+                      <span className="text-text-primary">{v as string}</span>
+                    )}
                   </div>
                 ))}
 
@@ -482,7 +568,19 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {(v as string[]).map((item, i) => (
-                        <span key={i} className="text-text-primary">{item}</span>
+                        isSourceField(k) ? (
+                          <button
+                            key={i}
+                            type="button"
+                            className="text-text-primary underline underline-offset-2 decoration-dotted hover:decoration-solid cursor-pointer text-left"
+                            onClick={() => { void handleSourceClick(item); }}
+                            title={`Open source file: ${item}`}
+                          >
+                            {item}
+                          </button>
+                        ) : (
+                          <span key={i} className="text-text-primary">{item}</span>
+                        )
                       ))}
                     </div>
                   </div>

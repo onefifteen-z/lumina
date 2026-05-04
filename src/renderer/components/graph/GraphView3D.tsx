@@ -240,7 +240,7 @@ export default function GraphView3D({
         graphData={graphDataCloned}
         nodeId="id"
         nodeLabel={() => ""}
-        nodeVal={(n) => 1 + Math.min(n.linkCount, 12) * 0.35}
+        nodeVal={(n) => 1 + Math.max(0, n.linkCount) * 0.09}
         nodeColor={nodeColor}
         linkColor={linkColorForLink}
         linkOpacity={1}

@@ -82,6 +82,10 @@ export function registerIpcHandlers(services: {
     if (appConfig.llmProvider) {
       const apiKey = config.getApiKey();
       llm = new LLMService(appConfig.llmProvider, apiKey);
+      // Seed the file-upload toggle on the fresh instance so the OpenAI
+      // Responses API path engages immediately when the user changes
+      // endpoint/model/key without toggling the setting again.
+      llm.setFileIngest(appConfig.fileIngest);
     } else {
       llm = null;
     }
@@ -530,6 +534,29 @@ export function registerIpcHandlers(services: {
         contentLen: content.length,
       });
 
+      // Persist the in-memory session into chat-history SQLite. Done in the
+      // main process (rather than only via the renderer's onChatEnd) so the
+      // turn survives even when the renderer is mid-navigation, the window
+      // is closing, or the app is crashing — anything short of a full power
+      // loss before the LLM call finishes. Idempotent because saveSession
+      // is `INSERT … ON CONFLICT DO UPDATE` plus a delete+reinsert of the
+      // message rows, so the renderer's later saveChatSession (if still
+      // alive) just upserts the same data.
+      const persistFinalSession = (): void => {
+        if (!chatHistory) return;
+        try {
+          const finalSession = chat.getSession();
+          if (finalSession && finalSession.messages.length > 0) {
+            chatHistory.saveSession(finalSession);
+          }
+        } catch (err) {
+          debugLog("warn", "chat", "post-stream history save failed", {
+            requestId,
+            message: (err as Error).message,
+          });
+        }
+      };
+
       try {
         for await (const chunk of chat.sendMessage(content, blocks, { reloadClaudeMd })) {
           if (chunk.type === 'thinking') {
@@ -563,6 +590,7 @@ export function registerIpcHandlers(services: {
           thinkingChars,
           traceCount,
         });
+        persistFinalSession();
         sender.send("wiki:chatEnd", { requestId });
       } catch (err) {
         const code = err instanceof LLMError ? err.code : "unknown";
@@ -573,6 +601,7 @@ export function registerIpcHandlers(services: {
           code,
           errorMessage,
         });
+        persistFinalSession();
         sender.send("wiki:chatEnd", { requestId, error: `${code}:${errorMessage}` });
       }
     },

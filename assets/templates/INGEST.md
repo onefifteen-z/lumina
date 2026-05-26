@@ -28,15 +28,17 @@ You never run `markitdown` or `pip` yourself. Lumina manages a shared `~/.lumina
 
 ## OpenAI File Upload Mode (priority)
 
-When the user has enabled "OpenAI File Upload" in Settings (available only for OpenAI-compatible endpoints), `ingest_source` routes PDF and image files to a path that attaches them directly to the conversation instead of inlining their bytes into the tool-result text. In this mode:
+When the user has enabled "OpenAI File Upload" in Settings (available only for OpenAI-compatible endpoints), Lumina switches the chat transport to the OpenAI **Responses API** for that session. In this mode `ingest_source` attaches files directly to the conversation instead of inlining their bytes into the tool-result text:
 
-- `.pdf` files are uploaded via the OpenAI Files API and referenced by `file_id` — the upload happens transparently and the PDF becomes a `file` content block on the next user turn. `ingest_source` returns `kind=file-upload`.
-- Image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.svg`) are attached as an `image_url` content block (base64 data URL). The Files API is **not** used here because OpenAI's Chat Completions endpoint only accepts `file_id` for `application/pdf`. `ingest_source` still returns `kind=file-upload`.
-- Other office formats (`.xlsx`, `.xls`, `.pptx`, `.ppt`, `.docx`, `.doc`, `.epub`, `.rtf`) fall back to `markitdown` — they cannot be referenced via `file_id` on Chat Completions, and rasterization is not implemented for them. `ingest_source` returns `kind=office` exactly as it would with the toggle off. The model still receives the extracted text (spreadsheet tables, slide text, document body). If a spreadsheet or deck looks wrong after extraction, tell the user to export it to PDF and re-ingest.
+- `.pdf` files are uploaded via the OpenAI Files API and referenced by `file_id` — the upload happens transparently and the PDF becomes an `input_file` content block on the next user turn. `ingest_source` returns `kind=file-upload`.
+- Office formats (`.pptx`, `.ppt`, `.xlsx`, `.xls`, `.docx`, `.doc`, `.epub`, `.rtf`) are likewise uploaded via the Files API and referenced by `file_id`. The Responses API extracts text from documents and runs a spreadsheet-specific augmentation flow for xlsx/xls/csv server-side, so you receive the document's actual content without invoking markitdown. `ingest_source` returns `kind=file-upload`.
+- Image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.svg`) are attached as an `image_url` content block (base64 data URL). The Files API is **not** used here — inline images are cheaper and work the same on both transports. `ingest_source` still returns `kind=file-upload`.
 - Text files (`.md`, `.txt`, `.json`, etc.) still use the normal text-read path.
-- If the upload fails for a PDF, the tool returns an error — relay it to the user.
+- If the upload fails, the tool returns an error — relay it to the user.
 
 You do NOT need to retry with `mode: "vision"` for files routed through this mode — the attached content is already fully accessible to you. Just call `ingest_source` normally; Lumina picks the right transport per file type.
+
+> Legacy fallback: when "OpenAI File Upload" is enabled but the endpoint isn't OpenAI (or the toggle is off), Lumina stays on Chat Completions. Chat Completions only accepts `file_id` for `application/pdf`, so `.pptx`/`.xlsx`/`.docx`/etc. fall back to `markitdown` extraction (`kind=office`) automatically. You still get the document text either way.
 
 ## Default: always start with `mode: "auto"` (or omit `mode`)
 

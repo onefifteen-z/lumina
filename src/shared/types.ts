@@ -137,7 +137,14 @@ export interface AppConfig {
   phoenix: PhoenixConfig;
   /** When true, PDFs are rasterized to page PNGs for chat attach and ingest_source vision mode. Default off: PDFs use markitdown text only. */
   pdfImageIngest: boolean;
-  /** When true, PDF/image/PPTX files are uploaded via OpenAI Files API and referenced by file_id. Only works with OpenAI-compatible endpoints. */
+  /**
+   * When true and the endpoint is OpenAI-compatible, the chat session switches
+   * to the OpenAI Responses API and `ingest_source` uploads office documents
+   * (.pdf/.pptx/.xlsx/.docx/.doc/.epub/.rtf) via the Files API, referencing
+   * them by `file_id` instead of running markitdown. Images stay inline as
+   * `image_url`. Other providers ignore this flag (Chat Completions only
+   * accepts file_id for PDFs).
+   */
   fileIngest: boolean;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;

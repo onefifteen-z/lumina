@@ -112,7 +112,22 @@ export interface WikiGraphNode {
   title: string;
   filename: string;
   linkCount: number;
+  /**
+   * Specific entity sub-type for filter UI (`org` / `person`). Drives the
+   * "show only orgs / only people" toggles and stays narrow on purpose —
+   * adding a generic `entity` value here would force every "entity tag"
+   * checkbox elsewhere to grow a third option.
+   */
   entityTag: WikiGraphEntityTag | null;
+  /**
+   * Whether the article lives under `wiki/entities/`. Used purely for
+   * coloring: every entity (org, person, or otherwise) should render with
+   * the unified entity blue so untagged entity pages aren't visually
+   * orphaned among concepts/topics. Independent of `entityTag` so that a
+   * future fourth filter category doesn't have to retrofit the colour
+   * branch.
+   */
+  isEntity: boolean;
 }
 
 export interface WikiGraphLink {
@@ -237,6 +252,7 @@ export function buildWikiGraph(articles: ArticleMeta[]): WikiGraphData {
     filename: a.filename,
     linkCount: 0,
     entityTag: articleEntityTagForGraph(a),
+    isEntity: a.filename.toLowerCase().startsWith("wiki/entities/"),
   }));
 
   const links: WikiGraphLink[] = [];

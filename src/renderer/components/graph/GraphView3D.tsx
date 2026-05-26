@@ -152,7 +152,7 @@ export default function GraphView3D({
         hoverDist,
         focusedId,
         n.id,
-        graphEntityNodeColorOverride(n.entityTag, isDark),
+        graphEntityNodeColorOverride(n.isEntity, isDark),
       ),
     [focusedId, hoverDist, isDark, palette],
   );

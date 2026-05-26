@@ -617,7 +617,30 @@ const SidebarLayout: React.FC<{
               <main className="flex flex-col flex-1 overflow-hidden bg-main-bg">
                 <OfflineBanner />
                 {activeView === 'settings' && editingFilename === null && <SettingsPanel />}
-                {activeView === 'chat' && editingFilename === null && <ChatView onThinkingChange={setChatThinkingData} closeThinkingRef={closeThinkingRef} vaultKey={vaultReloadKey} />}
+                {/*
+                  ChatView stays mounted across view switches so a long-running
+                  generation isn't interrupted when the user clicks away. We
+                  hide it via CSS rather than unmounting; otherwise the IPC
+                  listeners detach mid-stream, the streaming buffers and React
+                  state get destroyed, and onChatEnd never fires to persist
+                  the new turn (see git history for the original bug).
+                */}
+                <div
+                  style={{
+                    display:
+                      activeView === 'chat' && editingFilename === null
+                        ? 'flex'
+                        : 'none',
+                  }}
+                  className="flex flex-col flex-1 min-h-0"
+                >
+                  <ChatView
+                    onThinkingChange={setChatThinkingData}
+                    closeThinkingRef={closeThinkingRef}
+                    vaultKey={vaultReloadKey}
+                    visible={activeView === 'chat' && editingFilename === null}
+                  />
+                </div>
                 {activeView === 'graph' && editingFilename === null && (
                   <GraphView articles={articles} onSelectArticle={onOpenArticleFromGraph} />
                 )}

@@ -642,6 +642,11 @@ export class ChatService {
   /** Replace the LLM service instance (e.g. after the user updates their API key). */
   setLLMService(llm: LLMService | null): void {
     this.llm = llm;
+    // Re-apply the current fileIngest setting so a freshly-built LLMService
+    // (e.g. after the user switches provider) lands with the right transport
+    // selection. Without this, the new instance defaults to Chat Completions
+    // until the next setFileIngest call.
+    llm?.setFileIngest(this.fileIngest);
   }
 
   /** Replace the FileSystem service instance (e.g. after vault switch). */
@@ -654,9 +659,16 @@ export class ChatService {
     this.pdfImageIngest = enabled;
   }
 
-  /** Mirrors Settings → OpenAI File Upload; drives ingest_source file-upload behaviour. */
+  /**
+   * Mirrors Settings → OpenAI File Upload; drives ingest_source file-upload
+   * behaviour. Also forwards to the LLMService so it can flip the chat
+   * transport to the OpenAI Responses API on the next call — without this,
+   * the toggle would loosen ingest dispatch but the wire format would still
+   * be Chat Completions, which rejects file_id for non-PDF MIME types.
+   */
   setFileIngest(enabled: boolean): void {
     this.fileIngest = enabled;
+    this.llm?.setFileIngest(enabled);
   }
 
   /**
@@ -713,6 +725,13 @@ export class ChatService {
         vaultRoot: this.fileSystem.getVaultPath(),
         pdfImageIngest: this.pdfImageIngest,
         fileIngest: this.fileIngest,
+        // Loosen file-upload dispatch to all OFFICE_EXTENSIONS when the
+        // chat transport is the OpenAI Responses API (its `input_file`
+        // content part accepts pptx/xlsx/docx/etc., unlike Chat
+        // Completions). Mirrored exactly from LLMService so the toggle
+        // and the wire format stay in lockstep.
+        responsesApi:
+          this.fileIngest && (this.llm?.isOpenAiEndpoint() ?? false),
         uploadFile: this.llm
           ? (filePath: string) => this.llm!.uploadFile(filePath)
           : undefined,

@@ -95,12 +95,20 @@ export function getGraphHighlightPalette(isDark: boolean): GraphHighlightPalette
   };
 }
 
+/**
+ * Color override applied to nodes that live under `wiki/entities/`.
+ *
+ * Driven by a plain boolean (`isEntity`) rather than the specific
+ * `org` / `person` sub-tag — the user-facing rule is "everything in
+ * entities/ looks like an entity", which means an `org`-tagged page, a
+ * `person`-tagged page, AND an untagged page all render with the same
+ * blue. Sub-typing belongs to the filter UI, not the palette.
+ */
 export function graphEntityNodeColorOverride(
-  entityTag: "org" | "person" | null | undefined,
+  isEntity: boolean,
   isDark: boolean,
 ): GraphNodeColorOverride | null {
-  if (!entityTag) return null;
-  // Keep all entity-tagged nodes visually unified regardless of subtype.
+  if (!isEntity) return null;
   return isDark
     ? { base: "#60A5FA", hover: "#93C5FD" }
     : { base: "#2563EB", hover: "#1D4ED8" };

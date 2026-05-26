@@ -18,7 +18,7 @@
   "themeAriaDark": "ダーク背景です。ライト背景に切り替えます。",
   "themeTitleLight": "ダークテーマへ",
   "themeTitleDark": "ライトテーマへ",
-  "heroEyebrow": "LLM ウィキ · デスクトップアプリ · v0.8.4",
+  "heroEyebrow": "LLM ウィキ · デスクトップアプリ · v0.8.5",
   "heroH1Html": "あなたのwikiは、<span class=\"hero__accent\">LLM</span>で引き出す",
   "heroLeadHtml": "チーム向けの<strong>パーソナル LLM ウィキ保管庫</strong>: Markdown、グラフ、検索、チャットをひとつに。ファイルは Box、SharePoint、Git で共有と履歴管理。",
   "heroDownloadBtn": "Lumina をダウンロード",

@@ -3,14 +3,24 @@ import type { ArticleMeta } from "../../shared/types";
 export type FileCategory = "wiki" | "raw";
 
 /**
- * Classify an ArticleMeta as Wiki or Raw based on top-level folder.
+ * Classify a vault-relative filename as Wiki or Raw based on top-level folder.
  *
  * Wiki: file lives under a "wiki/" top-level folder (case-insensitive).
  * Raw:  file lives under a "RAW/" top-level folder (case-insensitive).
+ *
+ * Anything not under "wiki/" is treated as Raw — this matches how the
+ * sidebar buckets files and keeps the highlight on the same tab the user
+ * is looking at when an out-of-band navigation (wikilink, search, graph)
+ * targets a file that doesn't live under wiki/.
  */
-export function classifyFile(meta: ArticleMeta): FileCategory {
-  const topFolder = meta.filename.split("/")[0].toLowerCase();
+export function classifyFilename(filename: string): FileCategory {
+  const topFolder = filename.split("/")[0]?.toLowerCase() ?? "";
   return topFolder === "wiki" ? "wiki" : "raw";
+}
+
+/** Convenience wrapper for callers that already have an ArticleMeta. */
+export function classifyFile(meta: ArticleMeta): FileCategory {
+  return classifyFilename(meta.filename);
 }
 
 /**

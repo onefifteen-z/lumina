@@ -246,7 +246,7 @@ const SettingsPanel: React.FC = () => {
         </div>
         <p className="settings-section__hint">
           {endpointUrl.toLowerCase().includes('openai')
-            ? <>When enabled, PDFs are uploaded via the OpenAI Files API and referenced by file ID during ingest (more efficient than inline base64). Images are attached as native vision content blocks. Other office formats (XLSX, PPTX, DOCX, …) still fall back to local text extraction since Chat Completions only accepts file IDs for PDFs.</>
+            ? <>When enabled, Lumina switches the chat to the OpenAI <strong>Responses API</strong> and uploads PDF/PPTX/XLSX/DOCX/etc. via the Files API, referencing them by file ID. Spreadsheets get a server-side augmentation flow; office docs are read natively. Images stay inline as native vision content blocks. Disable to keep using Chat Completions and local <code className="settings-inline-code">markitdown</code> extraction for non-PDF formats.</>
             : <>File upload is not supported by the current LLM endpoint. Only OpenAI-compatible endpoints support this feature.</>
           }
         </p>

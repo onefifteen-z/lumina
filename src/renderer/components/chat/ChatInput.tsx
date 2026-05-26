@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { Send, Square, SquarePen, FileText } from 'lucide-react';
 import type { ArticleMeta, ChatSendCommand } from '../../../shared/types';
 import { isConfigFile } from '../../lib/file-classification';
+import { computeIngestedRawFiles } from '../../lib/ingest-status';
 
 export interface ChatInputProps {
   onSend: (content: string, mentions: string[], command?: ChatSendCommand) => void;
@@ -498,6 +499,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     [articles],
   );
 
+  /**
+   * Same "ingested" signal that paints the green dot in the file tree
+   * sidebar: a `raw/` file counts as ingested when a wiki page either
+   * references it explicitly via `sources:` frontmatter or there's a
+   * matching `wiki/sources/<slug>.md` summary. Surfacing the same dot in
+   * both autocomplete pickers tells the user at a glance whether the
+   * source they're about to `/ingest` (or `@`-mention) has already been
+   * processed — useful both for "skip, this is already done" and for
+   * "yes, please re-ingest with new instructions".
+   */
+  const ingestedRawSet = useMemo(
+    () => computeIngestedRawFiles(articles),
+    [articles],
+  );
+
   /** Extract @filename tokens from `value`. Filenames here are vault-relative paths. */
   const extractMentions = useCallback((text: string): string[] => {
     const set = new Set<string>();
@@ -742,24 +758,43 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
             className="absolute left-4 right-4 bottom-full mb-2 max-h-64 overflow-y-auto rounded-lg border border-border bg-sidebar-bg shadow-lg z-20"
           >
-            {candidates.map((c, i) => (
-              <button
-                key={c.filename}
-                type="button"
-                role="option"
-                aria-selected={i === highlightIdx}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  insertCandidate(c);
-                }}
-                onMouseEnter={() => setHighlightIdx(i)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors cursor-pointer ${i === highlightIdx ? 'bg-primary-bg text-text-primary' : 'text-text-secondary hover:bg-surface-hover'}`}
-              >
-                <FileText size={14} className="shrink-0 opacity-70" />
-                <span className="truncate font-medium text-text-primary">{c.title}</span>
-                <span className="ml-auto truncate text-[11px] text-text-secondary opacity-70">{c.filename}</span>
-              </button>
-            ))}
+            {candidates.map((c, i) => {
+              const isIngested = ingestedRawSet.has(c.filename);
+              return (
+                <button
+                  key={c.filename}
+                  type="button"
+                  role="option"
+                  aria-selected={i === highlightIdx}
+                  title={
+                    isIngested
+                      ? `${c.title} — ingested into the wiki`
+                      : c.title
+                  }
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    insertCandidate(c);
+                  }}
+                  onMouseEnter={() => setHighlightIdx(i)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors cursor-pointer ${i === highlightIdx ? 'bg-primary-bg text-text-primary' : 'text-text-secondary hover:bg-surface-hover'}`}
+                >
+                  <FileText size={14} className="shrink-0 opacity-70" />
+                  <span className="truncate font-medium text-text-primary">{c.title}</span>
+                  {isIngested && (
+                    // Same compact green dot the file-tree row uses
+                    // (FilesView) — keeps the visual language consistent
+                    // so a dot means "already ingested" everywhere it
+                    // appears, including in the autocomplete pickers.
+                    <span
+                      aria-label="Ingested"
+                      data-testid="ingested-badge"
+                      className="ml-1 shrink-0 inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20"
+                    />
+                  )}
+                  <span className="ml-auto truncate text-[11px] text-text-secondary opacity-70">{c.filename}</span>
+                </button>
+              );
+            })}
           </div>
         )}
 

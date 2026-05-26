@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ArticleMeta } from "../../shared/types";
-import { filterArticlesForTab } from "../lib/file-classification";
-import { sortNodes } from "./FilesView";
+import { classifyFilename, filterArticlesForTab } from "../lib/file-classification";
+import { ancestorFolderPaths, sortNodes } from "./FilesView";
 
 /**
  * Unit tests for FilesView TabBar logic.
@@ -151,6 +151,49 @@ function articleMeta(overrides: Partial<ArticleMeta> & { filename: string }): Ar
     excerpt: overrides.excerpt ?? "",
   };
 }
+
+describe("ancestorFolderPaths", () => {
+  it("returns parent chain for a deeply-nested file", () => {
+    expect(ancestorFolderPaths("wiki/notes/2025/a.md")).toEqual([
+      "wiki",
+      "wiki/notes",
+      "wiki/notes/2025",
+    ]);
+  });
+
+  it("returns single root for a top-level file", () => {
+    expect(ancestorFolderPaths("wiki/a.md")).toEqual(["wiki"]);
+  });
+
+  it("returns empty array for a bare filename (no folders to expand)", () => {
+    expect(ancestorFolderPaths("a.md")).toEqual([]);
+  });
+
+  it("skips empty path segments produced by stray slashes", () => {
+    expect(ancestorFolderPaths("wiki//notes/a.md")).toEqual(["wiki", "wiki/notes"]);
+  });
+});
+
+describe("classifyFilename — cross-tab highlight routing", () => {
+  it("routes wiki/ files to the wiki tab", () => {
+    expect(classifyFilename("wiki/foo.md")).toBe("wiki");
+  });
+
+  it("routes raw/ files to the raw tab", () => {
+    expect(classifyFilename("raw/notes/foo.pdf")).toBe("raw");
+  });
+
+  it("treats top-level (non-wiki) files as raw so they don't get lost", () => {
+    // Anything outside of wiki/ falls into the Raw bucket; the highlight
+    // sync logic relies on this to pick a non-empty tab.
+    expect(classifyFilename("CLAUDE.md")).toBe("raw");
+  });
+
+  it("is case-insensitive on the top-level folder", () => {
+    expect(classifyFilename("WIKI/foo.md")).toBe("wiki");
+    expect(classifyFilename("Raw/foo.pdf")).toBe("raw");
+  });
+});
 
 describe("sortNodes", () => {
   it("alpha mode keeps folders above files and sorts files by basename", () => {

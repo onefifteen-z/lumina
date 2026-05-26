@@ -152,7 +152,7 @@ describe("buildWikiGraphTooltipMap", () => {
 });
 
 describe("buildWikiGraph", () => {
-  it("annotates entity nodes with org/person tags", () => {
+  it("annotates entity nodes with org/person tags (filter UI hook)", () => {
     const g = buildWikiGraph([
       meta("wiki/entities/acme.md", { tags: ["org"] }),
       meta("wiki/entities/alice.md", { tags: ["person"] }),
@@ -162,7 +162,37 @@ describe("buildWikiGraph", () => {
     const tagById = new Map(g.nodes.map((n) => [n.id, n.entityTag]));
     expect(tagById.get("wiki/entities/acme.md")).toBe("org");
     expect(tagById.get("wiki/entities/alice.md")).toBe("person");
+    // Untagged entity gets no specific filter tag — sub-typing is for the
+    // filter UI only and `misc.md` doesn't claim either bucket.
     expect(tagById.get("wiki/entities/misc.md")).toBeNull();
+    // Concepts page never inherits an entity tag, even with `org` tagged.
     expect(tagById.get("wiki/concepts/c1.md")).toBeNull();
+  });
+
+  /**
+   * Pin the colouring rule: every page under `wiki/entities/` is treated
+   * as an entity for visual purposes (`isEntity === true`), independent
+   * of whether it has a specific `org` / `person` tag. Pages outside
+   * `wiki/entities/` are never entities, even when they happen to carry
+   * those tags. Without this flag, untagged entity pages would render
+   * with the generic concept colour and look orphaned next to their
+   * tagged siblings — confusing in user-reported screenshots.
+   */
+  it("flags every wiki/entities/* page as isEntity regardless of tags", () => {
+    const g = buildWikiGraph([
+      meta("wiki/entities/acme.md", { tags: ["org"] }),
+      meta("wiki/entities/alice.md", { tags: ["person"] }),
+      meta("wiki/entities/misc.md", { tags: [] }),
+      meta("wiki/entities/sub/nested.md", { tags: ["other"] }),
+      meta("wiki/concepts/c1.md", { tags: ["org"] }),
+      meta("wiki/index.md", { tags: [] }),
+    ]);
+    const isEntityById = new Map(g.nodes.map((n) => [n.id, n.isEntity]));
+    expect(isEntityById.get("wiki/entities/acme.md")).toBe(true);
+    expect(isEntityById.get("wiki/entities/alice.md")).toBe(true);
+    expect(isEntityById.get("wiki/entities/misc.md")).toBe(true);
+    expect(isEntityById.get("wiki/entities/sub/nested.md")).toBe(true);
+    expect(isEntityById.get("wiki/concepts/c1.md")).toBe(false);
+    expect(isEntityById.get("wiki/index.md")).toBe(false);
   });
 });

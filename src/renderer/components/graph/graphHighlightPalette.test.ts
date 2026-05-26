@@ -4,6 +4,7 @@ import {
   buildAdjacencyStringLinks,
   edgeHoverTier,
   getGraphHighlightPalette,
+  graphEntityNodeColorOverride,
   multiplyRgbaAlpha,
   parseColorToRgba,
 } from "./graphHighlightPalette";
@@ -25,6 +26,23 @@ describe("parseColorToRgba / multiplyRgbaAlpha", () => {
     const c = parseColorToRgba("#646464");
     expect(c).toMatchObject({ r: 100, g: 100, b: 100, a: 1 });
     expect(multiplyRgbaAlpha("rgba(10,20,30,0.4)", 0.5)).toBe("rgba(10,20,30,0.2)");
+  });
+});
+
+describe("graphEntityNodeColorOverride", () => {
+  it("returns null for non-entity nodes (so the default palette applies)", () => {
+    expect(graphEntityNodeColorOverride(false, true)).toBeNull();
+    expect(graphEntityNodeColorOverride(false, false)).toBeNull();
+  });
+
+  it("returns the unified entity blue for any entity, regardless of subtype", () => {
+    // The whole point of the boolean signature is that an org-tagged page,
+    // a person-tagged page, and an untagged page in wiki/entities/ all
+    // hit this branch with the same `true` and get the same swatch.
+    const dark = graphEntityNodeColorOverride(true, true);
+    const light = graphEntityNodeColorOverride(true, false);
+    expect(dark).toEqual({ base: "#60A5FA", hover: "#93C5FD" });
+    expect(light).toEqual({ base: "#2563EB", hover: "#1D4ED8" });
   });
 });
 

@@ -125,6 +125,14 @@ export interface IngestContext {
    * and referenced by file_id instead of being processed locally.
    */
   fileIngest?: boolean;
+  /**
+   * When true, the chat transport is the OpenAI Responses API, which (unlike
+   * Chat Completions) accepts `file_id` for non-PDF office formats too.
+   * Loosens the `fileIngest` branch so `.pptx`, `.xlsx`, `.docx`, `.doc`,
+   * `.epub`, `.rtf` get uploaded natively instead of falling back to
+   * markitdown. Has no effect when `fileIngest` is false.
+   */
+  responsesApi?: boolean;
   /** Upload a file via the LLM provider's /v1/files endpoint. */
   uploadFile?: (filePath: string) => Promise<{ id: string }>;
   /** Override the venv-bootstrap step. Tests inject a stub. */
@@ -384,33 +392,39 @@ export async function runIngestTool(
   const mode = args.mode ?? "auto";
   const ext = path.extname(rel).toLowerCase();
 
-  // File upload mode: branch by file type because OpenAI's Chat Completions
-  // API only accepts the `file` content part with `file_id` for PDFs. Other
-  // office formats (xlsx, pptx, docx, …) and images can't ride that path
-  // even when the Files API itself accepts them — the model-side validator
-  // rejects non-PDF MIME types with "Expected a file with an
-  // application/pdf MIME type". So:
-  //   - .pdf                       → upload + `file_id` content block (works)
-  //   - images                     → inline as base64 `image_url` content block
-  //                                  (skip upload; Chat Completions has no
-  //                                  file_id-by-image path)
-  //   - .xlsx/.xls/.pptx/.ppt/...  → markitdown via runOffice. Chat
-  //                                  Completions can't take these by file_id
-  //                                  either, but markitdown extracts the
-  //                                  table/slide text and the model still
-  //                                  works with it transparently.
+  // File upload mode: branch by file type AND by which chat transport
+  // we're talking to.
+  //
+  // Chat Completions:
+  //   - .pdf                       → upload + `file_id` content block
+  //   - images                     → inline as base64 `image_url` block
+  //                                  (CC has no file_id-by-image path)
+  //   - .xlsx/.xls/.pptx/.ppt/...  → markitdown via runOffice. CC validator
+  //                                  rejects file_id for non-PDF MIME types.
+  //
+  // Responses API (`ctx.responsesApi === true`):
+  //   - .pdf and other OFFICE_EXTENSIONS → upload + `file_id` content
+  //                                        block (Responses API's
+  //                                        `input_file` accepts all of
+  //                                        them; pptx/docx extract text,
+  //                                        xlsx gets spreadsheet
+  //                                        augmentation server-side).
+  //   - images                     → still inline as base64 `image_url`.
+  //                                  Cheaper than uploading and works on
+  //                                  both transports.
   if (ctx.fileIngest) {
-    if (ext === ".pdf" && ctx.uploadFile) {
-      return runFileUpload(abs, rel, ctx);
+    if (OFFICE_EXTENSIONS.has(ext)) {
+      // Responses API: every OFFICE_EXTENSIONS file rides Files API.
+      // Chat Completions: only .pdf does; everything else still uses
+      // markitdown locally (CC validator rejects file_id for non-PDF).
+      const uploadable = ctx.responsesApi === true || ext === ".pdf";
+      if (uploadable && ctx.uploadFile) {
+        return runFileUpload(abs, rel, ctx);
+      }
+      return { output: await runOffice(abs, rel, ctx) };
     }
     if (IMAGE_EXTENSIONS.has(ext)) {
       return runImageBlock(abs, rel);
-    }
-    if (OFFICE_EXTENSIONS.has(ext)) {
-      // Explicit pass-through to runOffice so the toggle has predictable
-      // behaviour for every office extension we advertise (xlsx, pptx,
-      // docx, …) — not just the two that happen to fall through naturally.
-      return { output: await runOffice(abs, rel, ctx) };
     }
   }
 

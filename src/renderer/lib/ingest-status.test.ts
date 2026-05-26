@@ -286,6 +286,45 @@ describe("computeIngestedRawFiles", () => {
     expect(ingested.size).toBe(1);
     expect(ingested.has("raw/foo.pdf")).toBe(true);
   });
+
+  /**
+   * Real-world bug: a Japanese filename arrives on disk as NFD (typical
+   * after a macOS HFS+ / older AirDrop / iCloud round-trip — `プ` becomes
+   * `フ` U+30D5 + `゜` U+309A) while the wiki/sources/ summary written by
+   * the chat agent stays NFC (`プ` U+30D7). The two render identically
+   * but compare unequal, so signal B silently fails to flag the raw file
+   * as ingested. Both `ingestStem` and the filename comparator must
+   * NFC-normalize before hashing.
+   */
+  it("flags raw vs wiki when one filename is NFD and the other is NFC (Japanese)", () => {
+    const rawNfd =
+      "raw/meeting_memo/20260408_沖プラ定例.md".normalize("NFD");
+    const wikiNfc =
+      "wiki/sources/2026-04-08-沖プラ定例.md".normalize("NFC");
+    // Sanity: confirm the test fixture really is mixed-form (otherwise
+    // this assertion silently passes for the wrong reason).
+    expect(rawNfd).not.toBe(rawNfd.normalize("NFC"));
+    const articles = [
+      makeArticle({ filename: rawNfd }),
+      makeArticle({ filename: wikiNfc /* no sources frontmatter */ }),
+    ];
+    const ingested = computeIngestedRawFiles(articles);
+    expect(ingested.has(rawNfd)).toBe(true);
+  });
+
+  it("flags raw via signal A when frontmatter `sources:` is NFC but disk filename is NFD", () => {
+    const rawNfd = "raw/meeting_memo/20260408_沖プラ定例.md".normalize("NFD");
+    const articles = [
+      makeArticle({ filename: rawNfd }),
+      makeArticle({
+        filename: "wiki/note.md",
+        // Author typed the path in NFC (what their editor / chat produces).
+        sources: ["raw/meeting_memo/20260408_沖プラ定例.md".normalize("NFC")],
+      }),
+    ];
+    const ingested = computeIngestedRawFiles(articles);
+    expect(ingested.has(rawNfd)).toBe(true);
+  });
 });
 
 // ── ingestStem ────────────────────────────────────────────────────
@@ -316,5 +355,14 @@ describe("ingestStem", () => {
     expect(ingestStem("a.md")).toBe("");
     expect(ingestStem("20240101_.md")).toBe("");
     expect(ingestStem("")).toBe("");
+  });
+
+  it("returns identical stems for NFC and NFD forms of the same filename", () => {
+    const nfc = "20260408_沖プラ定例.md".normalize("NFC");
+    const nfd = "20260408_沖プラ定例.md".normalize("NFD");
+    // Sanity: the two inputs really do differ at the codepoint level.
+    expect(nfc).not.toBe(nfd);
+    expect(ingestStem(nfd)).toBe(ingestStem(nfc));
+    expect(ingestStem(nfd)).toBe("沖プラ定例");
   });
 });

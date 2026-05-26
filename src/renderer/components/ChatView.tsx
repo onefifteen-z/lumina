@@ -632,9 +632,17 @@ export interface ChatViewProps {
   closeThinkingRef?: React.MutableRefObject<(() => void) | null>;
   /** Incremented by AppShell whenever the active vault changes */
   vaultKey?: number;
+  /**
+   * Whether this view is currently visible to the user. ChatView stays mounted
+   * even when the user navigates away (so streaming generation isn't
+   * interrupted), but global keyboard shortcuts that semantically belong to
+   * "the chat surface" (e.g. ⌘N for new session) must only fire when the
+   * user is actually looking at it. Defaults to true.
+   */
+  visible?: boolean;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef, vaultKey }) => {
+const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef, vaultKey, visible = true }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -1107,8 +1115,17 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
 
   /* ── Keyboard shortcut: Ctrl/Cmd+N ─────────────────────────── */
 
+  // Mirror `visible` into a ref so the (mount-once) keydown handler reads the
+  // latest value without re-binding. ChatView stays mounted across view
+  // switches, but ⌘N should only create a new chat session when the user is
+  // actually looking at the chat surface — otherwise it would hijack the
+  // shortcut while the user is in Files / Graph / Settings / etc.
+  const visibleRef = useRef(visible);
+  useEffect(() => { visibleRef.current = visible; }, [visible]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!visibleRef.current) return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
         handleNewSession();

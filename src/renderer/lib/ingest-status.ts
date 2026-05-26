@@ -32,14 +32,19 @@ export function normalizeSourceRef(value: string): string {
   if (pipe >= 0) ref = ref.slice(0, pipe).trim();
   if (ref.startsWith("./")) ref = ref.slice(2);
   if (ref.startsWith("/")) ref = ref.slice(1);
-  return ref;
+  // Unicode-normalize so an NFD-encoded disk filename (typical of macOS
+  // HFS+ / older AirDrop / iCloud transfer paths) matches an NFC-encoded
+  // frontmatter reference written by the chat agent. Without this, e.g.
+  // `沖プラ定例` in NFD (フ + ゜) and the same string in NFC (プ as a
+  // single codepoint) compare unequal even though they render identically.
+  return ref.normalize("NFC");
 }
 
-/** Lowercase basename (last `/`-delimited segment) of a path. Returns "" for empty. */
+/** Lowercase, NFC-normalized basename (last `/`-delimited segment) of a path. Returns "" for empty. */
 function basenameLower(p: string): string {
   if (!p) return "";
   const i = p.lastIndexOf("/");
-  return (i === -1 ? p : p.slice(i + 1)).toLowerCase();
+  return (i === -1 ? p : p.slice(i + 1)).toLowerCase().normalize("NFC");
 }
 
 /**
@@ -71,7 +76,12 @@ function basenameLower(p: string): string {
 export function ingestStem(filename: string): string {
   if (!filename) return "";
   const base = filename.split("/").pop() ?? filename;
-  let stem = base.replace(/\.[^./]+$/, "").toLowerCase();
+  // NFC-normalize before any string ops. Disk filenames on macOS may be
+  // NFD (decomposed) while filenames written by the chat agent are NFC.
+  // Without this, two filenames that render identically (e.g. `プ` as the
+  // single codepoint U+30D7 vs `フ` U+30D5 + U+309A) hash to different
+  // stems and the badge silently goes missing.
+  let stem = base.normalize("NFC").replace(/\.[^./]+$/, "").toLowerCase();
   stem = stem.replace(/^\d{4}[-_/]?\d{2}[-_/]?\d{2}[-_./]?/, "");
   stem = stem.replace(/^[-_./]+/, "").trim();
   return stem.length < 2 ? "" : stem;
@@ -133,7 +143,10 @@ export function computeIngestedRawFiles(articles: ArticleMeta[]): Set<string> {
   if (refKeys.size === 0 && sourceStems.size === 0) return ingested;
   for (const article of articles) {
     if (!isRawArticle(article)) continue;
-    const filenameLower = article.filename.toLowerCase();
+    // NFC-normalize the disk filename so it can compare equal to the
+    // (NFC-normalized) refKeys harvested from frontmatter. `basenameLower`
+    // already normalizes its return value.
+    const filenameLower = article.filename.toLowerCase().normalize("NFC");
     const base = basenameLower(article.filename);
     if (refKeys.has(filenameLower) || (base && refKeys.has(base))) {
       ingested.add(article.filename);

@@ -3,7 +3,7 @@ import { useState, useMemo, useCallback } from "react";
 import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, RefreshCw } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
-import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
+import { classifyFilename, filterArticlesForTab, type FileCategory } from "../lib/file-classification";
 import { computeIngestedRawFiles } from "../lib/ingest-status";
 
 /** Custom data type for drags that start inside the file tree. */
@@ -205,6 +205,22 @@ export function sortNodes(nodes: TreeNode[], sortMode: "modified" | "alpha" = "m
   });
 }
 
+/**
+ * Ancestor folder paths for a vault-relative file path.
+ *
+ * Example: `"wiki/notes/2025/a.md"` → `["wiki", "wiki/notes", "wiki/notes/2025"]`.
+ * Used to auto-expand parent folders when a file is selected from outside
+ * the tree (wikilink, search, graph) so the highlighted row is visible.
+ */
+export function ancestorFolderPaths(filename: string): string[] {
+  const parts = filename.split("/").filter((p) => p.length > 0);
+  const acc: string[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    acc.push(parts.slice(0, i).join("/"));
+  }
+  return acc;
+}
+
 /** Collect all folder paths in the tree (for default-expand). */
 function collectFolderPaths(nodes: TreeNode[], acc: Set<string> = new Set()): Set<string> {
   for (const node of nodes) {
@@ -293,6 +309,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
     return (
       <button
         type="button"
+        data-filename={node.article.filename}
         title={isIngested ? `${node.article.title} — ingested into the wiki` : node.article.title}
         draggable
         onDragStart={(e) => onDragStartRow(e, node.article.filename)}
@@ -539,7 +556,11 @@ export function FilesView({
     return () => window.removeEventListener("dragend", clear);
   }, []);
 
-  const [activeTab, setActiveTab] = useState<FileCategory>("wiki");
+  // Default to the tab containing the initially-selected file so that a vault
+  // restored with a raw/PDF open doesn't land on an empty Wiki tab.
+  const [activeTab, setActiveTab] = useState<FileCategory>(() =>
+    selectedFilename ? classifyFilename(selectedFilename) : "wiki",
+  );
   const [sortMode, setSortMode] = useState<"modified" | "alpha">("modified");
 
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -573,14 +594,26 @@ export function FilesView({
   const [tabSelections, setTabSelections] = useState<{
     wiki: string | null;
     raw: string | null;
-  }>({ wiki: selectedFilename, raw: null });
+  }>(() => {
+    const init: { wiki: string | null; raw: string | null } = { wiki: null, raw: null };
+    if (selectedFilename) init[classifyFilename(selectedFilename)] = selectedFilename;
+    return init;
+  });
 
-  // Sync tabSelections when selectedFilename prop changes from outside
+  // Sync tabSelections when selectedFilename prop changes from outside (wikilink
+  // navigation, search, graph). Route the highlight to the tab the file
+  // actually lives in and switch the active tab to match — otherwise jumping
+  // from a Wiki page to a Raw PDF (or vice-versa) leaves the sidebar showing
+  // the previous tab with no highlight at all.
   const prevSelectedRef = React.useRef(selectedFilename);
   if (prevSelectedRef.current !== selectedFilename) {
     prevSelectedRef.current = selectedFilename;
-    if (selectedFilename !== null) {
-      setTabSelections((prev) => ({ ...prev, [activeTab]: selectedFilename }));
+    if (selectedFilename !== null && selectedFilename !== "__new__") {
+      const targetTab = classifyFilename(selectedFilename);
+      setTabSelections((prev) =>
+        prev[targetTab] === selectedFilename ? prev : { ...prev, [targetTab]: selectedFilename },
+      );
+      if (targetTab !== activeTab) setActiveTab(targetTab);
     }
   }
 
@@ -745,6 +778,51 @@ export function FilesView({
     });
   }
 
+  // Auto-expand ancestor folders of the selected file so the highlighted
+  // row is visible. Runs whenever the external selection changes — covers
+  // wikilink navigation, search jumps, graph clicks, and Back/Forward.
+  // Only adds to the expanded set (never collapses), so user-collapsed
+  // folders elsewhere stay collapsed.
+  React.useEffect(() => {
+    if (!selectedFilename || selectedFilename === "__new__") return;
+    const targetTab = classifyFilename(selectedFilename);
+    const ancestors = ancestorFolderPaths(selectedFilename);
+    if (ancestors.length === 0) return;
+    setPerTabExpanded((prev) => {
+      const cur = prev[targetTab];
+      let changed = false;
+      const next = new Set(cur);
+      for (const p of ancestors) {
+        if (!next.has(p)) {
+          next.add(p);
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      return { ...prev, [targetTab]: next };
+    });
+  }, [selectedFilename]);
+
+  // Scroll the highlighted row into view after the tab/expansion state has
+  // settled. Uses a data-filename attribute on the file button so we don't
+  // have to thread refs through TreeNodeRow. Depends on perTabExpanded so
+  // the scroll runs again once any newly-expanded ancestor folders mount.
+  const treeScrollRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!selectedFilename || selectedFilename === "__new__") return;
+    if (classifyFilename(selectedFilename) !== activeTab) return;
+    const container = treeScrollRef.current;
+    if (!container) return;
+    const id = window.requestAnimationFrame(() => {
+      const escaped = (window.CSS && typeof CSS.escape === "function")
+        ? CSS.escape(selectedFilename)
+        : selectedFilename.replace(/"/g, '\\"');
+      const row = container.querySelector<HTMLElement>(`[data-filename="${escaped}"]`);
+      if (row) row.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [selectedFilename, activeTab, perTabExpanded]);
+
   // When a file is selected, store it in the active tab's selection and forward to parent
   const handleSelectArticle = useCallback(
     (filename: string) => {
@@ -869,6 +947,7 @@ export function FilesView({
 
       {/* Tree */}
       <div
+        ref={treeScrollRef}
         className={cn(
           "flex flex-1 min-h-0 flex-col overflow-y-auto py-1",
           treeDropTarget !== null &&

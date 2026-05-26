@@ -69,6 +69,8 @@ interface GraphNode extends SimulationNodeDatum {
   filename: string;
   linkCount: number;
   entityTag: WikiGraphEntityTag | null;
+  /** Lives under `wiki/entities/`. Drives the unified entity colour. */
+  isEntity: boolean;
 }
 
 interface GraphLink extends SimulationLinkDatum<GraphNode> {
@@ -284,7 +286,7 @@ function GraphView2DCanvas({
         dist,
         hovId,
         n.id,
-        graphEntityNodeColorOverride(n.entityTag, isDark),
+        graphEntityNodeColorOverride(n.isEntity, isDark),
       );
       ctx.fill();
 

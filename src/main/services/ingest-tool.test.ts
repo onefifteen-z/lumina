@@ -694,6 +694,159 @@ describe("runIngestTool file-upload mode (ctx.fileIngest=true)", () => {
   });
 });
 
+// ── responsesApi (OpenAI Responses API) ──────────────────────────
+
+describe("runIngestTool file-upload mode with responsesApi=true", () => {
+  /**
+   * The Responses API's `input_file` content part accepts every office
+   * extension we ship — pptx, xlsx, docx, etc. — not just PDF. When the
+   * user has both "OpenAI File Upload" enabled AND the endpoint is
+   * OpenAI (i.e. the chat transport switches to /v1/responses), the
+   * dispatch in `ingest_source` should upload every OFFICE_EXTENSIONS
+   * file via the Files API and emit a `type: "file"` content block —
+   * never fall back to markitdown.
+   *
+   * These tests pin that contract. The Chat-Completions fallback (which
+   * still gates non-PDFs through markitdown) is covered by the suite
+   * above.
+   */
+
+  it("uploads PPTX via Files API and emits a file content block", async () => {
+    await writeFile("raw/slides.pptx", Buffer.from("fake-pptx"));
+    let uploadedPath: string | null = null;
+    const result = await runIngestTool(
+      { path: "raw/slides.pptx" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async (filePath: string) => {
+          uploadedPath = filePath;
+          return { id: "file-pptx-1" };
+        },
+      }),
+    );
+    expect(uploadedPath).toMatch(/raw\/slides\.pptx$/);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.output).toContain("file-pptx-1");
+    expect(result.contentBlocks).toEqual([
+      { type: "file", file: { file_id: "file-pptx-1" } },
+    ]);
+  });
+
+  it("uploads XLSX via Files API (spreadsheet augmentation on the server side)", async () => {
+    await writeFile("raw/sheet.xlsx", Buffer.from("fake-xlsx"));
+    const result = await runIngestTool(
+      { path: "raw/sheet.xlsx" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => ({ id: "file-xlsx-2" }),
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.contentBlocks).toEqual([
+      { type: "file", file: { file_id: "file-xlsx-2" } },
+    ]);
+  });
+
+  it("uploads DOCX via Files API", async () => {
+    await writeFile("raw/report.docx", Buffer.from("fake-docx"));
+    const result = await runIngestTool(
+      { path: "raw/report.docx" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => ({ id: "file-docx-3" }),
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.contentBlocks).toEqual([
+      { type: "file", file: { file_id: "file-docx-3" } },
+    ]);
+  });
+
+  it("still uploads PDF via Files API (unchanged from the Chat-Completions path)", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("fake-pdf"));
+    const result = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => ({ id: "file-pdf-4" }),
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.contentBlocks).toEqual([
+      { type: "file", file: { file_id: "file-pdf-4" } },
+    ]);
+  });
+
+  it("keeps images inline as image_url even with responsesApi on (cheaper, works on both transports)", async () => {
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+    await writeFile("raw/photo.jpg", jpg);
+    let uploadCalled = false;
+    const result = await runIngestTool(
+      { path: "raw/photo.jpg" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => {
+          uploadCalled = true;
+          return { id: "should-not-upload" };
+        },
+      }),
+    );
+    expect(uploadCalled).toBe(false);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.contentBlocks?.[0]?.type).toBe("image_url");
+  });
+
+  it("surfaces upload errors for office formats too", async () => {
+    await writeFile("raw/slides.pptx", Buffer.from("fake"));
+    const result = await runIngestTool(
+      { path: "raw/slides.pptx" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => {
+          throw new Error("413 payload too large");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source error kind=file-upload\]/);
+    expect(result.output).toContain("413 payload too large");
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("falls back to markitdown when responsesApi is true but uploadFile is missing", async () => {
+    // The responsesApi flag without an upload channel is a misconfiguration
+    // (no LLM service wired) — we don't want to error out, we want to keep
+    // ingesting via the local fallback so the user still gets text content.
+    await writeFile("raw/slides.pptx", Buffer.from("fake"));
+    const result = await runIngestTool(
+      { path: "raw/slides.pptx" },
+      happyCtx({ fileIngest: true, responsesApi: true, uploadFile: undefined }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+
+  it("text files still use the plain text-read path under responsesApi", async () => {
+    await writeFile("notes.md", "# hello");
+    const result = await runIngestTool(
+      { path: "notes.md" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => {
+          throw new Error("uploadFile must not run for text");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=text\]/);
+    expect(result.contentBlocks).toBeUndefined();
+  });
+});
+
 // ── vision failure surfaces ───────────────────────────────────────
 
 describe("runIngestTool vision failures", () => {

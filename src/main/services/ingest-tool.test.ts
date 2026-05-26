@@ -118,18 +118,18 @@ describe("detectImageMime", () => {
 
 describe("runIngestTool: arg validation", () => {
   it("rejects non-object args with kind=args header", async () => {
-    const out = await runIngestTool(null, happyCtx());
+    const { output: out } = await runIngestTool(null, happyCtx());
     expect(out).toMatch(/^\[ingest_source error kind=args\]/);
   });
 
   it("rejects missing path with kind=args header", async () => {
-    const out = await runIngestTool({ mode: "auto" }, happyCtx());
+    const { output: out } = await runIngestTool({ mode: "auto" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source error kind=args\]/);
     expect(out).toMatch(/path must be a string/);
   });
 
   it("rejects unknown mode with kind=args header", async () => {
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "x.txt", mode: "magic" },
       happyCtx(),
     );
@@ -138,12 +138,12 @@ describe("runIngestTool: arg validation", () => {
   });
 
   it("rejects path-escape with kind=path header", async () => {
-    const out = await runIngestTool({ path: "../etc/passwd" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "../etc/passwd" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source error kind=path\]/);
   });
 
   it("returns kind=not-found for missing files", async () => {
-    const out = await runIngestTool({ path: "raw/nope.pdf" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "raw/nope.pdf" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source error kind=not-found\]/);
     expect(out).toContain("raw/nope.pdf");
   });
@@ -154,7 +154,7 @@ describe("runIngestTool: arg validation", () => {
 describe("runIngestTool auto dispatch", () => {
   it("text file → kind=text + content body", async () => {
     await writeFile("notes.md", "# hello\nworld");
-    const out = await runIngestTool({ path: "notes.md" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "notes.md" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source ok kind=text\]/);
     expect(out).toContain("# hello");
     expect(out).toContain("world");
@@ -162,7 +162,7 @@ describe("runIngestTool auto dispatch", () => {
 
   it("text file with no extension → kind=text (fallback)", async () => {
     await writeFile("README", "plain readme");
-    const out = await runIngestTool({ path: "README" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "README" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source ok kind=text\]/);
     expect(out).toContain("plain readme");
   });
@@ -170,7 +170,7 @@ describe("runIngestTool auto dispatch", () => {
   it("text file beyond TEXT_CHAR_LIMIT → truncation note", async () => {
     const big = "x".repeat(TEXT_CHAR_LIMIT + 100);
     await writeFile("big.txt", big);
-    const out = await runIngestTool({ path: "big.txt" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "big.txt" }, happyCtx());
     expect(out).toContain("truncated");
     expect(out).toContain(`truncated to ${TEXT_CHAR_LIMIT}`);
   });
@@ -178,7 +178,7 @@ describe("runIngestTool auto dispatch", () => {
   it("image file → kind=image + data URL", async () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     await writeFile("diagram.png", png);
-    const out = await runIngestTool({ path: "diagram.png" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "diagram.png" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source ok kind=image\]/);
     expect(out).toContain("data:image/png;base64,");
     // markdown image syntax with rel-path label
@@ -187,7 +187,7 @@ describe("runIngestTool auto dispatch", () => {
 
   it("PDF file → kind=office (markitdown happy path)", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("fake-pdf-bytes"));
-    const out = await runIngestTool({ path: "raw/doc.pdf" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "raw/doc.pdf" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source ok kind=office\]/);
     expect(out).toContain("extracted markdown");
     expect(out).toContain("Source: raw/doc.pdf");
@@ -195,7 +195,7 @@ describe("runIngestTool auto dispatch", () => {
 
   it("unsupported extension → kind=unsupported", async () => {
     await writeFile("blob.qqq", "weird");
-    const out = await runIngestTool({ path: "blob.qqq" }, happyCtx());
+    const { output: out } = await runIngestTool({ path: "blob.qqq" }, happyCtx());
     expect(out).toMatch(/^\[ingest_source error kind=unsupported\]/);
     expect(out).toContain(".qqq");
   });
@@ -208,7 +208,7 @@ describe("runIngestTool mode overrides", () => {
     // .png would normally go down the image path; mode=text forces office.
     const png = Buffer.from([0x89]);
     await writeFile("forced.png", png);
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "forced.png", mode: "text" },
       happyCtx(),
     );
@@ -218,7 +218,7 @@ describe("runIngestTool mode overrides", () => {
 
   it("mode=vision on PDF → kind=office-vision with rasterized images", async () => {
     await writeFile("raw/scan.pdf", Buffer.from("fake-pdf"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/scan.pdf", mode: "vision" },
       happyCtx(),
     );
@@ -231,7 +231,7 @@ describe("runIngestTool mode overrides", () => {
   it("mode=vision on PDF with pdfImageIngest:false → office (markitdown), no rasterize", async () => {
     let rasterCalled = false;
     await writeFile("raw/scan.pdf", Buffer.from("fake-pdf"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/scan.pdf", mode: "vision" },
       happyCtx({
         pdfImageIngest: false,
@@ -248,7 +248,7 @@ describe("runIngestTool mode overrides", () => {
 
   it("mode=vision on non-PDF → kind=vision-unsupported", async () => {
     await writeFile("raw/slides.pptx", Buffer.from("fake"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/slides.pptx", mode: "vision" },
       happyCtx(),
     );
@@ -259,7 +259,7 @@ describe("runIngestTool mode overrides", () => {
 
   it("mode=vision on .png → kind=vision-unsupported with auto hint", async () => {
     await writeFile("img.png", Buffer.from([0x89]));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "img.png", mode: "vision" },
       happyCtx(),
     );
@@ -273,7 +273,7 @@ describe("runIngestTool mode overrides", () => {
 describe("runIngestTool venv failures (office path)", () => {
   it("propagates kind=office-no-python", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         ensureVenv: async () => ({
@@ -289,7 +289,7 @@ describe("runIngestTool venv failures (office path)", () => {
 
   it("propagates kind=office-install-failed with the underlying message", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         ensureVenv: async () => ({
@@ -305,7 +305,7 @@ describe("runIngestTool venv failures (office path)", () => {
 
   it("propagates kind=office-venv-failed", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         ensureVenv: async () => ({
@@ -326,7 +326,7 @@ describe("runIngestTool venv consent gate (office path)", () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
     let probeCalls = 0;
     let consentCalls = 0;
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         probeVenvNeedsBootstrap: async () => {
@@ -347,7 +347,7 @@ describe("runIngestTool venv consent gate (office path)", () => {
   it("prompts when bootstrap is needed and proceeds on approval", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
     let consentCalls = 0;
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         probeVenvNeedsBootstrap: async () => true,
@@ -364,7 +364,7 @@ describe("runIngestTool venv consent gate (office path)", () => {
   it("returns kind=office-consent-declined when the user cancels", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
     let ensureVenvCalled = false;
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         probeVenvNeedsBootstrap: async () => true,
@@ -387,7 +387,7 @@ describe("runIngestTool venv consent gate (office path)", () => {
   it("treats probe errors pessimistically and still prompts", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
     let consentCalls = 0;
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         probeVenvNeedsBootstrap: async () => {
@@ -409,7 +409,7 @@ describe("runIngestTool venv consent gate (office path)", () => {
 describe("runIngestTool markitdown failure (office path)", () => {
   it("PDF failure → kind=office-failed with vision retry hint", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/doc.pdf" },
       happyCtx({
         execCommand: async () => {
@@ -429,7 +429,7 @@ describe("runIngestTool markitdown failure (office path)", () => {
 
   it("PPTX failure → kind=office-failed with PDF-conversion hint", async () => {
     await writeFile("raw/slides.pptx", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/slides.pptx" },
       happyCtx({
         execCommand: async () => {
@@ -444,7 +444,7 @@ describe("runIngestTool markitdown failure (office path)", () => {
 
   it("markitdown timeout → kind=office-timeout", async () => {
     await writeFile("raw/big.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/big.pdf" },
       happyCtx({
         execCommand: async () => {
@@ -462,12 +462,244 @@ describe("runIngestTool markitdown failure (office path)", () => {
   });
 });
 
+// ── fileIngest (OpenAI File Upload toggle) ────────────────────────
+
+describe("runIngestTool file-upload mode (ctx.fileIngest=true)", () => {
+  /**
+   * The OpenAI Chat Completions API only accepts `file_id` on a `file`
+   * content part when the underlying upload was an `application/pdf`.
+   * It rejects images, PPTX, and anything else with:
+   *   "Expected a file with an application/pdf MIME type, but got
+   *    unsupported MIME type 'image/jpeg'."
+   * So `ingest_source` must branch per file type when the toggle is on:
+   *   .pdf       → upload + `file` content block
+   *   .png/.jpg…  → inline `image_url` content block (no upload)
+   *   .pptx/.ppt → fall back to markitdown (runOffice)
+   * These tests pin every branch.
+   */
+
+  it("uploads PDF and returns a file content block", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("pdf-bytes"));
+    let uploadedPath: string | null = null;
+    const result = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async (filePath: string) => {
+          uploadedPath = filePath;
+          return { id: "file-abc123" };
+        },
+      }),
+    );
+    expect(uploadedPath).toMatch(/raw\/doc\.pdf$/);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.output).toContain("file-abc123");
+    expect(result.contentBlocks).toHaveLength(1);
+    expect(result.contentBlocks?.[0]).toEqual({
+      type: "file",
+      file: { file_id: "file-abc123" },
+    });
+  });
+
+  it("attaches JPG as an image_url content block without calling uploadFile", async () => {
+    // Regression: before the fix, this path called uploadFile and built a
+    // `file` content block, which the LLM gateway rejected with
+    // "Expected application/pdf, but got image/jpeg".
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    await writeFile("raw/photo.jpg", jpg);
+    let uploadCalled = false;
+    const result = await runIngestTool(
+      { path: "raw/photo.jpg" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          uploadCalled = true;
+          return { id: "should-not-be-used" };
+        },
+      }),
+    );
+    expect(uploadCalled).toBe(false);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.contentBlocks).toHaveLength(1);
+    const block = result.contentBlocks?.[0];
+    expect(block?.type).toBe("image_url");
+    if (block?.type === "image_url") {
+      expect(block.image_url.url).toMatch(/^data:image\/jpeg;base64,/);
+      expect(block.image_url.detail).toBe("auto");
+    }
+    // Tool-result text must NOT echo the base64 bytes back — otherwise the
+    // model would re-send megabytes on every follow-up turn.
+    expect(result.output).not.toContain("data:image/jpeg;base64,");
+  });
+
+  it("attaches PNG with the correct image/png MIME", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await writeFile("raw/diagram.png", png);
+    const result = await runIngestTool(
+      { path: "raw/diagram.png" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          throw new Error("uploadFile must not run for images");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    const block = result.contentBlocks?.[0];
+    expect(block?.type).toBe("image_url");
+    if (block?.type === "image_url") {
+      expect(block.image_url.url).toMatch(/^data:image\/png;base64,/);
+    }
+  });
+
+  it("falls back to markitdown for PPTX (Chat Completions can't take file_id for pptx)", async () => {
+    await writeFile("raw/slides.pptx", Buffer.from("fake-pptx"));
+    let uploadCalled = false;
+    const result = await runIngestTool(
+      { path: "raw/slides.pptx" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          uploadCalled = true;
+          return { id: "should-not-be-used" };
+        },
+      }),
+    );
+    expect(uploadCalled).toBe(false);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+    expect(result.output).toContain("extracted markdown");
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("falls back to markitdown for legacy .ppt as well", async () => {
+    await writeFile("raw/legacy.ppt", Buffer.from("fake-ppt"));
+    const result = await runIngestTool(
+      { path: "raw/legacy.ppt" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          throw new Error("uploadFile must not run for .ppt");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+
+  // Regression: a previous fix routed images and pptx but xlsx still
+  // crashed silently if the toggle later started uploading every office
+  // format. Pin the contract that every office extension falls back to
+  // markitdown when the toggle is on — never tries to upload.
+  it("falls back to markitdown for XLSX (Chat Completions can't take file_id for xlsx)", async () => {
+    await writeFile("raw/sheet.xlsx", Buffer.from("fake-xlsx"));
+    let uploadCalled = false;
+    const result = await runIngestTool(
+      { path: "raw/sheet.xlsx" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          uploadCalled = true;
+          return { id: "should-not-be-used" };
+        },
+      }),
+    );
+    expect(uploadCalled).toBe(false);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+    expect(result.output).toContain("extracted markdown");
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("falls back to markitdown for legacy .xls as well", async () => {
+    await writeFile("raw/legacy.xls", Buffer.from("fake-xls"));
+    const result = await runIngestTool(
+      { path: "raw/legacy.xls" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          throw new Error("uploadFile must not run for .xls");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+
+  it("falls back to markitdown for DOCX (and other office formats)", async () => {
+    // Covers .docx/.doc/.epub/.rtf via a representative — they all share
+    // the same OFFICE_EXTENSIONS guard, so testing one pins the contract.
+    await writeFile("raw/report.docx", Buffer.from("fake-docx"));
+    const result = await runIngestTool(
+      { path: "raw/report.docx" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          throw new Error("uploadFile must not run for .docx");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+
+  it("text files still use the normal text-read path when fileIngest is on", async () => {
+    await writeFile("notes.md", "# hello");
+    const result = await runIngestTool(
+      { path: "notes.md" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          throw new Error("uploadFile must not run for text");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=text\]/);
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("surfaces uploadFile failures for PDFs with kind=file-upload", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    const result = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          throw new Error("network timeout");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source error kind=file-upload\]/);
+    expect(result.output).toContain("network timeout");
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("surfaces image read failures with kind=file-upload", async () => {
+    // No file written → ENOENT before runImageBlock can read.
+    const result = await runIngestTool(
+      { path: "raw/missing.jpg" },
+      happyCtx({ fileIngest: true, uploadFile: async () => ({ id: "x" }) }),
+    );
+    // The up-front existence check fires first, so we get kind=not-found
+    // rather than kind=file-upload. Pinning that contract.
+    expect(result.output).toMatch(/^\[ingest_source error kind=not-found\]/);
+  });
+
+  it("falls back to normal dispatch when fileIngest is true but uploadFile is unset (no LLM service)", async () => {
+    // ChatService passes uploadFile only when it has an LLM service.
+    // Without it, PDFs should still ingest via markitdown rather than
+    // raising "service unavailable" — the toggle is informational at
+    // that point, not a hard requirement.
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    const result = await runIngestTool(
+      { path: "raw/doc.pdf" },
+      happyCtx({ fileIngest: true, uploadFile: undefined }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+  });
+});
+
 // ── vision failure surfaces ───────────────────────────────────────
 
 describe("runIngestTool vision failures", () => {
   it("rasterize throws → kind=vision-rasterize", async () => {
     await writeFile("raw/bad.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/bad.pdf", mode: "vision" },
       happyCtx({
         rasterize: async () => {
@@ -483,7 +715,7 @@ describe("runIngestTool vision failures", () => {
 
   it("rasterize returns empty pages → kind=vision-empty", async () => {
     await writeFile("raw/empty.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/empty.pdf", mode: "vision" },
       happyCtx({
         rasterize: async () => ({ pages: [], totalPages: 0, truncated: false }),
@@ -494,7 +726,7 @@ describe("runIngestTool vision failures", () => {
 
   it("vision result includes truncation note when pages > cap", async () => {
     await writeFile("raw/long.pdf", Buffer.from("x"));
-    const out = await runIngestTool(
+    const { output: out } = await runIngestTool(
       { path: "raw/long.pdf", mode: "vision" },
       happyCtx({
         rasterize: async () => ({

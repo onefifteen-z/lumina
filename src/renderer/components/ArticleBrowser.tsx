@@ -9,6 +9,7 @@ import hljs from 'highlight.js';
 import { useDomFindBackend } from '../find/use-dom-find-backend';
 import ArticleLiveEditor from './ArticleLiveEditor';
 import { ArticleFrontmatterFields, cloneFrontmatter } from './ArticleFrontmatterFields';
+import { normalizeSourceRef } from '../lib/ingest-status';
 
 const markdownToHtml = markdownArticleBodyToHtml;
 
@@ -34,20 +35,37 @@ function isSourceField(key: string): boolean {
   return k === 'source' || k === 'sources';
 }
 
-function normalizeSourceRef(value: string): string {
-  let ref = value.trim();
-  if (!ref) return '';
-  if (ref.startsWith('`') && ref.endsWith('`') && ref.length > 1) {
-    ref = ref.slice(1, -1).trim();
+/**
+ * Safely coerce an arbitrary frontmatter value to a string for display.
+ *
+ * gray-matter / js-yaml will faithfully reproduce whatever YAML the user (or
+ * the model) wrote — that includes nested maps inside lists like
+ * `sources: [{更新: "2024-01-01"}]`. Rendering one of those objects directly
+ * inside JSX (`{item}`) throws "Objects are not valid as a React child",
+ * which previously crashed `ArticleBrowser` whenever such a doc was opened.
+ *
+ * Coercion rules:
+ *   - string             → as-is (the 99% case)
+ *   - number / boolean   → `String(v)`
+ *   - Date               → ISO string (matches how the parser would have
+ *                          normalised it for created/modified)
+ *   - null / undefined   → empty string
+ *   - object / array     → `JSON.stringify(v)` — keeps the data visible so
+ *                          the user can spot the malformed YAML and fix it,
+ *                          rather than silently dropping the row.
+ *
+ * Never throws. Exported only for the unit test suite.
+ */
+export function toRenderableString(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
   }
-  if (ref.startsWith('[[') && ref.endsWith(']]')) {
-    ref = ref.slice(2, -2).trim();
-  }
-  const pipe = ref.indexOf('|');
-  if (pipe >= 0) ref = ref.slice(0, pipe).trim();
-  if (ref.startsWith('./')) ref = ref.slice(2);
-  if (ref.startsWith('/')) ref = ref.slice(1);
-  return ref;
 }
 
 // ── Simple Markdown inside HTML ────────────────────────────────
@@ -567,8 +585,14 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
                       <span>{k}</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {(v as string[]).map((item, i) => (
-                        isSourceField(k) ? (
+                      {(v as unknown[]).map((rawItem, i) => {
+                        // Coerce defensively: YAML lists can contain nested
+                        // maps (e.g. `sources: [{更新: "..."}]`), and feeding
+                        // an object directly into JSX throws
+                        // "Objects are not valid as a React child".
+                        const item = toRenderableString(rawItem);
+                        if (!item) return null;
+                        return isSourceField(k) ? (
                           <button
                             key={i}
                             type="button"
@@ -580,8 +604,8 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
                           </button>
                         ) : (
                           <span key={i} className="text-text-primary">{item}</span>
-                        )
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -594,14 +618,21 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
                     <span>tags</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {article.frontmatter.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs rounded-full bg-primary-bg text-primary-text"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+                    {(article.frontmatter.tags as unknown[]).map((rawTag, i) => {
+                      // YAML can hand us non-string tags (e.g. a bare date
+                      // `tags: [2024-01-01]` parses to a Date object).
+                      // Coerce so JSX never sees a raw object.
+                      const tag = toRenderableString(rawTag);
+                      if (!tag) return null;
+                      return (
+                        <span
+                          key={`${tag}-${i}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs rounded-full bg-primary-bg text-primary-text"
+                        >
+                          {tag}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               )}

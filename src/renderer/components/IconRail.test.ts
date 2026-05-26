@@ -237,8 +237,8 @@ describe("IconRail CLAUDE.md slot", () => {
     };
     // Mirror the IconRail click handler's branch: no file present →
     // delegate to the create handler.
-    const claudeFile: { filename: string } | undefined = undefined;
-    const onSelectConfigFile: ((f: string) => void) | undefined = undefined;
+    const claudeFile = undefined as { filename: string } | undefined;
+    const onSelectConfigFile = undefined as ((f: string) => void) | undefined;
     if (claudeFile && onSelectConfigFile) {
       onSelectConfigFile(claudeFile.filename);
     } else {

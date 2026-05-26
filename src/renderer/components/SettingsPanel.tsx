@@ -3,7 +3,7 @@ import type { LLMProviderConfig, PhoenixConfig } from '../../shared/types';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
-const DEFAULT_PHOENIX: PhoenixConfig = { enabled: false, host: 'localhost', port: 6006 };
+const DEFAULT_PHOENIX: PhoenixConfig = { enabled: false, scheme: 'http', host: 'localhost', port: 6006 };
 
 const SettingsPanel: React.FC = () => {
   // LLM provider fields
@@ -22,6 +22,9 @@ const SettingsPanel: React.FC = () => {
 
   /** Rasterize PDF pages to PNG for chat attach and ingest_source vision mode. */
   const [pdfImageIngest, setPdfImageIngest] = useState(false);
+
+  /** Upload PDF/image/PPTX via OpenAI Files API. */
+  const [fileIngest, setFileIngest] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -50,6 +53,7 @@ const SettingsPanel: React.FC = () => {
         setPhoenixHost(ph.host || 'localhost');
         setPhoenixPort(String(ph.port || 6006));
         setPdfImageIngest(config.pdfImageIngest ?? false);
+        setFileIngest(config.fileIngest ?? false);
       } catch {
         // Defaults are fine
       } finally {
@@ -75,7 +79,7 @@ const SettingsPanel: React.FC = () => {
         port: Number.isNaN(port) || port <= 0 ? 6006 : port,
       };
 
-      await window.api.saveConfig({ vaultPath, llmProvider, phoenix, pdfImageIngest });
+      await window.api.saveConfig({ vaultPath, llmProvider, phoenix, pdfImageIngest, fileIngest });
       await window.api.saveApiKey(apiKey);
 
       setSaveMsg('Settings saved');
@@ -85,7 +89,7 @@ const SettingsPanel: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [endpointUrl, apiKey, model, vaultPath, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort, pdfImageIngest]);
+  }, [endpointUrl, apiKey, model, vaultPath, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort, pdfImageIngest, fileIngest]);
 
   // Test LLM connection
   const handleTestConnection = useCallback(async () => {
@@ -220,6 +224,31 @@ const SettingsPanel: React.FC = () => {
           When enabled, attached PDFs and <code className="settings-inline-code">ingest_source</code> with{' '}
           <code className="settings-inline-code">mode: &quot;vision&quot;</code> send rasterized page screenshots.
           When disabled, PDFs are extracted as Markdown only (markitdown).
+        </p>
+      </section>
+
+      {/* ── OpenAI File Upload ────────────────────────── */}
+      <section className="settings-section">
+        <div className="settings-section__header-row">
+          <h3 className="settings-section__heading">OpenAI File Upload</h3>
+          <button
+            type="button"
+            className={`phoenix-toggle ${fileIngest ? 'phoenix-toggle--on' : ''}${!endpointUrl.toLowerCase().includes('openai') ? ' phoenix-toggle--disabled' : ''}`}
+            onClick={() => { if (endpointUrl.toLowerCase().includes('openai')) setFileIngest((v) => !v); }}
+            aria-pressed={fileIngest}
+            disabled={!endpointUrl.toLowerCase().includes('openai')}
+          >
+            <span className="phoenix-toggle__track">
+              <span className="phoenix-toggle__thumb" />
+            </span>
+            <span className="phoenix-toggle__label">{fileIngest ? 'Enabled' : 'Disabled'}</span>
+          </button>
+        </div>
+        <p className="settings-section__hint">
+          {endpointUrl.toLowerCase().includes('openai')
+            ? <>When enabled, PDFs are uploaded via the OpenAI Files API and referenced by file ID during ingest (more efficient than inline base64). Images are attached as native vision content blocks. Other office formats (XLSX, PPTX, DOCX, …) still fall back to local text extraction since Chat Completions only accepts file IDs for PDFs.</>
+            : <>File upload is not supported by the current LLM endpoint. Only OpenAI-compatible endpoints support this feature.</>
+          }
         </p>
       </section>
 

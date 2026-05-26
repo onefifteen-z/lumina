@@ -18,6 +18,41 @@ import {
 
 const BOOKMARKS_RELATIVE = path.join(".lumina", "bookmarks.json");
 
+/**
+ * Pull raw-source references out of an article's frontmatter. Accepts:
+ *   - `source: "raw/foo.pdf"` (singular string)
+ *   - `sources: "raw/foo.pdf"` (single string under plural key)
+ *   - `sources: ["raw/a.pdf", "raw/b.pdf"]` (array of strings)
+ *
+ * Non-string entries (objects, numbers, …) are silently dropped — they're
+ * already shown as JSON by the property panel, and surfacing them as
+ * bogus ingest matches would be worse than ignoring them.
+ *
+ * Exported only for unit tests.
+ */
+export function extractFrontmatterSources(
+  frontmatter: Record<string, unknown>,
+): string[] {
+  const out: string[] = [];
+  const pushIfString = (v: unknown): void => {
+    if (typeof v === "string" && v.trim()) out.push(v.trim());
+  };
+  // Plural wins when both are present; singular is a legacy convenience.
+  const plural = frontmatter.sources;
+  const singular = frontmatter.source;
+  if (Array.isArray(plural)) {
+    for (const item of plural) pushIfString(item);
+  } else if (typeof plural === "string") {
+    pushIfString(plural);
+  }
+  if (Array.isArray(singular)) {
+    for (const item of singular) pushIfString(item);
+  } else if (typeof singular === "string") {
+    pushIfString(singular);
+  }
+  return out;
+}
+
 export class FileSystemService {
   private vaultPath: string;
   private watcher: FSWatcher | null = null;
@@ -50,6 +85,13 @@ export class FileSystemService {
             .replace(/\s+/g, " ")
             .trim()
             .slice(0, 200);
+          // Pull raw-source references from frontmatter. We accept both
+          // singular `source` (single string) and plural `sources` (array
+          // or string) so authors using either convention get the same
+          // "ingested" badge. Non-string entries are dropped silently —
+          // they're already shown as JSON by the property panel, and
+          // surfacing them as bogus ingest matches would be worse.
+          const sources = extractFrontmatterSources(article.frontmatter);
 
           results.push({
             title: article.frontmatter.title || sharedFilenameToTitle(filename),
@@ -59,6 +101,7 @@ export class FileSystemService {
             modified: article.frontmatter.modified,
             wikilinks,
             excerpt,
+            ...(sources.length > 0 ? { sources } : {}),
           });
         } else {
           // Non-markdown: minimal metadata, title is the basename with extension
@@ -115,12 +158,15 @@ export class FileSystemService {
 
   /**
    * Write an article to disk. Updates the `modified` timestamp before saving.
+   * @param targetFolder Optional vault-relative folder (e.g. "wiki/notes") to place the file in.
    */
-  async writeArticle(article: ArticleFile): Promise<void> {
+  async writeArticle(article: ArticleFile, targetFolder?: string): Promise<void> {
     article.frontmatter.modified = new Date().toISOString();
     const serialized = serializeArticleFile(article);
-    const filename = sharedTitleToFilename(article.frontmatter.title) + ".md";
+    const basename = sharedTitleToFilename(article.frontmatter.title) + ".md";
+    const filename = targetFolder ? `${targetFolder}/${basename}` : basename;
     const filePath = path.join(this.vaultPath, filename);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, serialized, "utf-8");
   }
 

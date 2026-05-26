@@ -58,7 +58,7 @@ describe("FoxThinkingIndicator", () => {
   });
 
   describe("default (large) variant", () => {
-    const tree = FoxThinkingIndicator({});
+    const tree = FoxThinkingIndicator({}) as React.ReactElement;
 
     it('container has aria-label="Thinking" and role="status"', () => {
       expect(tree.props["aria-label"]).toBe("Thinking");
@@ -73,7 +73,7 @@ describe("FoxThinkingIndicator", () => {
   });
 
   describe('large variant (size="large")', () => {
-    const tree = FoxThinkingIndicator({ size: "large" });
+    const tree = FoxThinkingIndicator({ size: "large" }) as React.ReactElement;
 
     it("SVG renders at 80×80", () => {
       const svg = findByType(tree, "svg")[0];
@@ -99,7 +99,7 @@ describe("FoxThinkingIndicator", () => {
   });
 
   describe('small variant (size="small")', () => {
-    const tree = FoxThinkingIndicator({ size: "small" });
+    const tree = FoxThinkingIndicator({ size: "small" }) as React.ReactElement;
 
     it("SVG renders at 44×44", () => {
       const svg = findByType(tree, "svg")[0];
@@ -124,7 +124,7 @@ describe("FoxThinkingIndicator", () => {
   });
 
   describe("ears have separate animation classes", () => {
-    const graphic = FoxFaceGraphic({ animated: true });
+    const graphic = FoxFaceGraphic({ animated: true }) as React.ReactElement;
     it("renders both fox-ear-left and fox-ear-right elements", () => {
       const left = findByClassName(graphic, "fox-ear-left");
       const right = findByClassName(graphic, "fox-ear-right");

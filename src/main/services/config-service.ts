@@ -14,6 +14,7 @@ interface StoreSchema {
   llmProvider: LLMProviderConfig | null;
   phoenix: PhoenixConfig;
   pdfImageIngest: boolean;
+  fileIngest: boolean;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -32,6 +33,7 @@ export class ConfigService {
         llmProvider: null,
         phoenix: { enabled: false, scheme: "http", host: "localhost", port: 6006 },
         pdfImageIngest: false,
+        fileIngest: false,
         theme: "system",
         chatHistorySidebarOpen: false,
         lastChatSessionId: "",
@@ -48,6 +50,7 @@ export class ConfigService {
       llmProvider: this.store.get("llmProvider"),
       phoenix: this.store.get("phoenix"),
       pdfImageIngest: this.store.get("pdfImageIngest") ?? false,
+      fileIngest: this.store.get("fileIngest") ?? false,
       theme: this.store.get("theme"),
       chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
       lastChatSessionId: this.store.get("lastChatSessionId"),
@@ -67,6 +70,9 @@ export class ConfigService {
     }
     if (partial.pdfImageIngest !== undefined) {
       this.store.set("pdfImageIngest", partial.pdfImageIngest);
+    }
+    if (partial.fileIngest !== undefined) {
+      this.store.set("fileIngest", partial.fileIngest);
     }
     if (partial.theme !== undefined) {
       this.store.set("theme", partial.theme);

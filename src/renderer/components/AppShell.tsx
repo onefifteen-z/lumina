@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from 'react';
 import type { WikiAPI, ArticleMeta } from '../../shared/types';
 import { getConfigFiles } from '../lib/file-classification';
+import {
+  readStoredPanelWidth,
+  writeStoredPanelWidth,
+  LEFT_PANEL_WIDTH_KEY,
+  RIGHT_PANEL_WIDTH_KEY,
+} from '../lib/panel-width';
 import ArticleBrowser from './ArticleBrowser';
 import ArticleEditor from './ArticleEditor';
 import SettingsPanel from './SettingsPanel';
@@ -61,13 +67,17 @@ export interface NavigationContext {
   /** Navigate to the editor for a specific article by its vault-relative filename */
   editArticle: (filename: string) => void;
   /** Create a new article — opens blank editor */
-  createNewArticle: () => void;
+  createNewArticle: (targetFolder?: string) => void;
+  /** Vault-relative folder path for new article placement (e.g. "wiki/notes") */
+  targetFolder: string | null;
   /** Pre-populated content from LLM generation (when opening editor after generate) */
   generatedContent: string | null;
   /** Clear the generated content after it's been consumed */
   clearGeneratedContent: () => void;
   /** Switch to the files view and select the given article for viewing */
   viewArticle: (filename: string) => void;
+  /** Refresh the sidebar file tree after changes */
+  refreshFileTree: () => void;
   /**
    * Optional title to seed into the editor when entering "new article" mode.
    * Used by the "Create CLAUDE.md from template" flow so saving writes
@@ -84,9 +94,11 @@ const NavContext = createContext<NavigationContext>({
   editingFilename: null,
   editArticle: () => { },
   createNewArticle: () => { },
+  targetFolder: null,
   generatedContent: null,
   clearGeneratedContent: () => { },
   viewArticle: () => { },
+  refreshFileTree: () => { },
   prefilledTitle: null,
   clearPrefilledTitle: () => { },
 });
@@ -158,7 +170,7 @@ const SidebarLayout: React.FC<{
   canGoForward: boolean;
   onHistoryBack: () => void;
   onHistoryForward: () => void;
-  onNewArticle: () => void;
+  onNewArticle: (targetFolder?: string) => void;
   onNewFolder: (folderPath: string) => void;
   onRefreshFileTree: () => void | Promise<void>;
   emptyWikiRawFolders: string[];
@@ -213,10 +225,13 @@ const SidebarLayout: React.FC<{
     const configFiles = useMemo(() => getConfigFiles(articles), [articles]);
 
     const [rightCollapsed, setRightCollapsed] = useState(false);
-    const [leftWidth, setLeftWidth] = useState(240);
-    const [rightWidth, setRightWidth] = useState(260);
+    const [leftWidth, setLeftWidth] = useState(() => readStoredPanelWidth(LEFT_PANEL_WIDTH_KEY, 240, 160, 480));
+    const [rightWidth, setRightWidth] = useState(() => readStoredPanelWidth(RIGHT_PANEL_WIDTH_KEY, 260, 140, 400));
     const [isLeftResizing, setIsLeftResizing] = useState(false);
     const [isRightResizing, setIsRightResizing] = useState(false);
+
+    useEffect(() => { writeStoredPanelWidth(LEFT_PANEL_WIDTH_KEY, leftWidth); }, [leftWidth]);
+    useEffect(() => { writeStoredPanelWidth(RIGHT_PANEL_WIDTH_KEY, rightWidth); }, [rightWidth]);
     const [chatThinkingData, setChatThinkingData] = useState<ThinkingEntry | null>(null);
     const closeThinkingRef = React.useRef<(() => void) | null>(null);
 
@@ -388,7 +403,7 @@ const SidebarLayout: React.FC<{
               style={{
                 position: "absolute",
                 left: open ? `${44 + leftWidth}px` : "110px",
-                right: `${(activeView !== 'settings' && activeView !== 'chat' && activeView !== 'graph' && !rightCollapsed && headings.length > 0) ? rightWidth + 53 : 48}px`,
+                right: `${(!rightCollapsed && headings.length > 0) ? rightWidth + 53 : 48}px`,
                 top: 0, bottom: 0,
                 display: "flex", alignItems: "end",
                 overflow: "hidden",
@@ -657,6 +672,7 @@ const SidebarLayout: React.FC<{
 const AppShell: React.FC = () => {
   const [activeView, setActiveView] = useState<SidebarView>('files');
   const [editingFilename, setEditingFilename] = useState<string | null>(null);
+  const [targetFolder, setTargetFolder] = useState<string | null>(null);
   const [firstRun, setFirstRun] = useState<boolean | null>(null); // null = loading
   const [generateOpen, setGenerateOpen] = useState(false);
   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
@@ -962,9 +978,10 @@ const AppShell: React.FC = () => {
     setEditingFilename(filename);
   }, []);
 
-  const createNewArticle = useCallback(() => {
+  const createNewArticle = useCallback((folder?: string) => {
     setEditingFilename(null);
     setGeneratedContent(null);
+    setTargetFolder(folder ?? 'wiki');
     // Set editingFilename to empty string to signal "new article" mode
     // (null means "not editing", so we use a sentinel)
     setEditingFilename('');
@@ -1170,9 +1187,11 @@ const AppShell: React.FC = () => {
     editingFilename: editingFilename === '' ? null : editingFilename,
     editArticle,
     createNewArticle,
+    targetFolder,
     generatedContent,
     clearGeneratedContent,
     viewArticle,
+    refreshFileTree,
     prefilledTitle,
     clearPrefilledTitle,
   };

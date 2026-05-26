@@ -25,7 +25,7 @@ export interface ArticleEditorProps {
 }
 
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfterSave }) => {
-  const { editingFilename, navigate, generatedContent, clearGeneratedContent, prefilledTitle, clearPrefilledTitle } = useNavigation();
+  const { editingFilename, navigate, generatedContent, clearGeneratedContent, prefilledTitle, clearPrefilledTitle, targetFolder, refreshFileTree } = useNavigation();
 
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -99,7 +99,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
     const isNewArticle = editingFilename === null;
     if (isNewArticle) {
       try {
-        const exists = await window.api.articleExists(trimmedTitle);
+        const exists = await window.api.articleExists(trimmedTitle, targetFolder ?? undefined);
         if (exists) {
           const overwrite = window.confirm(
             `An article titled "${trimmedTitle}" already exists. Do you want to overwrite it?`
@@ -131,7 +131,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
 
       article.rawContent = serializeArticleFile(article);
 
-      await window.api.saveArticle(article);
+      await window.api.saveArticle(article, editingFilename === null ? targetFolder ?? undefined : undefined);
 
       // Update saved state so isDirty resets to false
       savedTitleRef.current = trimmedTitle;
@@ -139,6 +139,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
       setIsDirty(false);
 
       onAfterSave?.();
+      refreshFileTree();
 
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -146,7 +147,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
       console.error('Failed to save article:', err);
       setSaveStatus('error');
     }
-  }, [title, originalFrontmatter, editingFilename, onAfterSave]);
+  }, [title, originalFrontmatter, editingFilename, targetFolder, onAfterSave]);
 
   // Keep saveHandlerRef in sync so the keymap closure always calls the latest save
   useEffect(() => {
@@ -167,11 +168,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
       if (!insideThisEditor) return;
 
       if (embedded) {
-        const cmFocused = viewRef.current.hasFocus();
+        const cmFocused = viewRef.current.hasFocus;
         if (!cmFocused && !el?.closest('.article-editor__toolbar')) return;
       } else {
         const inTitle = !!el?.closest('.article-editor__title');
-        const cmFocused = viewRef.current.hasFocus();
+        const cmFocused = viewRef.current.hasFocus;
         if (!cmFocused && !inTitle) return;
       }
 

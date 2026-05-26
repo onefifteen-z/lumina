@@ -66,9 +66,10 @@ export function registerIpcHandlers(services: {
   const ingest = new IngestService(llm, fileSystem);
 
   function syncPdfImageIngestFromConfig(): void {
-    const on = config.getConfig().pdfImageIngest;
-    ingest.setPdfImageIngest(on);
-    chat?.setPdfImageIngest(on);
+    const cfg = config.getConfig();
+    ingest.setPdfImageIngest(cfg.pdfImageIngest);
+    chat?.setPdfImageIngest(cfg.pdfImageIngest);
+    chat?.setFileIngest(cfg.fileIngest);
   }
   syncPdfImageIngestFromConfig();
 
@@ -175,12 +176,12 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:saveArticle",
-    async (_event, article: ArticleFile): Promise<void> => {
+    async (_event, article: ArticleFile, targetFolder?: string): Promise<void> => {
       if (!fileSystem)
         throw new Error(
           "No vault is open. Please select a vault folder first.",
         );
-      await fileSystem.writeArticle(article);
+      await fileSystem.writeArticle(article, targetFolder);
       // Refresh the search index with updated article metadata
       const articles = await fileSystem.scanVault();
       if (searchIndex) await searchIndex.buildIndex(articles);
@@ -224,9 +225,10 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:articleExists",
-    async (_event, title: string): Promise<boolean> => {
+    async (_event, title: string, targetFolder?: string): Promise<boolean> => {
       if (!fileSystem) return false;
-      const filename = titleToFilename(title) + ".md";
+      const basename = titleToFilename(title) + ".md";
+      const filename = targetFolder ? `${targetFolder}/${basename}` : basename;
       return fileSystem.fileExists(filename);
     },
   );

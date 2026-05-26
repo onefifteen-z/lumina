@@ -680,9 +680,10 @@ describe("ChatService request_user_confirmation tool", () => {
     // Reach into the private method — the public tool surface is driven
     // by the LLM stream, which is overkill for a unit test.
     const run = (chat as unknown as {
-      executeTool: (name: string, argsJson: string) => Promise<string>;
+      executeTool: (name: string, argsJson: string) => Promise<{ output: string }>;
     }).executeTool;
-    return run.call(chat, "request_user_confirmation", JSON.stringify(args));
+    const result = await run.call(chat, "request_user_confirmation", JSON.stringify(args));
+    return result.output;
   }
 
   it("returns [confirm ok] on approval and forwards all fields", async () => {
@@ -732,9 +733,9 @@ describe("ChatService request_user_confirmation tool", () => {
     // Explicitly leave the confirmation service unset — simulates the CLI
     // / test harness where there's no renderer to talk to.
     const run = (chat as unknown as {
-      executeTool: (name: string, argsJson: string) => Promise<string>;
+      executeTool: (name: string, argsJson: string) => Promise<{ output: string }>;
     }).executeTool;
-    const out = await run.call(
+    const { output: out } = await run.call(
       chat,
       "request_user_confirmation",
       JSON.stringify({ title: "x" }),

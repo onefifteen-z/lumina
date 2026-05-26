@@ -21,6 +21,12 @@ export interface ArticleMeta {
     modified: string;
     wikilinks: string[];
     excerpt: string;
+    /**
+     * Raw-source references declared in the article's `sources` frontmatter
+     * field. Populated only for wiki .md files that declare them. Powers
+     * the file-tree "Ingested" badge on raw/ files.
+     */
+    sources?: string[];
 }
 /** A single search result entry. */
 export interface SearchResult {
@@ -83,9 +89,9 @@ export interface WikiAPI {
     listArticles(): Promise<ArticleMeta[]>;
     listEmptyWikiRawFolders(): Promise<string[]>;
     getArticle(title: string): Promise<ArticleFile>;
-    saveArticle(article: ArticleFile): Promise<void>;
+    saveArticle(article: ArticleFile, targetFolder?: string): Promise<void>;
     deleteArticle(title: string): Promise<void>;
-    articleExists(title: string): Promise<boolean>;
+    articleExists(title: string, targetFolder?: string): Promise<boolean>;
     search(query: string): Promise<SearchResult[]>;
     searchByTag(tag: string): Promise<ArticleMeta[]>;
     getBacklinks(title: string): Promise<string[]>;

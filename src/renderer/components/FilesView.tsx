@@ -4,6 +4,7 @@ import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, C
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { filterArticlesForTab, type FileCategory } from "../lib/file-classification";
+import { computeIngestedRawFiles } from "../lib/ingest-status";
 
 /** Custom data type for drags that start inside the file tree. */
 const LUMINA_DRAG_PATH = "application/x-lumina-vault-path";
@@ -244,6 +245,12 @@ interface TreeNodeProps {
   selectedFilename: string | null;
   expandedFolders: Set<string>;
   sortMode: "modified" | "alpha";
+  /**
+   * Vault-relative paths of raw/ files that have been ingested into the
+   * wiki (i.e. referenced by some wiki page's `sources` frontmatter).
+   * Used to badge those rows in the tree. Empty set ⇒ no badge anywhere.
+   */
+  ingestedRawSet: Set<string>;
   onSelectArticle: (filename: string) => void;
   onToggleFolder: (path: string) => void;
   onContextMenu?: (e: React.MouseEvent, filename: string) => void;
@@ -261,6 +268,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   selectedFilename,
   expandedFolders,
   sortMode,
+  ingestedRawSet,
   onSelectArticle,
   onToggleFolder,
   onContextMenu,
@@ -281,10 +289,11 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
     const isPdf = node.article.filename.toLowerCase().endsWith(".pdf");
     const dropInto = vaultParentDir(node.article.filename);
     const isDropHighlight = dropTargetPath !== null && normPath(dropTargetPath) === normPath(dropInto);
+    const isIngested = ingestedRawSet.has(node.article.filename);
     return (
       <button
         type="button"
-        title={node.article.title}
+        title={isIngested ? `${node.article.title} — ingested into the wiki` : node.article.title}
         draggable
         onDragStart={(e) => onDragStartRow(e, node.article.filename)}
         onDragEnd={onDragEndRow}
@@ -294,7 +303,10 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         onContextMenu={(e) => onContextMenu?.(e, node.article.filename)}
         style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
-          "flex items-center gap-1 w-full text-left truncate transition-colors",
+          // Removed parent `truncate` — it conflicts with flex children
+          // and was clipping the trailing "Ingested" pill on long file
+          // names. The label span owns truncation now via flex-1 min-w-0.
+          "flex items-center gap-1 w-full text-left transition-colors",
           "focus-visible:outline-none cursor-grab active:cursor-grabbing",
           isDropHighlight && "bg-primary-bg/40",
           isSelected
@@ -309,7 +321,19 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         ) : (
           <span className={fileLeadingReserve} aria-hidden />
         )}
-        <span className="truncate">{node.name}</span>
+        <span className="flex-1 min-w-0 truncate">{node.name}</span>
+        {isIngested && (
+          // Compact dot-style badge. We avoid a wide text pill ("INGESTED")
+          // because it competes for horizontal space with long file names
+          // in the (often narrow) sidebar. A 6px green dot is unmistakable,
+          // always visible regardless of row width, and the tooltip still
+          // says "ingested into the wiki" for accessibility / clarity.
+          <span
+            aria-label="Ingested"
+            data-testid="ingested-badge"
+            className="ml-1 shrink-0 inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20"
+          />
+        )}
       </button>
     );
   }
@@ -367,6 +391,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
               selectedFilename={selectedFilename}
               expandedFolders={expandedFolders}
               sortMode={sortMode}
+              ingestedRawSet={ingestedRawSet}
               onSelectArticle={onSelectArticle}
               onToggleFolder={onToggleFolder}
               onContextMenu={onContextMenu}
@@ -394,7 +419,7 @@ export interface FilesViewProps {
   loading: boolean;
   error: string | null;
   onSelectArticle: (filename: string) => void;
-  onNewArticle: () => void;
+  onNewArticle: (targetFolder?: string) => void;
   onNewFolder: (folderPath: string) => void;
   /** Rescan vault file list (e.g. after external changes). */
   onRefresh?: () => void | Promise<void>;
@@ -579,6 +604,15 @@ export function FilesView({
     [rawArticles, sortMode, rawExtraFolders],
   );
   const tree = activeTab === "wiki" ? wikiTree : rawTree;
+
+  // Which raw/ files have been ingested? Recomputed only when the article
+  // list identity changes (vault rescans + watcher events). The function
+  // is pure and bounded by O(articles + sources), so memoising on
+  // `articles` is sufficient — no need to react to selection / drag state.
+  const ingestedRawSet = useMemo(
+    () => computeIngestedRawFiles(articles),
+    [articles],
+  );
 
   const tabRootPrefix = useMemo(() => {
     const list = activeTab === "wiki" ? wikiArticles : rawArticles;
@@ -807,7 +841,11 @@ export function FilesView({
 
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-3 py-2">
-        <ToolbarButton title="New Markdown" onClick={onNewArticle}>
+        <ToolbarButton title="New Markdown" onClick={() => {
+          const sel = tabSelections[activeTab];
+          const parentDir = sel ? vaultParentDir(sel) : activeTab;
+          onNewArticle(parentDir || activeTab);
+        }}>
           <FilePlus size={15} />
         </ToolbarButton>
         <ToolbarButton title="New Folder" onClick={openNewFolderDialog}>
@@ -860,6 +898,7 @@ export function FilesView({
               selectedFilename={highlightFilename}
               expandedFolders={expandedFolders}
               sortMode={sortMode}
+              ingestedRawSet={ingestedRawSet}
               onSelectArticle={handleSelectArticle}
               onToggleFolder={toggleFolder}
               onContextMenu={handleCtx}

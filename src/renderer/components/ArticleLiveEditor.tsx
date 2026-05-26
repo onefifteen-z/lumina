@@ -256,7 +256,8 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
       };
       toSave.rawContent = serializeArticleFile(toSave);
 
-      await window.api.saveArticle(toSave);
+      const parentDir = filename.includes("/") ? filename.slice(0, filename.lastIndexOf("/")) : undefined;
+      await window.api.saveArticle(toSave, parentDir);
       savedMarkdownRef.current = editorContent;
       setLiveBody(editorContent);
       if (!externalFmRef.current) {
@@ -389,7 +390,7 @@ const ArticleLiveEditor: React.FC<ArticleLiveEditorProps> = ({
 
   return (
     <div
-      ref={findRootRef}
+      ref={findRootRef as React.Ref<HTMLDivElement>}
       className="article-live-editor article-editor article-editor--embedded article-editor--inline-surface"
     >
       <div className="article-editor__toolbar">

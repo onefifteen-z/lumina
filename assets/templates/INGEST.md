@@ -20,11 +20,23 @@ Returns a single string. The first line is always one of:
 - `[ingest_source ok kind=<kind>]` — success; the rest of the string is the extracted content (markdown, plain text, or markdown with embedded image data URLs)
 - `[ingest_source error kind=<kind>]` — failure; the rest is a human-readable error you should relay to the user
 
-`<kind>` is one of `text`, `image`, `office`, `office-vision`. It tells you which path Lumina took.
+`<kind>` is one of `text`, `image`, `office`, `office-vision`, `file-upload`. It tells you which path Lumina took.
 
 You never run `markitdown` or `pip` yourself. Lumina manages a shared `~/.lumina/venv/` automatically on first office-file ingest. If python or markitdown is unavailable, the tool returns an error string with a clear next-step message.
 
 # Mode Selection
+
+## OpenAI File Upload Mode (priority)
+
+When the user has enabled "OpenAI File Upload" in Settings (available only for OpenAI-compatible endpoints), `ingest_source` routes PDF and image files to a path that attaches them directly to the conversation instead of inlining their bytes into the tool-result text. In this mode:
+
+- `.pdf` files are uploaded via the OpenAI Files API and referenced by `file_id` — the upload happens transparently and the PDF becomes a `file` content block on the next user turn. `ingest_source` returns `kind=file-upload`.
+- Image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.svg`) are attached as an `image_url` content block (base64 data URL). The Files API is **not** used here because OpenAI's Chat Completions endpoint only accepts `file_id` for `application/pdf`. `ingest_source` still returns `kind=file-upload`.
+- Other office formats (`.xlsx`, `.xls`, `.pptx`, `.ppt`, `.docx`, `.doc`, `.epub`, `.rtf`) fall back to `markitdown` — they cannot be referenced via `file_id` on Chat Completions, and rasterization is not implemented for them. `ingest_source` returns `kind=office` exactly as it would with the toggle off. The model still receives the extracted text (spreadsheet tables, slide text, document body). If a spreadsheet or deck looks wrong after extraction, tell the user to export it to PDF and re-ingest.
+- Text files (`.md`, `.txt`, `.json`, etc.) still use the normal text-read path.
+- If the upload fails for a PDF, the tool returns an error — relay it to the user.
+
+You do NOT need to retry with `mode: "vision"` for files routed through this mode — the attached content is already fully accessible to you. Just call `ingest_source` normally; Lumina picks the right transport per file type.
 
 ## Default: always start with `mode: "auto"` (or omit `mode`)
 
@@ -94,6 +106,8 @@ Per CLAUDE.md's Tool-Use Discipline: do all of the above with `shell` calls in t
 ```
 # Normal case (works for 90% of files)
 ingest_source({ path: "raw/<filename>" })
+# → If OpenAI File Upload is enabled: PDF/image/PPTX uploaded via Files API (kind=file-upload)
+# → Otherwise: dispatches by extension as below
 
 # Scanned PDF or PDF where markitdown returned garbage
 ingest_source({ path: "raw/<filename>.pdf", mode: "vision" })

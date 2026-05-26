@@ -228,6 +228,7 @@ export class ChatService {
   private llm: LLMService | null;
   private fileSystem: FileSystemService | null;
   private pdfImageIngest = false;
+  private fileIngest = false;
   /**
    * Generic user-confirmation channel (renderer-backed yes/no prompt).
    * Injected by the IPC layer. `null` means "don't prompt" — matches the
@@ -510,6 +511,7 @@ export class ChatService {
         //    tool replies to appear in the same order as the tool_calls
         //    on the preceding assistant turn.
         const outputs: string[] = new Array(toolCallRecords.length).fill("");
+        const allContentBlocks: ChatContentBlock[] = [];
         for (const tc of toolCallRecords) {
           debugLog("info", "tool", `▶ ${tc.function.name}`, {
             id: tc.id,
@@ -519,25 +521,28 @@ export class ChatService {
         const toolStarts = toolCallRecords.map(() => Date.now());
         const tracked = toolCallRecords.map((tc, i) =>
           this.executeTool(tc.function.name, tc.function.arguments).then(
-            (output) => {
+            (result) => {
               debugLog("info", "tool", `■ ${tc.function.name} (${Date.now() - toolStarts[i]}ms)`, {
                 id: tc.id,
-                outputLen: output.length,
-                outputPreview: output.slice(0, 200),
+                outputLen: result.output.length,
+                outputPreview: result.output.slice(0, 200),
               });
-              return { index: i, id: tc.id, output };
+              return { index: i, id: tc.id, ...result };
             },
           ),
         );
-        const live: Array<Promise<{ index: number; id: string; output: string }> | null> = tracked.slice();
+        const live: Array<Promise<{ index: number; id: string; output: string; contentBlocks?: ChatContentBlock[] }> | null> = tracked.slice();
         for (let done = 0; done < tracked.length; done++) {
           if (signal.aborted) break;
           const stillLive = live.filter(
-            (p): p is Promise<{ index: number; id: string; output: string }> => p !== null,
+            (p): p is Promise<{ index: number; id: string; output: string; contentBlocks?: ChatContentBlock[] }> => p !== null,
           );
           const winner = await Promise.race(stillLive);
           live[winner.index] = null;
           outputs[winner.index] = winner.output;
+          if (winner.contentBlocks?.length) {
+            allContentBlocks.push(...winner.contentBlocks);
+          }
           yield { type: 'tool_result', id: winner.id, output: winner.output };
         }
         for (let i = 0; i < toolCallRecords.length; i++) {
@@ -545,6 +550,16 @@ export class ChatService {
             role: "tool",
             tool_call_id: toolCallRecords[i].id,
             content: outputs[i],
+          });
+        }
+        // Inject uploaded file content blocks so the model can "see" them
+        if (allContentBlocks.length > 0) {
+          extraMessages.push({
+            role: "user",
+            content: [
+              { type: "text", text: "The following files have been uploaded and are attached for your reference:" } as ChatContentBlock,
+              ...allContentBlocks,
+            ],
           });
         }
       }
@@ -639,6 +654,11 @@ export class ChatService {
     this.pdfImageIngest = enabled;
   }
 
+  /** Mirrors Settings → OpenAI File Upload; drives ingest_source file-upload behaviour. */
+  setFileIngest(enabled: boolean): void {
+    this.fileIngest = enabled;
+  }
+
   /**
    * Register (or clear) the confirmation service used for user yes/no
    * prompts. When `null`, ingest skips the venv-install consent prompt
@@ -667,23 +687,23 @@ export class ChatService {
    *   - `ingest_source` — extract content from a vault source file via the
    *     ingest-tool module (handles markitdown, vision rasterize, etc.).
    */
-  private async executeTool(name: string, argsJson: string): Promise<string> {
+  private async executeTool(name: string, argsJson: string): Promise<{ output: string; contentBlocks?: ChatContentBlock[] }> {
     if (!this.fileSystem) {
-      return "Error: filesystem service is not available.";
+      return { output: "Error: filesystem service is not available." };
     }
 
     let args: Record<string, unknown> = {};
     try {
       args = JSON.parse(argsJson || "{}") as Record<string, unknown>;
     } catch {
-      return "Error: tool arguments were not valid JSON.";
+      return { output: "Error: tool arguments were not valid JSON." };
     }
 
     if (name === "shell") {
-      return this.executeShell(args);
+      return { output: await this.executeShell(args) };
     }
     if (name === "request_user_confirmation") {
-      return this.executeConfirmation(args);
+      return { output: await this.executeConfirmation(args) };
     }
     if (name === "ingest_source") {
       // ingest-tool always returns a string and never throws — it formats
@@ -692,6 +712,10 @@ export class ChatService {
       return runIngestTool(args, {
         vaultRoot: this.fileSystem.getVaultPath(),
         pdfImageIngest: this.pdfImageIngest,
+        fileIngest: this.fileIngest,
+        uploadFile: this.llm
+          ? (filePath: string) => this.llm!.uploadFile(filePath)
+          : undefined,
         requestVenvConsent: this.confirmations
           ? () =>
               this.confirmations!.request({
@@ -705,7 +729,7 @@ export class ChatService {
           : undefined,
       });
     }
-    return `Error: unknown tool "${name}".`;
+    return { output: `Error: unknown tool "${name}".` };
   }
 
   /**

@@ -29,8 +29,8 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:getArticle", filename);
   },
 
-  saveArticle(article: ArticleFile) {
-    return ipcRenderer.invoke("wiki:saveArticle", article);
+  saveArticle(article: ArticleFile, targetFolder?: string) {
+    return ipcRenderer.invoke("wiki:saveArticle", article, targetFolder);
   },
 
   writeRawFile(filename: string, content: string): Promise<void> {
@@ -41,8 +41,8 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:deleteArticle", title);
   },
 
-  articleExists(title: string) {
-    return ipcRenderer.invoke("wiki:articleExists", title);
+  articleExists(title: string, targetFolder?: string) {
+    return ipcRenderer.invoke("wiki:articleExists", title, targetFolder);
   },
 
   createFolder(relativePath: string) {

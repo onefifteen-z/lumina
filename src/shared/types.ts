@@ -25,6 +25,15 @@ export interface ArticleMeta {
   modified: string;
   wikilinks: string[]; // Titles of articles linked from this article
   excerpt: string; // First ~200 chars of body for search result previews
+  /**
+   * Raw-source references declared in the article's `sources` frontmatter
+   * field. Populated only for wiki .md files that declare them; absent on
+   * non-markdown leaves and on wiki pages that don't reference any source.
+   *
+   * Powers the "ingested" badge on raw/ files in the file tree — a raw
+   * file is shown as ingested iff some wiki page references it here.
+   */
+  sources?: string[];
 }
 
 /** A single search result entry. */
@@ -128,6 +137,8 @@ export interface AppConfig {
   phoenix: PhoenixConfig;
   /** When true, PDFs are rasterized to page PNGs for chat attach and ingest_source vision mode. Default off: PDFs use markitdown text only. */
   pdfImageIngest: boolean;
+  /** When true, PDF/image/PPTX files are uploaded via OpenAI Files API and referenced by file_id. Only works with OpenAI-compatible endpoints. */
+  fileIngest: boolean;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -257,7 +268,7 @@ export interface WikiAPI {
   // Article CRUD
   listArticles(): Promise<ArticleMeta[]>;
   getArticle(filename: string): Promise<ArticleFile>;
-  saveArticle(article: ArticleFile): Promise<void>;
+  saveArticle(article: ArticleFile, targetFolder?: string): Promise<void>;
   /**
    * Write a literal file to the vault, bypassing article frontmatter
    * serialization. Use for creating files that should be 0-byte or contain
@@ -265,7 +276,7 @@ export interface WikiAPI {
    */
   writeRawFile(filename: string, content: string): Promise<void>;
   deleteArticle(title: string): Promise<void>;
-  articleExists(title: string): Promise<boolean>;
+  articleExists(title: string, targetFolder?: string): Promise<boolean>;
   createFolder(relativePath: string): Promise<void>;
   /** Paths like `wiki/inbox` that exist on disk but contain no indexed files. */
   listEmptyWikiRawFolders(): Promise<string[]>;

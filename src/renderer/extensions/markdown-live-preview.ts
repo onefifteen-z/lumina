@@ -92,7 +92,7 @@ function headerMarkHideExtent(
 }
 
 function emphasisRangeAt(tree: ReturnType<typeof syntaxTree>, pos: number) {
-  let n = tree.resolveInner(pos, -1);
+  let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, -1);
   while (n) {
     if (n.type.name === "Emphasis" || n.type.name === "StrongEmphasis")
       return { from: n.from, to: n.to };
@@ -102,7 +102,7 @@ function emphasisRangeAt(tree: ReturnType<typeof syntaxTree>, pos: number) {
 }
 
 function linkRangeAt(tree: ReturnType<typeof syntaxTree>, pos: number) {
-  let n = tree.resolveInner(pos, -1);
+  let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, -1);
   while (n) {
     if (n.type.name === "Link" || n.type.name === "Image")
       return { from: n.from, to: n.to };
@@ -112,7 +112,7 @@ function linkRangeAt(tree: ReturnType<typeof syntaxTree>, pos: number) {
 }
 
 function inlineCodeRangeAt(tree: ReturnType<typeof syntaxTree>, pos: number) {
-  let n = tree.resolveInner(pos, -1);
+  let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(pos, -1);
   while (n) {
     if (n.type.name === "InlineCode") return { from: n.from, to: n.to };
     n = n.parent;
@@ -130,7 +130,7 @@ function wikilinkInTablePreviewMode(
   openPos: number,
   head: number,
 ): boolean {
-  let n = tree.resolveInner(openPos, 1);
+  let n: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(openPos, 1);
   while (n) {
     if (n.type.name === "Table") {
       const editing = head >= n.from && head <= n.to;

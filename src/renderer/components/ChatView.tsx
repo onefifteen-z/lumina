@@ -15,6 +15,11 @@ import { CodeBlock } from './chat/CodeBlock';
 import { ConfirmationBanner } from './chat/ConfirmationBanner';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useNavigation } from './AppShell';
+import {
+  readStoredPanelWidth,
+  writeStoredPanelWidth,
+  CHAT_HISTORY_WIDTH_KEY,
+} from '../lib/panel-width';
 
 /* ── Markdown-ish rendering ─────────────────────────────────── */
 
@@ -638,6 +643,12 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   const [warning, setWarning] = useState<string | null>(null);
   const [historyList, setHistoryList] = useState<ChatHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyWidth, setHistoryWidth] = useState(() => readStoredPanelWidth(CHAT_HISTORY_WIDTH_KEY, 224, 180, 400));
+  const [isHistoryResizing, setIsHistoryResizing] = useState(false);
+
+  // Persist the chat history sidebar width across view changes (this
+  // component unmounts whenever the user leaves chat) and app restarts.
+  useEffect(() => { writeStoredPanelWidth(CHAT_HISTORY_WIDTH_KEY, historyWidth); }, [historyWidth]);
   const [articleIndex, setArticleIndex] = useState<Map<string, ArticleMeta>>(new Map());
   // Outstanding confirmation prompts from the main process (venv install,
   // model-issued `request_user_confirmation`, future destructive actions).
@@ -938,6 +949,25 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     setShowHistory(open);
     window.api.saveConfig({ chatHistorySidebarOpen: open }).catch(() => {});
   }, []);
+
+  const handleHistoryResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsHistoryResizing(true);
+    document.body.classList.add('is-resizing');
+    const startX = e.clientX;
+    const startWidth = historyWidth;
+    const onMove = (ev: MouseEvent) => {
+      setHistoryWidth(Math.max(180, Math.min(400, startWidth + (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      setIsHistoryResizing(false);
+      document.body.classList.remove('is-resizing');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [historyWidth]);
 
   /* ── IPC listeners ──────────────────────────────────────────── */
 
@@ -1403,36 +1433,48 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     <div className="flex flex-1 min-h-0">
       {/* History sidebar */}
       {showHistory && (
-        <div className="w-56 shrink-0 border-r border-border bg-sidebar-bg flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-            <span className="text-xs font-semibold text-text-primary">History</span>
-            <button type="button" onClick={handleNewSession} className="text-text-secondary hover:text-text-primary cursor-pointer" aria-label="New chat">
-              <SquarePen size={14} />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto py-1">
-            {historyList.length === 0 && (
-              <p className="px-3 py-4 text-xs text-text-secondary">No history yet</p>
-            )}
-            {historyGroups.map((group) => (
-              <div key={group.bucket} className="mb-1">
-                <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-text-secondary/80 select-none">
-                  {group.label}
+        <>
+          <div
+            className="shrink-0 border-r border-border bg-sidebar-bg flex flex-col overflow-hidden"
+            style={{ width: historyWidth }}
+          >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+              <span className="text-xs font-semibold text-text-primary">History</span>
+              <button type="button" onClick={handleNewSession} className="text-text-secondary hover:text-text-primary cursor-pointer" aria-label="New chat">
+                <SquarePen size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {historyList.length === 0 && (
+                <p className="px-3 py-4 text-xs text-text-secondary">No history yet</p>
+              )}
+              {historyGroups.map((group) => (
+                <div key={group.bucket} className="mb-1">
+                  <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-text-secondary/80 select-none">
+                    {group.label}
+                  </div>
+                  {group.entries.map((entry) => (
+                    <HistoryEntryRow
+                      key={entry.id}
+                      entry={entry}
+                      isActive={sessionRef.current?.id === entry.id}
+                      onLoad={loadSession}
+                      onDelete={deleteSession}
+                      onRename={renameSession}
+                    />
+                  ))}
                 </div>
-                {group.entries.map((entry) => (
-                  <HistoryEntryRow
-                    key={entry.id}
-                    entry={entry}
-                    isActive={sessionRef.current?.id === entry.id}
-                    onLoad={loadSession}
-                    onDelete={deleteSession}
-                    onRename={renameSession}
-                  />
-                ))}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+          <div
+            className={`lumina-resize-handle${isHistoryResizing ? ' is-dragging' : ''}`}
+            onMouseDown={handleHistoryResizeStart}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat history sidebar"
+          />
+        </>
       )}
 
       {/* Main chat area */}

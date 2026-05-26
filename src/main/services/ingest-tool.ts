@@ -38,6 +38,7 @@ import { promisify } from "util";
 import { ensureLuminaVenv, luminaVenvNeedsBootstrap, shQuote } from "./lumina-venv";
 import type { EnsureVenvResult } from "./lumina-venv";
 import { rasterizePdfToPngs } from "./pdf-rasterize";
+import type { ChatContentBlock } from "../../shared/types";
 
 const execAsync = promisify(exec);
 
@@ -119,6 +120,13 @@ export interface IngestContext {
    * omitted, vision on PDF uses markitdown only (matches default app setting).
    */
   pdfImageIngest?: boolean;
+  /**
+   * When true, PDF/image/PPTX files are uploaded via the OpenAI Files API
+   * and referenced by file_id instead of being processed locally.
+   */
+  fileIngest?: boolean;
+  /** Upload a file via the LLM provider's /v1/files endpoint. */
+  uploadFile?: (filePath: string) => Promise<{ id: string }>;
   /** Override the venv-bootstrap step. Tests inject a stub. */
   ensureVenv?: () => Promise<EnsureVenvResult>;
   /**
@@ -324,8 +332,14 @@ export function detectImageMime(filename: string): string {
   }
 }
 
+/** Result from runIngestTool: tool output string + optional content blocks to inject. */
+export interface IngestToolResult {
+  output: string;
+  contentBlocks?: ChatContentBlock[];
+}
+
 /**
- * Top-level entry. Always returns a string — never throws to the caller.
+ * Top-level entry. Always returns a result — never throws to the caller.
  * Throwing would surface as a generic "tool execution failed" message, but
  * we want every failure to carry an actionable message the model can pass
  * to the user.
@@ -333,15 +347,15 @@ export function detectImageMime(filename: string): string {
 export async function runIngestTool(
   rawArgs: unknown,
   ctx: IngestContext,
-): Promise<string> {
+): Promise<IngestToolResult> {
   let args: IngestArgs;
   try {
     args = parseArgs(rawArgs);
   } catch (err) {
-    return format(
+    return { output: format(
       header(false, "args"),
       `Invalid arguments: ${(err as Error).message}`,
-    );
+    ) };
   }
 
   let rel: string;
@@ -350,10 +364,10 @@ export async function runIngestTool(
     rel = normaliseRelativePath(args.path);
     abs = resolveAbsolute(ctx.vaultRoot, rel);
   } catch (err) {
-    return format(
+    return { output: format(
       header(false, "path"),
       `Invalid path "${args.path}": ${(err as Error).message}`,
-    );
+    ) };
   }
 
   // Existence check up front gives us a single, helpful "file not found"
@@ -361,40 +375,145 @@ export async function runIngestTool(
   try {
     await fs.access(abs);
   } catch {
-    return format(
+    return { output: format(
       header(false, "not-found"),
       `File "${rel}" does not exist in the vault. Check the path (it must be vault-relative, e.g. raw/foo.pdf).`,
-    );
+    ) };
   }
 
   const mode = args.mode ?? "auto";
   const ext = path.extname(rel).toLowerCase();
 
+  // File upload mode: branch by file type because OpenAI's Chat Completions
+  // API only accepts the `file` content part with `file_id` for PDFs. Other
+  // office formats (xlsx, pptx, docx, …) and images can't ride that path
+  // even when the Files API itself accepts them — the model-side validator
+  // rejects non-PDF MIME types with "Expected a file with an
+  // application/pdf MIME type". So:
+  //   - .pdf                       → upload + `file_id` content block (works)
+  //   - images                     → inline as base64 `image_url` content block
+  //                                  (skip upload; Chat Completions has no
+  //                                  file_id-by-image path)
+  //   - .xlsx/.xls/.pptx/.ppt/...  → markitdown via runOffice. Chat
+  //                                  Completions can't take these by file_id
+  //                                  either, but markitdown extracts the
+  //                                  table/slide text and the model still
+  //                                  works with it transparently.
+  if (ctx.fileIngest) {
+    if (ext === ".pdf" && ctx.uploadFile) {
+      return runFileUpload(abs, rel, ctx);
+    }
+    if (IMAGE_EXTENSIONS.has(ext)) {
+      return runImageBlock(abs, rel);
+    }
+    if (OFFICE_EXTENSIONS.has(ext)) {
+      // Explicit pass-through to runOffice so the toggle has predictable
+      // behaviour for every office extension we advertise (xlsx, pptx,
+      // docx, …) — not just the two that happen to fall through naturally.
+      return { output: await runOffice(abs, rel, ctx) };
+    }
+  }
+
   if (mode === "vision") {
-    return runVision(abs, rel, ext, ctx);
+    return { output: await runVision(abs, rel, ext, ctx) };
   }
   if (mode === "text") {
     // 'text' forces the markitdown pipeline so the model can salvage text
     // from a file the auto dispatch wouldn't have routed there.
-    return runOffice(abs, rel, ctx);
+    return { output: await runOffice(abs, rel, ctx) };
   }
 
   // mode === 'auto' — dispatch by extension
   if (IMAGE_EXTENSIONS.has(ext)) {
-    return runImage(abs, rel);
+    return { output: await runImage(abs, rel) };
   }
   if (TEXT_EXTENSIONS.has(ext) || ext === "") {
-    return runText(abs, rel);
+    return { output: await runText(abs, rel) };
   }
   if (OFFICE_EXTENSIONS.has(ext)) {
-    return runOffice(abs, rel, ctx);
+    return { output: await runOffice(abs, rel, ctx) };
   }
-  return format(
+  return { output: format(
     header(false, "unsupported"),
     `Unsupported extension "${ext || "(none)"}". ` +
       `Supported: text (.txt/.md/.json/...), image (.png/.jpg/...), ` +
       `office (.pdf/.pptx/.xlsx/.docx/...).`,
-  );
+  ) };
+}
+
+/**
+ * File-upload-mode handler for images. We bypass the Files API entirely
+ * because OpenAI's Chat Completions endpoint does not accept `file_id`
+ * for non-PDF MIME types — it explicitly rejects with "Expected a file
+ * with an application/pdf MIME type, but got unsupported MIME type
+ * 'image/jpeg'". Instead we read the bytes, attach them as a standard
+ * `image_url` content block (base64 data URL), and the model "sees" them
+ * the same way it would via the regular `runImage` path.
+ *
+ * The tool-output text is intentionally lightweight (no embedded data
+ * URL): we don't want the model echoing megabytes of base64 back into
+ * follow-up prompts via the tool-result transcript.
+ */
+async function runImageBlock(
+  absPath: string,
+  rel: string,
+): Promise<IngestToolResult> {
+  let buf: Buffer;
+  try {
+    buf = await fs.readFile(absPath);
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    return {
+      output: format(
+        header(false, "file-upload"),
+        `Failed to read "${rel}": ${e.message ?? "unknown error"}`,
+      ),
+    };
+  }
+  const mime = detectImageMime(rel);
+  const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+  const contentBlocks: ChatContentBlock[] = [
+    {
+      type: "image_url",
+      image_url: { url: dataUrl, detail: "auto" },
+    },
+  ];
+  return {
+    output: format(
+      header(true, "file-upload"),
+      `Attached "${rel}" (${(buf.length / 1024).toFixed(1)} KiB, ${mime}) as an image content block. The image is now visible to you — no further action needed.`,
+    ),
+    contentBlocks,
+  };
+}
+
+/** Upload a file via the OpenAI Files API and return a file content block. */
+async function runFileUpload(
+  absPath: string,
+  rel: string,
+  ctx: IngestContext,
+): Promise<IngestToolResult> {
+  if (!ctx.uploadFile) {
+    return { output: format(header(false, "file-upload"), "File upload service is not available.") };
+  }
+  try {
+    const result = await ctx.uploadFile(absPath);
+    // NOTE: OpenAI's Chat Completions API rejects `filename` on a file
+    // content part when `file_id` is also set ("Unknown parameter:
+    // messages[…].content[…].file.filename"). `filename` is only valid
+    // alongside inline `file_data` (base64). We keep the filename in the
+    // tool output text so the model still has the human-readable name.
+    const contentBlocks: ChatContentBlock[] = [{
+      type: "file",
+      file: { file_id: result.id },
+    }];
+    return {
+      output: format(header(true, "file-upload"), `Uploaded "${rel}" via Files API (file_id: ${result.id}). The file content is now available to you as an attached file.`),
+      contentBlocks,
+    };
+  } catch (err) {
+    return { output: format(header(false, "file-upload"), `Failed to upload "${rel}": ${(err as Error).message}`) };
+  }
 }
 
 /** Parse + validate the raw tool arguments object. */

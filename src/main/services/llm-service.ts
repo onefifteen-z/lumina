@@ -360,7 +360,7 @@ export class LLMService {
       const body = JSON.stringify({
         model: this.config.model,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        stream: false,
       });
 
       await this.fetchWithTimeout(body, false);

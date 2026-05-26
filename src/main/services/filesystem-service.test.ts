@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { FileSystemService } from "./filesystem-service";
+import {
+  FileSystemService,
+  extractFrontmatterSources,
+} from "./filesystem-service";
 import { parseArticleFile } from "../../shared/markdown-parser";
 import type { ArticleFile } from "../../shared/types";
 
@@ -113,6 +116,115 @@ describe("scanVault", () => {
     expect(result).toHaveLength(2);
     expect(result.find((a) => a.filename === "article.md")?.title).toBe("Article");
     expect(result.find((a) => a.filename === "readme.txt")?.title).toBe("readme.txt");
+  });
+
+  /**
+   * Powers the file-tree "Ingested" badge — the renderer reads
+   * `meta.sources` for every wiki page and treats any raw/ file referenced
+   * there as ingested. Without this, the badge never lights up no matter
+   * what's in the YAML.
+   */
+  it("populates ArticleMeta.sources from frontmatter (array form)", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "sources"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "wiki", "sources", "foo.md"),
+      `---
+title: Foo
+sources:
+  - raw/foo.pdf
+  - raw/bar.pdf
+created: "2024-01-01T00:00:00Z"
+modified: "2024-01-01T00:00:00Z"
+---
+Body
+`,
+    );
+    const result = await service.scanVault();
+    const meta = result.find((m) => m.filename === "wiki/sources/foo.md");
+    expect(meta?.sources).toEqual(["raw/foo.pdf", "raw/bar.pdf"]);
+  });
+
+  it("populates ArticleMeta.sources from frontmatter (singular `source` form)", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "single.md"),
+      `---
+title: S
+source: raw/only.pdf
+created: "2024-01-01T00:00:00Z"
+modified: "2024-01-01T00:00:00Z"
+---
+Body
+`,
+    );
+    const meta = (await service.scanVault()).find((m) => m.filename === "single.md");
+    expect(meta?.sources).toEqual(["raw/only.pdf"]);
+  });
+
+  it("omits `sources` from ArticleMeta entirely when not declared (no empty arrays)", async () => {
+    await fs.writeFile(
+      path.join(tmpDir, "plain.md"),
+      makeArticleRaw("Plain", [], "no sources here"),
+    );
+    const meta = (await service.scanVault()).find((m) => m.filename === "plain.md");
+    expect(meta?.sources).toBeUndefined();
+  });
+});
+
+// ─── extractFrontmatterSources (helper) ────────────────────────────────────
+
+describe("extractFrontmatterSources", () => {
+  it("returns the array as-is when `sources` is an array of strings", () => {
+    expect(
+      extractFrontmatterSources({ sources: ["raw/a.pdf", "raw/b.pdf"] }),
+    ).toEqual(["raw/a.pdf", "raw/b.pdf"]);
+  });
+
+  it("wraps a string `sources` into a single-entry array", () => {
+    expect(extractFrontmatterSources({ sources: "raw/foo.pdf" })).toEqual([
+      "raw/foo.pdf",
+    ]);
+  });
+
+  it("accepts the singular `source` key as a convenience", () => {
+    expect(extractFrontmatterSources({ source: "raw/foo.pdf" })).toEqual([
+      "raw/foo.pdf",
+    ]);
+  });
+
+  it("merges plural + singular keys (plural first)", () => {
+    expect(
+      extractFrontmatterSources({
+        sources: ["raw/a.pdf"],
+        source: "raw/b.pdf",
+      }),
+    ).toEqual(["raw/a.pdf", "raw/b.pdf"]);
+  });
+
+  it("trims whitespace and drops empty entries", () => {
+    expect(
+      extractFrontmatterSources({ sources: ["  raw/a.pdf  ", "", "   "] }),
+    ).toEqual(["raw/a.pdf"]);
+  });
+
+  it("drops non-string entries silently (e.g. nested objects)", () => {
+    // YAML `sources: [{更新: "..."}]` would parse to an array of objects.
+    // Those have no meaningful match key, so we ignore them rather than
+    // surface bogus ingest matches.
+    expect(
+      extractFrontmatterSources({
+        sources: ["raw/a.pdf", { 更新: "2024-01-01" }, 42, null],
+      }),
+    ).toEqual(["raw/a.pdf"]);
+  });
+
+  it("returns [] when neither key is present", () => {
+    expect(extractFrontmatterSources({})).toEqual([]);
+  });
+
+  it("returns [] when both keys are non-string non-array junk", () => {
+    expect(
+      extractFrontmatterSources({ sources: 42, source: { not: "valid" } }),
+    ).toEqual([]);
   });
 });
 

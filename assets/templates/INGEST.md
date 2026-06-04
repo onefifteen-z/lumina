@@ -34,7 +34,7 @@ When the user has enabled "OpenAI File Upload" in Settings (available only for O
 - Office formats (`.pptx`, `.ppt`, `.xlsx`, `.xls`, `.docx`, `.doc`, `.epub`, `.rtf`) are likewise uploaded via the Files API and referenced by `file_id`. The Responses API extracts text from documents and runs a spreadsheet-specific augmentation flow for xlsx/xls/csv server-side, so you receive the document's actual content without invoking markitdown. `ingest_source` returns `kind=file-upload`.
 - Image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`, `.tif`, `.tiff`, `.svg`) are attached as an `image_url` content block (base64 data URL). The Files API is **not** used here — inline images are cheaper and work the same on both transports. `ingest_source` still returns `kind=file-upload`.
 - Text files (`.md`, `.txt`, `.json`, etc.) still use the normal text-read path.
-- If the upload fails, the tool returns an error — relay it to the user.
+- If the upload fails on `mode: "auto"`, Lumina falls back to local markitdown extraction (`kind=office`) and notes the upload error in the tool output. Use `mode: "text"` to skip upload entirely and go straight to markitdown.
 
 You do NOT need to retry with `mode: "vision"` for files routed through this mode — the attached content is already fully accessible to you. Just call `ingest_source` normally; Lumina picks the right transport per file type.
 

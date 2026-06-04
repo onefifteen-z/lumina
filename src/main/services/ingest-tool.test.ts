@@ -653,7 +653,7 @@ describe("runIngestTool file-upload mode (ctx.fileIngest=true)", () => {
     expect(result.contentBlocks).toBeUndefined();
   });
 
-  it("surfaces uploadFile failures for PDFs with kind=file-upload", async () => {
+  it("falls back to markitdown when uploadFile fails for PDFs", async () => {
     await writeFile("raw/doc.pdf", Buffer.from("x"));
     const result = await runIngestTool(
       { path: "raw/doc.pdf" },
@@ -664,8 +664,46 @@ describe("runIngestTool file-upload mode (ctx.fileIngest=true)", () => {
         },
       }),
     );
-    expect(result.output).toMatch(/^\[ingest_source error kind=file-upload\]/);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
     expect(result.output).toContain("network timeout");
+    expect(result.output).toContain("Fell back to local markitdown");
+    expect(result.output).toContain("extracted markdown");
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("mode=text bypasses uploadFile for PDFs when fileIngest is on", async () => {
+    await writeFile("raw/doc.pdf", Buffer.from("x"));
+    let uploadCalled = false;
+    const result = await runIngestTool(
+      { path: "raw/doc.pdf", mode: "text" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          uploadCalled = true;
+          return { id: "file-should-not-run" };
+        },
+      }),
+    );
+    expect(uploadCalled).toBe(false);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
+    expect(result.contentBlocks).toBeUndefined();
+  });
+
+  it("mode=vision bypasses uploadFile for PDFs when fileIngest is on", async () => {
+    await writeFile("raw/scan.pdf", Buffer.from("fake-pdf"));
+    let uploadCalled = false;
+    const result = await runIngestTool(
+      { path: "raw/scan.pdf", mode: "vision" },
+      happyCtx({
+        fileIngest: true,
+        uploadFile: async () => {
+          uploadCalled = true;
+          return { id: "file-should-not-run" };
+        },
+      }),
+    );
+    expect(uploadCalled).toBe(false);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office-vision\]/);
     expect(result.contentBlocks).toBeUndefined();
   });
 
@@ -801,7 +839,7 @@ describe("runIngestTool file-upload mode with responsesApi=true", () => {
     expect(result.contentBlocks?.[0]?.type).toBe("image_url");
   });
 
-  it("surfaces upload errors for office formats too", async () => {
+  it("falls back to markitdown when upload fails for office formats too", async () => {
     await writeFile("raw/slides.pptx", Buffer.from("fake"));
     const result = await runIngestTool(
       { path: "raw/slides.pptx" },
@@ -813,8 +851,9 @@ describe("runIngestTool file-upload mode with responsesApi=true", () => {
         },
       }),
     );
-    expect(result.output).toMatch(/^\[ingest_source error kind=file-upload\]/);
+    expect(result.output).toMatch(/^\[ingest_source ok kind=office\]/);
     expect(result.output).toContain("413 payload too large");
+    expect(result.output).toContain("Fell back to local markitdown");
     expect(result.contentBlocks).toBeUndefined();
   });
 

@@ -17,7 +17,11 @@
  * for every vision-capable model we ship to.
  *
  * The dispatch contract (kept aligned with `assets/templates/INGEST.md`):
+ *   - mode='text' / mode='vision':
+ *       always win over OpenAI File Upload — never POST to /v1/files
  *   - mode='auto' (default):
+ *       when `ctx.fileIngest` is on → upload office/PDF files via Files
+ *       API (fall back to markitdown if upload fails); images inline
  *       text exts            → read file, truncate, return as text
  *       image exts           → read file, return ![](data:...)
  *       office exts (pdf...) → ensureLuminaVenv → markitdown
@@ -392,8 +396,16 @@ export async function runIngestTool(
   const mode = args.mode ?? "auto";
   const ext = path.extname(rel).toLowerCase();
 
-  // File upload mode: branch by file type AND by which chat transport
-  // we're talking to.
+  // Explicit mode overrides take precedence over OpenAI File Upload.
+  if (mode === "vision") {
+    return { output: await runVision(abs, rel, ext, ctx) };
+  }
+  if (mode === "text") {
+    return { output: await runOffice(abs, rel, ctx) };
+  }
+
+  // File upload mode (mode === "auto" only): branch by file type AND by
+  // which chat transport we're talking to.
   //
   // Chat Completions:
   //   - .pdf                       → upload + `file_id` content block
@@ -426,15 +438,6 @@ export async function runIngestTool(
     if (IMAGE_EXTENSIONS.has(ext)) {
       return runImageBlock(abs, rel);
     }
-  }
-
-  if (mode === "vision") {
-    return { output: await runVision(abs, rel, ext, ctx) };
-  }
-  if (mode === "text") {
-    // 'text' forces the markitdown pipeline so the model can salvage text
-    // from a file the auto dispatch wouldn't have routed there.
-    return { output: await runOffice(abs, rel, ctx) };
   }
 
   // mode === 'auto' — dispatch by extension
@@ -526,8 +529,20 @@ async function runFileUpload(
       contentBlocks,
     };
   } catch (err) {
-    return { output: format(header(false, "file-upload"), `Failed to upload "${rel}": ${(err as Error).message}`) };
+    const uploadErr = (err as Error).message;
+    const officeOutput = await runOffice(absPath, rel, ctx);
+    const note =
+      `OpenAI Files API upload failed (${uploadErr}). ` +
+      `Fell back to local markitdown extraction.`;
+    return { output: injectAfterIngestHeader(officeOutput, note) };
   }
+}
+
+/** Insert a paragraph immediately after the `[ingest_source …]` header line. */
+function injectAfterIngestHeader(output: string, paragraph: string): string {
+  const sep = output.indexOf("\n\n");
+  if (sep === -1) return `${output}\n\n${paragraph}`;
+  return `${output.slice(0, sep + 2)}${paragraph}\n\n${output.slice(sep + 2)}`;
 }
 
 /** Parse + validate the raw tool arguments object. */

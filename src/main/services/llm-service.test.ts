@@ -4,6 +4,7 @@ import {
   toolsToResponsesTools,
   parseResponsesOutput,
   parseResponsesStreamEvent,
+  applyChatPromptCaching,
   type CanonicalMessage,
 } from "./llm-service";
 
@@ -397,5 +398,63 @@ describe("parseResponsesStreamEvent", () => {
     expect(parseResponsesStreamEvent(null)).toBeNull();
     expect(parseResponsesStreamEvent({})).toBeNull();
     expect(parseResponsesStreamEvent("just a string")).toBeNull();
+  });
+});
+
+// ── applyChatPromptCaching ────────────────────────────────────────
+
+describe("applyChatPromptCaching", () => {
+  const convo: CanonicalMessage[] = [
+    { role: "system", content: "Big stable system prompt" },
+    { role: "user", content: "ingest foo.pdf" },
+  ];
+
+  it("OpenAI: adds prompt_cache_key and leaves messages untouched", () => {
+    const { messages, bodyParams } = applyChatPromptCaching(
+      convo,
+      true,
+      "lumina-wiki",
+    );
+    expect(messages).toBe(convo);
+    expect(messages[0].content).toBe("Big stable system prompt");
+    expect(bodyParams).toEqual({ prompt_cache_key: "lumina-wiki" });
+  });
+
+  it("non-OpenAI: marks the first system message with an ephemeral cache breakpoint", () => {
+    const { messages, bodyParams } = applyChatPromptCaching(
+      convo,
+      false,
+      "lumina-wiki",
+    );
+    expect(bodyParams).toEqual({});
+    expect(messages[0].content).toEqual([
+      {
+        type: "text",
+        text: "Big stable system prompt",
+        cache_control: { type: "ephemeral" },
+      },
+    ]);
+    // user message is left as a plain string
+    expect(messages[1].content).toBe("ingest foo.pdf");
+  });
+
+  it("non-OpenAI: only marks the first system message", () => {
+    const two: CanonicalMessage[] = [
+      { role: "system", content: "first" },
+      { role: "system", content: "second" },
+    ];
+    const { messages } = applyChatPromptCaching(two, false, "k");
+    expect(Array.isArray(messages[0].content)).toBe(true);
+    expect(messages[1].content).toBe("second");
+  });
+
+  it("non-OpenAI: skips a system message whose content is already an array", () => {
+    const blocks: CanonicalMessage[] = [
+      { role: "system", content: [{ type: "text", text: "already blocks" }] },
+    ];
+    const { messages } = applyChatPromptCaching(blocks, false, "k");
+    expect(messages[0].content).toEqual([
+      { type: "text", text: "already blocks" },
+    ]);
   });
 });

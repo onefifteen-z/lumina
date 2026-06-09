@@ -80,6 +80,45 @@ export function stripHeavyDataUrlsFromText(text: string): string {
 }
 
 /**
+ * Strip heavy inline base64 from a content-block array (the `image_url` blocks
+ * we inject after an image/PDF ingest). The bytes only need to reach the model
+ * once — on the turn right after the ingest — so on older turns we swap each
+ * heavy `image_url` block for a tiny text placeholder and run the text blocks
+ * through `stripHeavyDataUrlsFromText`. `file_id`-referenced images carry no
+ * inline bytes, so they're left untouched. Returns the same array reference
+ * when nothing changed. Exported for unit tests.
+ */
+export function stripHeavyDataUrlsFromBlocks(
+  blocks: ChatContentBlock[],
+): ChatContentBlock[] {
+  let changed = false;
+  const out = blocks.map((b): ChatContentBlock => {
+    if (
+      b.type === "image_url" &&
+      typeof b.image_url?.url === "string" &&
+      /^data:[^;]+;base64,/.test(b.image_url.url) &&
+      b.image_url.url.length >= 900
+    ) {
+      changed = true;
+      const approxKiB = (b.image_url.url.length / 1024).toFixed(1);
+      return {
+        type: "text",
+        text: `[omitted ~${approxKiB} KiB base64 image from an earlier ingest — already processed]`,
+      };
+    }
+    if (b.type === "text" && typeof b.text === "string") {
+      const stripped = stripHeavyDataUrlsFromText(b.text);
+      if (stripped !== b.text) {
+        changed = true;
+        return { ...b, text: stripped };
+      }
+    }
+    return b;
+  });
+  return changed ? out : blocks;
+}
+
+/**
  * Clamp a model-supplied `timeout_seconds` value into the allowed range.
  * Non-numeric / missing → SHELL_DEFAULT_TIMEOUT_S. Bounds: [1, max].
  * Exported via test-only re-export below for unit tests.
@@ -142,10 +181,36 @@ type LlmMessage = {
 };
 
 /**
- * Compact a tool-loop message list before sending: keep the most recent
- * `TOOL_RESULT_KEEP_FULL` `role:'tool'` results full, elide older ones whose
- * string body exceeds `TOOL_RESULT_ELIDE_OVER`. The first line (status
- * header) is preserved so the model can still recall what the call was.
+ * Tool result is an `ingest_source` extraction (text/image/office/file
+ * upload). Detected by the status header the tool always emits as its first
+ * line (see `header()` in ingest-tool.ts). These carry the *only* copy of a
+ * source's content the model has to write wiki pages from, so they are
+ * exempt from elision — losing them mid-ingest silently drops document
+ * content from the wiki pages the model writes afterwards.
+ */
+function isIngestToolResult(content: string): boolean {
+  return /^\[ingest_source (?:ok|error) /.test(content);
+}
+
+/**
+ * Compact a tool-loop message list before sending. The loop re-sends every
+ * prior message on each planning call, so without compaction large outputs
+ * (and inline base64 image/PDF bytes) accumulate O(n²) and blow the context
+ * window / planning timeout.
+ *
+ * We define a "recent window" = every message at or after the earliest of the
+ * last `TOOL_RESULT_KEEP_FULL` tool results. Messages in that window are left
+ * fully intact (including base64) so the model can still see whatever it's
+ * actively acting on. For everything *older* than the window:
+ *
+ *   - non-`ingest_source` tool results over `TOOL_RESULT_ELIDE_OVER` chars are
+ *     elided to a one-line placeholder (re-runnable shell/search output);
+ *   - `ingest_source` results keep their extracted text (it's the only copy of
+ *     the source the model writes wiki pages from) but have heavy inline base64
+ *     stripped — the image/PDF bytes only need to reach the model once;
+ *   - any message's inline base64 (tool text, assistant/user text, or injected
+ *     `image_url` content blocks) is stripped so it isn't re-sent every turn.
+ *
  * Returns a new array; does not mutate the input. Exported for unit tests.
  */
 export function compactExtraMessages(msgs: LlmMessage[]): LlmMessage[] {
@@ -155,20 +220,44 @@ export function compactExtraMessages(msgs: LlmMessage[]): LlmMessage[] {
       toolIdxs.push(i);
     }
   }
-  const elideCount = Math.max(0, toolIdxs.length - TOOL_RESULT_KEEP_FULL);
-  if (elideCount === 0) return msgs;
-  const elideSet = new Set(toolIdxs.slice(0, elideCount));
+  if (toolIdxs.length <= TOOL_RESULT_KEEP_FULL) return msgs;
+  // Earliest index still considered "recent" — kept fully intact.
+  const keepFromIdx = toolIdxs[toolIdxs.length - TOOL_RESULT_KEEP_FULL];
   return msgs.map((m, i) => {
-    if (!elideSet.has(i)) return m;
-    const content = m.content as string;
-    if (content.length <= TOOL_RESULT_ELIDE_OVER) return m;
-    const firstLine = (content.split("\n", 1)[0] ?? "").slice(0, 200);
-    return {
-      ...m,
-      content:
-        `${firstLine}\n[earlier tool result elided to save context — ` +
-        `${content.length} chars. Re-run the command if you need it again.]`,
-    };
+    if (i >= keepFromIdx) return m;
+
+    // Older tool result: elide non-ingest output, otherwise strip its base64.
+    if (m.role === "tool" && typeof m.content === "string") {
+      const content = m.content;
+      if (
+        !isIngestToolResult(content) &&
+        content.length > TOOL_RESULT_ELIDE_OVER
+      ) {
+        const firstLine = (content.split("\n", 1)[0] ?? "").slice(0, 200);
+        return {
+          ...m,
+          content:
+            `${firstLine}\n[earlier tool result elided to save context — ` +
+            `${content.length} chars. Re-run the command if you need it again.]`,
+        };
+      }
+      const stripped = stripHeavyDataUrlsFromText(content);
+      return stripped === content ? m : { ...m, content: stripped };
+    }
+
+    // Older content-block message (e.g. the injected image attachments).
+    if (Array.isArray(m.content)) {
+      const stripped = stripHeavyDataUrlsFromBlocks(m.content);
+      return stripped === m.content ? m : { ...m, content: stripped };
+    }
+
+    // Older plain-text message (assistant narration / user text).
+    if (typeof m.content === "string") {
+      const stripped = stripHeavyDataUrlsFromText(m.content);
+      return stripped === m.content ? m : { ...m, content: stripped };
+    }
+
+    return m;
   });
 }
 
@@ -718,7 +807,7 @@ export class ChatService {
           role: m.role,
           content: toLlmMessageContent(m),
         })),
-        ...extraMessages,
+        ...compactExtraMessages(extraMessages),
       ];
 
       try {

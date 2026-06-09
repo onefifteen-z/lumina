@@ -4,6 +4,7 @@ import {
   ChatService,
   clampShellTimeout,
   stripHeavyDataUrlsFromText,
+  stripHeavyDataUrlsFromBlocks,
   compactExtraMessages,
   isCatalogFullRead,
 } from "./chat-service";
@@ -812,7 +813,7 @@ describe("compactExtraMessages", () => {
   });
 
   it("elides older oversized tool results but keeps the latest two full", () => {
-    const oldBody = `[ingest_source ok kind=text]\n${big(9000)}`;
+    const oldBody = `[exit: 0]\n${big(9000)}`;
     const midBody = `[exit: 0]\n${big(9000)}`;
     const recentA = big(9000);
     const recentB = big(9000);
@@ -824,12 +825,108 @@ describe("compactExtraMessages", () => {
     ];
     const out = compactExtraMessages(msgs);
     // Oldest two elided
-    expect(out[0].content).toContain("[ingest_source ok kind=text]");
+    expect(out[0].content).toContain("[exit: 0]");
     expect(out[0].content).toContain("elided to save context");
     expect(out[1].content).toContain("elided to save context");
     // Most recent two preserved verbatim
     expect(out[2].content).toBe(recentA);
     expect(out[3].content).toBe(recentB);
+  });
+
+  it("never elides ingest_source results regardless of age or size", () => {
+    const ingest = `[ingest_source ok kind=text]\nSource: raw/doc.md (9000 chars)\n\n${big(9000)}`;
+    const ingestErr = `[ingest_source error kind=office-failed]\n${big(9000)}`;
+    const recentA = big(9000);
+    const recentB = big(9000);
+    const msgs = [
+      toolMsg(ingest, "ing"),
+      toolMsg(ingestErr, "ingErr"),
+      toolMsg(recentA, "rA"),
+      toolMsg(recentB, "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    // Both ingest results survive verbatim despite being the oldest entries.
+    expect(out[0].content).toBe(ingest);
+    expect(out[1].content).toBe(ingestErr);
+    expect(out[2].content).toBe(recentA);
+    expect(out[3].content).toBe(recentB);
+  });
+
+  it("keeps an older ingest text result while eliding an older shell result", () => {
+    const ingest = `[ingest_source ok kind=text]\n${big(9000)}`;
+    const shellOld = `[exit: 0]\n${big(9000)}`;
+    const recentA = big(9000);
+    const recentB = big(9000);
+    const msgs = [
+      toolMsg(ingest, "ing"),
+      toolMsg(shellOld, "old"),
+      toolMsg(recentA, "rA"),
+      toolMsg(recentB, "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    expect(out[0].content).toBe(ingest);
+    expect(out[1].content).toContain("elided to save context");
+    expect(out[2].content).toBe(recentA);
+    expect(out[3].content).toBe(recentB);
+  });
+
+  it("keeps ingest text but strips base64 once it falls out of the recent window", () => {
+    const bigB64 = "A".repeat(5000);
+    const ingest =
+      `[ingest_source ok kind=image]\nSource: raw/p.png (5 KiB)\n\n` +
+      `![raw/p.png](data:image/png;base64,${bigB64})`;
+    const recentA = big(9000);
+    const recentB = big(9000);
+    const msgs = [
+      toolMsg(ingest, "ing"),
+      toolMsg(recentA, "rA"),
+      toolMsg(recentB, "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    expect(out[0].content).toContain("[ingest_source ok kind=image]");
+    expect(out[0].content).toContain("Source: raw/p.png");
+    expect(out[0].content).not.toContain(bigB64);
+    expect(out[0].content).toContain("omitted");
+    expect(out[0].content).not.toContain("elided to save context");
+  });
+
+  it("keeps base64 intact while the ingest result is still in the recent window", () => {
+    const bigB64 = "A".repeat(5000);
+    const ingest =
+      `[ingest_source ok kind=image]\n` +
+      `![raw/p.png](data:image/png;base64,${bigB64})`;
+    const msgs = [
+      toolMsg(big(9000), "rA"),
+      toolMsg("[exit: 0]", "mid"),
+      toolMsg(ingest, "ing"),
+    ];
+    const out = compactExtraMessages(msgs);
+    expect(out[2].content).toBe(ingest);
+  });
+
+  it("strips base64 from older injected image content blocks", () => {
+    const bigB64 = "A".repeat(5000);
+    const blockMsg = {
+      role: "user",
+      content: [
+        { type: "text", text: "The following files have been uploaded:" },
+        { type: "image_url", image_url: { url: `data:image/png;base64,${bigB64}`, detail: "auto" } },
+      ],
+    };
+    const recentA = big(9000);
+    const recentB = big(9000);
+    const msgs = [
+      blockMsg,
+      toolMsg("[exit: 0]", "old"),
+      toolMsg(recentA, "rA"),
+      toolMsg(recentB, "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    const blocks = out[0].content as Array<{ type: string; text?: string }>;
+    expect(blocks[0].text).toBe("The following files have been uploaded:");
+    expect(blocks[1].type).toBe("text");
+    expect(blocks[1].text).toContain("omitted");
+    expect(JSON.stringify(out[0].content)).not.toContain(bigB64);
   });
 
   it("does not elide small older results below the threshold", () => {
@@ -855,6 +952,31 @@ describe("compactExtraMessages", () => {
     expect(out[1].content).toBe("narration");
     expect(out[2].content).toBe(big(9000));
     expect(out[3].content).toBe(big(9000));
+  });
+});
+
+// ── stripHeavyDataUrlsFromBlocks ─────────────────────────────────
+
+describe("stripHeavyDataUrlsFromBlocks", () => {
+  it("replaces heavy inline base64 image blocks with a placeholder", () => {
+    const bigB64 = "A".repeat(5000);
+    const blocks = [
+      { type: "text" as const, text: "header" },
+      { type: "image_url" as const, image_url: { url: `data:image/png;base64,${bigB64}`, detail: "auto" as const } },
+    ];
+    const out = stripHeavyDataUrlsFromBlocks(blocks);
+    expect(out[0]).toBe(blocks[0]);
+    expect(out[1].type).toBe("text");
+    expect((out[1] as { text: string }).text).toContain("omitted");
+  });
+
+  it("leaves file_id image references and short urls untouched", () => {
+    const blocks = [
+      { type: "image_url" as const, image_url: { file_id: "file-123", detail: "auto" as const } },
+      { type: "image_url" as const, image_url: { url: "data:image/png;base64,AAAA", detail: "auto" as const } },
+    ];
+    const out = stripHeavyDataUrlsFromBlocks(blocks);
+    expect(out).toBe(blocks);
   });
 });
 

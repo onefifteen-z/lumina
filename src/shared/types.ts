@@ -186,7 +186,16 @@ export type ChatTraceChunk =
 
 /** OpenAI-compatible multimodal content block used in chat requests. */
 export type ChatContentBlock =
-  | { type: "text"; text: string }
+  | {
+      type: "text";
+      text: string;
+      /**
+       * Anthropic-style prompt-cache breakpoint. Set on the system prompt for
+       * non-OpenAI endpoints (Anthropic / LiteLLM, which translate or ignore
+       * it). OpenAI hosts cache automatically and never receive this field.
+       */
+      cache_control?: { type: "ephemeral" };
+    }
   | {
       type: "file";
       file: {

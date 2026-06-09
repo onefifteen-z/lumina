@@ -100,6 +100,30 @@ export class LLMService {
   }
 
   /**
+   * Stable per-process routing hint for OpenAI's automatic prompt cache.
+   * Requests sharing this key (and our large, constant system-prompt prefix)
+   * are steered to the same cache backend, lifting the hit rate across the
+   * 15–25 tool-loop rounds of a single ingest. Free and side-effect-free.
+   */
+  private readonly promptCacheKey = "lumina-wiki";
+
+  /**
+   * Apply provider-appropriate prompt caching to an outgoing chat-completions
+   * request. The system prompt (CLAUDE.md + INGEST.md) is re-sent verbatim on
+   * every tool-loop round, so caching its KV state is the single biggest
+   * latency/cost win for ingest. Two regimes, selected by endpoint:
+   *
+   *  - OpenAI hosts cache automatically for ≥1024-token prefixes — we only add
+   *    `prompt_cache_key` for routing stickiness and must NOT inject
+   *    `cache_control`, which the native API rejects as an unknown field.
+   *  - Anthropic / LiteLLM / other gateways use Anthropic-style
+   *    `cache_control: {type:"ephemeral"}` breakpoints. We mark the system
+   *    prompt (the largest stable prefix). LiteLLM translates this to each
+   *    backing provider's native caching and silently ignores it where
+   *    unsupported, so it is always safe to send to non-OpenAI hosts.
+   */
+
+  /**
    * Generate a wiki article from a prompt via streaming.
    * Yields content chunks as they arrive from the LLM endpoint.
    */
@@ -185,6 +209,11 @@ export class LLMService {
     });
 
     try {
+      const { messages: cachedMessages, bodyParams } = applyChatPromptCaching(
+        messages as CanonicalMessage[],
+        this.isOpenAiEndpoint(),
+        this.promptCacheKey,
+      );
       const body = useResponses
         ? JSON.stringify({
             model: this.config.model,
@@ -195,11 +224,13 @@ export class LLMService {
               ? { tools: toolsToResponsesTools(tools), tool_choice: "auto" }
               : {}),
             store: false,
+            prompt_cache_key: this.promptCacheKey,
           })
         : JSON.stringify({
             model: this.config.model,
-            messages,
+            messages: cachedMessages,
             ...(tools && tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
+            ...bodyParams,
           });
 
       const response = await this.fetchWithTimeout(body, false, useResponses);
@@ -317,6 +348,11 @@ export class LLMService {
     });
 
     try {
+      const { messages: cachedMessages, bodyParams } = applyChatPromptCaching(
+        messages as CanonicalMessage[],
+        this.isOpenAiEndpoint(),
+        this.promptCacheKey,
+      );
       const body = useResponses
         ? JSON.stringify({
             model: this.config.model,
@@ -325,6 +361,7 @@ export class LLMService {
             ),
             stream: true,
             store: false,
+            prompt_cache_key: this.promptCacheKey,
             ...(tools && tools.length > 0
               ? {
                   tools: toolsToResponsesTools(tools),
@@ -334,9 +371,10 @@ export class LLMService {
           })
         : JSON.stringify({
             model: this.config.model,
-            messages,
+            messages: cachedMessages,
             stream: true,
             ...(tools && tools.length > 0 ? { tools, tool_choice: "none" } : {}),
+            ...bodyParams,
           });
 
       const response = await this.fetchWithSignal(body, signal, useResponses);
@@ -950,6 +988,42 @@ export type CanonicalMessage = {
   }>;
   tool_call_id?: string;
 };
+
+/**
+ * Provider-appropriate prompt caching for an outgoing chat-completions
+ * request. See the calling method `LLMService.applyChatPromptCaching` for the
+ * rationale; this is the pure, testable core.
+ *
+ *  - `isOpenAi`: rely on OpenAI's automatic prefix cache; attach
+ *    `prompt_cache_key` for routing stickiness and leave messages untouched
+ *    (the native API rejects `cache_control` as an unknown content field).
+ *  - otherwise: mark the first system message with an Anthropic-style
+ *    `cache_control: {type:"ephemeral"}` breakpoint. LiteLLM translates this
+ *    per backing provider and ignores it where unsupported.
+ */
+export function applyChatPromptCaching(
+  messages: CanonicalMessage[],
+  isOpenAi: boolean,
+  promptCacheKey: string,
+): { messages: CanonicalMessage[]; bodyParams: Record<string, unknown> } {
+  if (isOpenAi) {
+    return { messages, bodyParams: { prompt_cache_key: promptCacheKey } };
+  }
+  let marked = false;
+  const out = messages.map((m) => {
+    if (marked || m.role !== "system" || typeof m.content !== "string") {
+      return m;
+    }
+    marked = true;
+    return {
+      ...m,
+      content: [
+        { type: "text", text: m.content, cache_control: { type: "ephemeral" } },
+      ] as ChatContentBlock[],
+    };
+  });
+  return { messages: out, bodyParams: {} };
+}
 
 /**
  * Translate canonical messages into a Responses API `input[]` array.

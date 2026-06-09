@@ -154,7 +154,10 @@ export function registerIpcHandlers(services: {
     // Stop any existing watcher before replacing the service
     fileSystem?.stopWatching();
 
-    await config.createMarkerFile(vaultPath);
+    // NOTE: the `.lumina-vault` marker is intentionally NOT created here.
+    // It is written only once the user completes vault initialization (see
+    // the `wiki:createVaultMarker` handler), so its presence is a reliable
+    // "initialization complete" signal for the renderer's init prompt.
     config.addVaultToHistory(vaultPath);
 
     fileSystem = new FileSystemService(vaultPath);
@@ -298,6 +301,16 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("wiki:listEmptyWikiRawFolders", async (): Promise<string[]> => {
     if (!fileSystem) return [];
     return fileSystem.listEmptyWikiRawFolders();
+  });
+
+  ipcMain.handle("wiki:isVaultInitialized", async (): Promise<boolean> => {
+    if (!fileSystem) return false;
+    return fileSystem.isVaultInitialized();
+  });
+
+  ipcMain.handle("wiki:createVaultMarker", async (): Promise<void> => {
+    if (!fileSystem) return;
+    await config.createMarkerFile(fileSystem.getVaultPath());
   });
 
   async function refreshArticlesIndex(): Promise<void> {

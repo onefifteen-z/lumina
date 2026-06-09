@@ -53,6 +53,14 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:listEmptyWikiRawFolders");
   },
 
+  isVaultInitialized() {
+    return ipcRenderer.invoke("wiki:isVaultInitialized");
+  },
+
+  createVaultMarker() {
+    return ipcRenderer.invoke("wiki:createVaultMarker");
+  },
+
   moveVaultEntry(from: string, toDir: string) {
     return ipcRenderer.invoke("wiki:moveVaultEntry", from, toDir);
   },

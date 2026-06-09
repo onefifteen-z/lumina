@@ -88,6 +88,8 @@ export interface BookmarksFile {
 export interface WikiAPI {
     listArticles(): Promise<ArticleMeta[]>;
     listEmptyWikiRawFolders(): Promise<string[]>;
+    isVaultInitialized(): Promise<boolean>;
+    createVaultMarker(): Promise<void>;
     getArticle(title: string): Promise<ArticleFile>;
     saveArticle(article: ArticleFile, targetFolder?: string): Promise<void>;
     deleteArticle(title: string): Promise<void>;

@@ -877,19 +877,18 @@ const AppShell: React.FC = () => {
         setArticlesError(null);
       }
       try {
-        const [list, emptyDirs] = await Promise.all([
+        const [list, emptyDirs, initialized] = await Promise.all([
           window.api.listArticles(),
           window.api.listEmptyWikiRawFolders(),
+          window.api.isVaultInitialized(),
         ]);
         if (!cancelled) {
           setArticles(list);
           setEmptyWikiRawFolders(emptyDirs);
-          // Check if vault has claude.md — if not, prompt initialization
-          const claudeCandidates = ['.CLAUDE.md', 'CLAUDE.md', '.claude.md', 'claude.md'];
-          const hasClaudeFile = list.some((a) =>
-            claudeCandidates.includes(a.filename),
-          );
-          if (!hasClaudeFile) setShowVaultInit(true);
+          // Prompt initialization when the vault lacks the `.lumina-vault`
+          // marker. We no longer key off CLAUDE.md since it isn't created
+          // during init (the bundled template supplies the system prompt).
+          if (!initialized) setShowVaultInit(true);
         }
       } catch (err) {
         if (!cancelled) {
@@ -1189,12 +1188,15 @@ const AppShell: React.FC = () => {
   }, []);
 
   const handleVaultInit = useCallback(async () => {
-    // Empty CLAUDE.md by design — the bundled template fills in as the
-    // system prompt at runtime. Once the user writes anything in this file,
-    // it overrides the bundled template (see chat-service.loadSystemPrompt).
-    await window.api.writeRawFile('CLAUDE.md', '');
+    // Scaffold only the folder structure. CLAUDE.md / INGEST.md are
+    // intentionally NOT created here — the bundled templates fill in as the
+    // runtime system prompt, and the user can create their own CLAUDE.md
+    // later to override it (see handleCreateEmptyClaudeMd).
     await window.api.createFolder('raw');
     await window.api.createFolder('wiki');
+    // Write the `.lumina-vault` marker last, so its presence reliably means
+    // "initialization completed" (drives the init prompt on next load).
+    await window.api.createVaultMarker();
     const [list, emptyDirs] = await Promise.all([
       window.api.listArticles(),
       window.api.listEmptyWikiRawFolders(),
@@ -1202,11 +1204,6 @@ const AppShell: React.FC = () => {
     setArticles(list);
     setEmptyWikiRawFolders(emptyDirs);
     setShowVaultInit(false);
-    const claudeFile = list.find((a) => a.filename.toLowerCase() === 'claude.md');
-    if (claudeFile) {
-      setSelectedFilename(claudeFile.filename);
-      setEditingFilename(claudeFile.filename);
-    }
   }, []);
 
   const handleToggleTheme = useCallback(async () => {

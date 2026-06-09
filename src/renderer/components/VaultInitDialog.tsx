@@ -31,13 +31,12 @@ export const VaultInitDialog: React.FC<VaultInitDialogProps> = ({ open, onConfir
           <h2 className="text-base font-semibold text-text-primary">Initialize Vault</h2>
         </div>
         <p className="text-sm text-text-secondary mb-1">
-          This vault doesn't have a <code className="px-1 py-0.5 rounded bg-[rgba(255,255,255,0.08)] text-xs font-mono">claude.md</code> configuration file yet.
+          This vault hasn't been set up yet.
         </p>
         <p className="text-sm text-text-secondary mb-5">
           Create the following structure?
         </p>
         <div className="text-xs font-mono text-text-secondary bg-[rgba(255,255,255,0.04)] rounded-lg p-3 mb-5 space-y-0.5">
-          <div>📄 claude.md</div>
           <div>📁 raw/</div>
           <div>📁 wiki/</div>
         </div>

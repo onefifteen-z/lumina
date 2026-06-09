@@ -295,6 +295,23 @@ export class FileSystemService {
   }
 
   /**
+   * True if the vault has been initialized, signalled by the presence of the
+   * `.lumina-vault` marker file at the vault root. The marker is written only
+   * after `raw/`+`wiki/` are scaffolded (see the vault-init flow), so it is an
+   * explicit "initialization complete" flag rather than a content heuristic.
+   * Used to decide whether to show the vault-init prompt. We no longer key off
+   * a CLAUDE.md file because CLAUDE.md is not created during initialization.
+   */
+  async isVaultInitialized(): Promise<boolean> {
+    try {
+      const st = await fs.stat(path.join(this.vaultPath, ".lumina-vault"));
+      return st.isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Wiki / Raw folder paths that exist on disk but have no vault files
    * anywhere under them (so they would not appear in the file tree from
    * `scanVault` alone). Used to show empty folders after "New folder".

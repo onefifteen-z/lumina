@@ -287,6 +287,10 @@ export interface WikiAPI {
   createFolder(relativePath: string): Promise<void>;
   /** Paths like `wiki/inbox` that exist on disk but contain no indexed files. */
   listEmptyWikiRawFolders(): Promise<string[]>;
+  /** True if the vault has the `.lumina-vault` marker (i.e. initialized). */
+  isVaultInitialized(): Promise<boolean>;
+  /** Write the `.lumina-vault` marker; called once vault init completes. */
+  createVaultMarker(): Promise<void>;
   /** Move a vault file or folder into another folder (vault-relative paths). */
   moveVaultEntry(from: string, toDir: string): Promise<void>;
   /** Copy or move OS paths into a vault folder (`toDir` vault-relative). */

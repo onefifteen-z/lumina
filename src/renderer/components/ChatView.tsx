@@ -1434,12 +1434,25 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
 
   // Notify parent (AppShell) when active thinking changes
   useEffect(() => {
-    const entry = activeThinkingMsgId ? thinkingMap[activeThinkingMsgId] : null;
+    // While generating, always source the sidebar from the live `__streaming__`
+    // entry so it stays in lockstep with the inline shell-command badge in the
+    // message list (which reads `__streaming__` directly). Relying solely on
+    // `activeThinkingMsgId` here could leave the sidebar one tool-call behind
+    // (extra state hop) or pointed at a finalized prior-turn entry, so the
+    // currently-executing command would show inline but not in the panel.
+    const streamingEntry = thinkingMap.__streaming__;
+    const entry =
+      isGenerating && streamingEntry
+        ? streamingEntry
+        : activeThinkingMsgId
+          ? thinkingMap[activeThinkingMsgId]
+          : null;
     // Diagnostic: surface the active thinking entry into the debug panel so
     // we can see what the sidebar is being asked to render.
     try {
       window.api.notifyDebug?.("thinking", "active entry changed", {
         activeId: activeThinkingMsgId,
+        usingStreaming: isGenerating && !!streamingEntry,
         keys: Object.keys(thinkingMap),
         entrySummary: entry
           ? {
@@ -1457,7 +1470,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     } else {
       onThinkingChange?.({ ...entry, onWikilinkClick: handleWikilinkClick });
     }
-  }, [activeThinkingMsgId, thinkingMap, onThinkingChange, handleWikilinkClick]);
+  }, [activeThinkingMsgId, thinkingMap, isGenerating, onThinkingChange, handleWikilinkClick]);
 
   /* ── Render ─────────────────────────────────────────────────── */
 

@@ -846,6 +846,8 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
         `Please ingest \`${command.filename}\` following CLAUDE.md and INGEST.md.`,
         ``,
         `Start by calling \`ingest_source({ path: "${command.filename}" })\` to extract the content, then complete the wiki Ingest workflow as described in CLAUDE.md.`,
+        ``,
+        `To find affected pages, use \`search_wiki\` or \`grep\` on the entities/terms you just extracted — do not \`cat wiki/index.md\` (or glossary/overview) in full.`,
       ];
       const extra = command.prompt?.trim();
       // Suppress the boring default placeholder we generate when the user

@@ -137,8 +137,12 @@ export interface IngestContext {
    * markitdown. Has no effect when `fileIngest` is false.
    */
   responsesApi?: boolean;
-  /** Upload a file via the LLM provider's /v1/files endpoint. */
-  uploadFile?: (filePath: string) => Promise<{ id: string }>;
+  /**
+   * Upload a file via the LLM provider's /v1/files endpoint. `purpose`
+   * defaults to the provider default when omitted; pass "vision" for images
+   * so they can be referenced as `input_image` by file_id.
+   */
+  uploadFile?: (filePath: string, purpose?: string) => Promise<{ id: string }>;
   /** Override the venv-bootstrap step. Tests inject a stub. */
   ensureVenv?: () => Promise<EnsureVenvResult>;
   /**
@@ -421,9 +425,11 @@ export async function runIngestTool(
   //                                        them; pptx/docx extract text,
   //                                        xlsx gets spreadsheet
   //                                        augmentation server-side).
-  //   - images                     → still inline as base64 `image_url`.
-  //                                  Cheaper than uploading and works on
-  //                                  both transports.
+  //   - images                     → upload via Files API and reference by
+  //                                  file_id (`input_image`), falling back
+  //                                  to inline base64 if the upload fails.
+  //                                  Chat Completions can't take image
+  //                                  file_id, so it stays on base64.
   if (ctx.fileIngest) {
     if (OFFICE_EXTENSIONS.has(ext)) {
       // Responses API: every OFFICE_EXTENSIONS file rides Files API.
@@ -436,6 +442,12 @@ export async function runIngestTool(
       return { output: await runOffice(abs, rel, ctx) };
     }
     if (IMAGE_EXTENSIONS.has(ext)) {
+      // Prefer Files API upload on the Responses API (image referenced by
+      // file_id); fall back to inline base64 on failure or on transports
+      // that don't accept image file_id (Chat Completions).
+      if (ctx.responsesApi === true && ctx.uploadFile) {
+        return runImageUpload(abs, rel, ctx);
+      }
       return runImageBlock(abs, rel);
     }
   }
@@ -502,6 +514,48 @@ async function runImageBlock(
     ),
     contentBlocks,
   };
+}
+
+/**
+ * Upload an image via the Files API (purpose "vision") and reference it by
+ * file_id as an `input_image` content block. On any failure, fall back to
+ * the inline base64 path so ingest never hard-fails on a transient upload
+ * error. Only used on the Responses API, which accepts image file_id.
+ */
+async function runImageUpload(
+  absPath: string,
+  rel: string,
+  ctx: IngestContext,
+): Promise<IngestToolResult> {
+  if (!ctx.uploadFile) {
+    return runImageBlock(absPath, rel);
+  }
+  try {
+    const result = await ctx.uploadFile(absPath, "vision");
+    const contentBlocks: ChatContentBlock[] = [
+      {
+        type: "image_url",
+        image_url: { file_id: result.id, detail: "auto" },
+      },
+    ];
+    return {
+      output: format(
+        header(true, "file-upload"),
+        `Uploaded "${rel}" via Files API (file_id: ${result.id}) and attached it as an image. The image is now visible to you — no further action needed.`,
+      ),
+      contentBlocks,
+    };
+  } catch (err) {
+    const uploadErr = (err as Error).message;
+    const fallback = await runImageBlock(absPath, rel);
+    const note =
+      `OpenAI Files API upload failed (${uploadErr}). ` +
+      `Fell back to inline base64 image.`;
+    return {
+      output: injectAfterIngestHeader(fallback.output, note),
+      contentBlocks: fallback.contentBlocks,
+    };
+  }
 }
 
 /** Upload a file via the OpenAI Files API and return a file content block. */

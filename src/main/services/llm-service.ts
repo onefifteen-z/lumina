@@ -837,10 +837,14 @@ function summariseMessages(
         }
         return {
           type: "image_url",
-          urlPreview:
-            block.image_url.url.length > 80
-              ? `${block.image_url.url.slice(0, 80)}…`
-              : block.image_url.url,
+          ...(block.image_url.file_id
+            ? { file_id: block.image_url.file_id }
+            : {
+                urlPreview:
+                  (block.image_url.url ?? "").length > 80
+                    ? `${(block.image_url.url ?? "").slice(0, 80)}…`
+                    : block.image_url.url,
+              }),
           detail: block.image_url.detail,
         };
       });
@@ -1031,10 +1035,13 @@ function canonicalContentToResponses(
     if (block.type === "text") {
       out.push({ type: textType, text: block.text });
     } else if (block.type === "image_url") {
-      const part: Record<string, unknown> = {
-        type: "input_image",
-        image_url: block.image_url.url,
-      };
+      const part: Record<string, unknown> = { type: "input_image" };
+      // An uploaded image is referenced by file_id; an inline image by URL.
+      if (block.image_url.file_id) {
+        part.file_id = block.image_url.file_id;
+      } else if (block.image_url.url) {
+        part.image_url = block.image_url.url;
+      }
       if (block.image_url.detail) part.detail = block.image_url.detail;
       out.push(part);
     } else if (block.type === "file") {

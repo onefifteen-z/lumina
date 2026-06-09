@@ -29,6 +29,27 @@ const SHELL_MAX_TIMEOUT_S = 600;
 const SHELL_MAX_BUFFER = 1024 * 1024; // 1 MiB stdout+stderr cap
 const SHELL_OUTPUT_CHAR_LIMIT = 100_000;
 
+/**
+ * Tighter stdout cap applied only when the model does a *full* read (e.g.
+ * `cat`) of a known large catalog file. These hub files grow unbounded as
+ * the wiki expands, and re-reading them whole on every ingest is the main
+ * driver of tool-loop context blowup / timeouts. We cap low and nudge the
+ * model toward `grep`/`head` for targeted reads.
+ */
+const CATALOG_OUTPUT_CHAR_LIMIT = 12_000;
+const CATALOG_FILE_RE = /\bwiki\/(?:index|glossary|overview|log)\.md\b/i;
+const NARROWING_CMD_RE = /\b(?:grep|egrep|fgrep|rg|head|tail|wc|sed|awk)\b/i;
+
+/**
+ * Tool-loop context compaction. The loop re-sends every prior tool result
+ * on each `callNonStreaming`, so large outputs (ingest extraction, `cat` of
+ * catalog files) accumulate O(n²) and eventually blow the planning timeout.
+ * We keep the most recent results full (the model is likely still acting on
+ * them) and elide older oversized ones to a short placeholder.
+ */
+const TOOL_RESULT_KEEP_FULL = 2;
+const TOOL_RESULT_ELIDE_OVER = 4_000;
+
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
 
 // Candidate filenames for the vault-level CLAUDE.md system prompt
@@ -80,12 +101,75 @@ export function clampShellTimeout(raw: unknown): number {
   return Math.round(n);
 }
 
-function formatShellOutput(stdout: string, stderr: string, exitCode: number): string {
+function formatShellOutput(
+  stdout: string,
+  stderr: string,
+  exitCode: number,
+  stdoutLimit: number = SHELL_OUTPUT_CHAR_LIMIT,
+  truncationHint?: string,
+): string {
   const parts: string[] = [];
-  if (stdout) parts.push(truncate(stdout.toString(), SHELL_OUTPUT_CHAR_LIMIT));
+  if (stdout) {
+    const s = stdout.toString();
+    if (s.length > stdoutLimit) {
+      const hint = truncationHint ? ` ${truncationHint}` : "";
+      parts.push(
+        `${s.slice(0, stdoutLimit)}\n…[truncated ${s.length - stdoutLimit} chars]${hint}`,
+      );
+    } else {
+      parts.push(s);
+    }
+  }
   if (stderr) parts.push(`[stderr]\n${truncate(stderr.toString(), 20_000)}`);
   parts.push(`[exit: ${exitCode}]`);
   return parts.join("\n");
+}
+
+/**
+ * True when `command` does a full read (not grep/head/tail/wc/sed/awk) of a
+ * known large catalog file. Used to apply a tighter stdout cap. Exported
+ * for unit tests.
+ */
+export function isCatalogFullRead(command: string): boolean {
+  return CATALOG_FILE_RE.test(command) && !NARROWING_CMD_RE.test(command);
+}
+
+type LlmMessage = {
+  role: string;
+  content: string | null | ChatContentBlock[];
+  tool_calls?: unknown[];
+  tool_call_id?: string;
+};
+
+/**
+ * Compact a tool-loop message list before sending: keep the most recent
+ * `TOOL_RESULT_KEEP_FULL` `role:'tool'` results full, elide older ones whose
+ * string body exceeds `TOOL_RESULT_ELIDE_OVER`. The first line (status
+ * header) is preserved so the model can still recall what the call was.
+ * Returns a new array; does not mutate the input. Exported for unit tests.
+ */
+export function compactExtraMessages(msgs: LlmMessage[]): LlmMessage[] {
+  const toolIdxs: number[] = [];
+  for (let i = 0; i < msgs.length; i++) {
+    if (msgs[i].role === "tool" && typeof msgs[i].content === "string") {
+      toolIdxs.push(i);
+    }
+  }
+  const elideCount = Math.max(0, toolIdxs.length - TOOL_RESULT_KEEP_FULL);
+  if (elideCount === 0) return msgs;
+  const elideSet = new Set(toolIdxs.slice(0, elideCount));
+  return msgs.map((m, i) => {
+    if (!elideSet.has(i)) return m;
+    const content = m.content as string;
+    if (content.length <= TOOL_RESULT_ELIDE_OVER) return m;
+    const firstLine = (content.split("\n", 1)[0] ?? "").slice(0, 200);
+    return {
+      ...m,
+      content:
+        `${firstLine}\n[earlier tool result elided to save context — ` +
+        `${content.length} chars. Re-run the command if you need it again.]`,
+    };
+  });
 }
 
 const SHELL_TOOL = {
@@ -222,6 +306,39 @@ const CONFIRM_TOOL = {
   },
 } as const;
 
+/**
+ * `search_wiki` lets the model locate relevant wiki pages by keyword using
+ * the app's FlexSearch index (title + excerpt + tags), instead of `cat`-ing
+ * large catalog files like `wiki/index.md`. Returns a compact list of
+ * `title | filename | excerpt` lines the model can use to decide which
+ * specific pages to read in full.
+ */
+const SEARCH_WIKI_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "search_wiki",
+    description:
+      "Search the wiki by keyword and get back matching pages (title, " +
+      "filename, short excerpt). Prefer this over `cat wiki/index.md` to " +
+      "find relevant pages — then read only the specific pages you need. " +
+      "Returns the top matches ranked by relevance.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Keywords to search for (matches title, excerpt, tags).",
+        },
+        limit: {
+          type: "number",
+          description: "Max results to return. Defaults to 8, capped at 20.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+} as const;
+
 export class ChatService {
   private session: ChatSession | null = null;
   private abortController: AbortController | null = null;
@@ -229,6 +346,20 @@ export class ChatService {
   private fileSystem: FileSystemService | null;
   private pdfImageIngest = false;
   private fileIngest = false;
+  /**
+   * Optional wiki search provider (the app's FlexSearch index). When set,
+   * the `search_wiki` tool is advertised to the model. Structural type keeps
+   * this module decoupled from SearchIndexService for testability.
+   */
+  private searchIndex:
+    | {
+        search(
+          query: string,
+        ): Promise<
+          Array<{ title: string; filename: string; excerpt: string }>
+        >;
+      }
+    | null = null;
   /**
    * Generic user-confirmation channel (renderer-backed yes/no prompt).
    * Injected by the IPC layer. `null` means "don't prompt" — matches the
@@ -396,9 +527,12 @@ export class ChatService {
       // has been wired (i.e. when running in the real app, not in unit
       // tests that stand up a ChatService directly).
       const tools = this.fileSystem
-        ? this.confirmations
-          ? [SHELL_TOOL, INGEST_TOOL, CONFIRM_TOOL]
-          : [SHELL_TOOL, INGEST_TOOL]
+        ? [
+            SHELL_TOOL,
+            INGEST_TOOL,
+            ...(this.confirmations ? [CONFIRM_TOOL] : []),
+            ...(this.searchIndex ? [SEARCH_WIKI_TOOL] : []),
+          ]
         : undefined;
       const extraMessages: Array<{
         role: string;
@@ -424,7 +558,7 @@ export class ChatService {
             role: m.role,
             content: toLlmMessageContent(m),
           })),
-          ...extraMessages,
+          ...compactExtraMessages(extraMessages),
         ];
 
         let result: Awaited<ReturnType<LLMService["callNonStreaming"]>>;
@@ -654,6 +788,25 @@ export class ChatService {
     this.fileSystem = fs;
   }
 
+  /**
+   * Register (or clear) the wiki search provider. When set, the model gets
+   * a `search_wiki` tool so it can find pages by keyword instead of reading
+   * the whole index. Re-set after a vault switch (the index is rebuilt).
+   */
+  setSearchIndex(
+    index:
+      | {
+          search(
+            query: string,
+          ): Promise<
+            Array<{ title: string; filename: string; excerpt: string }>
+          >;
+        }
+      | null,
+  ): void {
+    this.searchIndex = index;
+  }
+
   /** Mirrors Settings → PDF page images; drives ingest_source vision behaviour. */
   setPdfImageIngest(enabled: boolean): void {
     this.pdfImageIngest = enabled;
@@ -717,6 +870,9 @@ export class ChatService {
     if (name === "request_user_confirmation") {
       return { output: await this.executeConfirmation(args) };
     }
+    if (name === "search_wiki") {
+      return { output: await this.executeSearchWiki(args) };
+    }
     if (name === "ingest_source") {
       // ingest-tool always returns a string and never throws — it formats
       // every failure into a `[ingest_source error kind=...]` body the
@@ -733,7 +889,8 @@ export class ChatService {
         responsesApi:
           this.fileIngest && (this.llm?.isOpenAiEndpoint() ?? false),
         uploadFile: this.llm
-          ? (filePath: string) => this.llm!.uploadFile(filePath)
+          ? (filePath: string, purpose?: string) =>
+              this.llm!.uploadFile(filePath, purpose)
           : undefined,
         requestVenvConsent: this.confirmations
           ? () =>
@@ -749,6 +906,42 @@ export class ChatService {
       });
     }
     return { output: `Error: unknown tool "${name}".` };
+  }
+
+  /**
+   * Run the `search_wiki` tool: keyword search over the FlexSearch index,
+   * returning a compact `title | filename | excerpt` list. Keeps output
+   * small so the model can pick specific pages to read without pulling the
+   * whole catalog into context.
+   */
+  private async executeSearchWiki(args: Record<string, unknown>): Promise<string> {
+    if (!this.searchIndex) {
+      return "[search_wiki error]\nWiki search is unavailable. Fall back to `grep -i '<term>' wiki/index.md`.";
+    }
+    const query = typeof args.query === "string" ? args.query.trim() : "";
+    if (!query) {
+      return "[search_wiki error]\nA non-empty `query` is required.";
+    }
+    const rawLimit =
+      typeof args.limit === "number" ? args.limit : Number(args.limit);
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(20, Math.max(1, Math.round(rawLimit)))
+      : 8;
+
+    let results: Array<{ title: string; filename: string; excerpt: string }>;
+    try {
+      results = await this.searchIndex.search(query);
+    } catch (err) {
+      return `[search_wiki error]\nSearch failed: ${(err as Error).message ?? "unknown error"}`;
+    }
+    if (results.length === 0) {
+      return `[search_wiki ok]\nNo pages matched "${query}".`;
+    }
+    const lines = results.slice(0, limit).map((r) => {
+      const excerpt = (r.excerpt ?? "").replace(/\s+/g, " ").slice(0, 200);
+      return `- ${r.title} | ${r.filename} | ${excerpt}`;
+    });
+    return `[search_wiki ok]\n${lines.length} of ${results.length} matches for "${query}":\n${lines.join("\n")}`;
   }
 
   /**
@@ -820,13 +1013,21 @@ export class ChatService {
     const timeoutS = clampShellTimeout(args.timeout_seconds);
     const cwd = this.fileSystem!.getVaultPath();
 
+    const catalogRead = isCatalogFullRead(command);
+    const stdoutLimit = catalogRead
+      ? CATALOG_OUTPUT_CHAR_LIMIT
+      : SHELL_OUTPUT_CHAR_LIMIT;
+    const truncationHint = catalogRead
+      ? "This is a large catalog file — prefer `grep -i '<term>' <file>` or `head` for targeted reads instead of cat."
+      : undefined;
+
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd,
         timeout: timeoutS * 1000,
         maxBuffer: SHELL_MAX_BUFFER,
       });
-      return formatShellOutput(stdout, stderr, 0);
+      return formatShellOutput(stdout, stderr, 0, stdoutLimit, truncationHint);
     } catch (err) {
       const e = err as NodeJS.ErrnoException & {
         code?: number | string;

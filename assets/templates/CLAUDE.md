@@ -20,11 +20,20 @@ You never modify files in `raw/`. You own everything in `wiki/`.
 
 # Tool-Use Discipline (CRITICAL)
 
-You have exactly three tools:
+You have these tools:
 
 - **`shell`** — run any shell command with the vault root as cwd. Every file you create, read, or modify goes through this (`cat > path/to/file.md <<'EOF' ... EOF`, `mkdir -p`, `cat`, `ls`, `grep`, etc.). Pass `timeout_seconds` (up to 600) for slow operations.
 - **`ingest_source`** — extract content from a source file in the vault (text, image, PDF, Office docs). The renderer never injects file content into the prompt for you; you call this when you need to read a binary or office source. See `INGEST.md` for the full protocol, including when to retry with `mode: "vision"`.
+- **`search_wiki`** — keyword search over the wiki (title, excerpt, tags), returns the top matching pages as `title | filename | excerpt`. Use it to locate relevant pages instead of `cat`-ing `wiki/index.md`. If it's unavailable, fall back to `grep -i '<term>' wiki/index.md`.
 - **`request_user_confirmation`** — show the user a yes/no prompt above the chat input and wait for their reply. Returns `[confirm ok]` on approval or `[confirm cancelled]` on decline. Use this **before** any destructive or non-obvious side effect — see "Confirmation Protocol" below for when it is required vs. discouraged.
+
+## Reading Discipline (context hygiene)
+
+The wiki grows over time; reading whole catalog files wastes context and can stall a run. Follow these rules:
+
+- **Never `cat` a hub file in full** (`wiki/index.md`, `wiki/glossary.md`, `wiki/overview.md`, `wiki/log.md`). Use `search_wiki`, `grep -i '<term>'`, `head`, or `tail` to read only what you need.
+- **Ignore frontmatter `sources:` when reading to understand content.** The `sources:` YAML tag is provenance metadata — it does not help you update a page's body, so don't pull it into context. When you only need the body, skip the frontmatter (e.g. `sed '1{/^---$/!q};1,/^---$/d' wiki/<page>.md`). You still **write** `sources:` normally when creating/updating pages (see Page Format).
+- Read full pages only when they're the specific ones you're about to edit or cite.
 
 ## Confirmation Protocol
 
@@ -108,15 +117,16 @@ Followed by:
 
 When the user says "ingest [source]":
 
-1. Call `ingest_source({ path: "raw/<filename>" })` to extract the content. **Follow `INGEST.md` for the full protocol** — including how to interpret the returned status header, when to retry a PDF with `mode: "vision"`, and what to tell the user when the venv or Python is unavailable. Never roll your own extraction by shelling out to `markitdown` / `pip` / `pdf2image` — `ingest_source` manages all of that for you.
+1. Call `ingest_source({ path: "raw/<filename>" })` to extract the content **first**, before reading any existing wiki pages. **Follow `INGEST.md` for the full protocol** — including how to interpret the returned status header, when to retry a PDF with `mode: "vision"`, and what to tell the user when the venv or Python is unavailable. Never roll your own extraction by shelling out to `markitdown` / `pip` / `pdf2image` — `ingest_source` manages all of that for you.
 2. Discuss key takeaways with the user (brief — 3-5 points, proceed unless they object)
-3. Create a summary page in `wiki/sources/` named after the source file
-4. Identify which existing wiki pages are affected — update them
-5. Create new entity pages (entity, concept, topic) as warranted
-6. Update `wiki/glossary.md` with any new or refined terms
-7. Update `wiki/index.md` — add new pages, update summaries of changed pages
-8. Update `wiki/overview.md` if the source shifts the big picture
-9. Append an entry to `wiki/log.md`:
+3. Now find which existing pages are affected, **driven by what you just extracted**. Use `search_wiki({ query: "<entity/term>" })` or `grep -i '<term>' wiki/index.md` for each key entity/term — do NOT `cat wiki/index.md` (or glossary/overview) in full. Read only the specific pages the search points to.
+4. Create a summary page in `wiki/sources/` named after the source file
+5. Update the affected existing pages
+6. Create new entity pages (entity, concept, topic) as warranted
+7. Update `wiki/glossary.md` with any new or refined terms
+8. Update `wiki/index.md` — add new pages, update summaries of changed pages
+9. Update `wiki/overview.md` if the source shifts the big picture
+10. Append an entry to `wiki/log.md`:
 
 ```markdown
 ## [YYYY-MM-DD] ingest | <source title>
@@ -131,8 +141,8 @@ A single ingest may touch 5–15 wiki pages. That is expected.
 
 When the user asks a question:
 
-1. Read `wiki/index.md` to identify relevant pages
-2. Read those pages
+1. Identify relevant pages with `search_wiki({ query: "<keywords>" })` or `grep -i '<keywords>' wiki/index.md`. Do NOT `cat wiki/index.md` in full — on a large wiki it wastes context and can stall the run.
+2. Read only those specific pages
 3. Synthesize a clear answer with citations to wiki pages
 4. Ask: "Should I file this answer as a wiki page?" If yes, save to `wiki/analyses/`
 5. Append a log entry:
@@ -180,6 +190,8 @@ Fixes applied: ...
 # Naming Conventions
 
 - File names: kebab-case (`transformer-architecture.md`)
+- Page frontmatter `title`: use **Title Case** consistently (capitalize each major word).
+- Preserve canonical acronym/brand casing in titles (e.g., `AI`, `LLM`, `MCP`, `ROS`, `RAG`, `PwC`, `LinkedIn`).
 - Wiki links: `[[filename-without-extension]]`
 - Tags: lowercase kebab-case in frontmatter
 - Dates: ISO 8601 (YYYY-MM-DD)
@@ -189,10 +201,9 @@ Fixes applied: ...
 
 At the start of every session:
 
-1. Read this file (schema.md)
-2. Read `wiki/index.md` to orient yourself
-3. Read the last 5 entries in `wiki/log.md` to understand recent activity
-4. Ask the user what they want to do: ingest, query, lint, or something else
+1. Orient yourself cheaply: `head -n 40 wiki/index.md` (or `search_wiki` once you know the topic) — do NOT `cat` the whole index.
+2. Skim recent activity with `tail -n 30 wiki/log.md` (the last few entries are enough)
+3. Ask the user what they want to do: ingest, query, lint, or something else
 
 # Quality Standards
 
@@ -201,6 +212,16 @@ At the start of every session:
 - Prefer updating existing pages over creating new ones when the content fits
 - Keep page titles consistent with filenames
 - The wiki is a git repo of markdown — everything is versioned automatically
+
+## Core Page Curation Rule (Knowledge-First)
+
+For `wiki/log.md`, `wiki/index.md`, and `wiki/overview.md`, keep content focused on durable knowledge and navigation value.
+
+- Remove execution noise that is not knowledge-bearing (tool call details, temporary extraction/formatting steps, mechanical file-operation chatter).
+- Keep synthesis, canonical references, key knowledge changes, and stable structure.
+- In `log.md`, prefer concise knowledge-impact entries over long procedural transcripts.
+- In `index.md`, prioritize navigability and conceptual grouping over verbose operational notes.
+- In `overview.md`, keep a clean conceptual map; avoid duplicated paragraphs and process-level narration.
 
 # Evolution Notes
 

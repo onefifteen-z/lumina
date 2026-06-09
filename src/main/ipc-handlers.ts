@@ -172,6 +172,7 @@ export function registerIpcHandlers(services: {
     });
 
     chat?.setFileSystemService(fileSystem);
+    chat?.setSearchIndex(searchIndex);
     ingest.setFileSystemService(fileSystem);
     try {
       chatHistory?.open(vaultPath);

@@ -473,7 +473,9 @@ describe("runIngestTool file-upload mode (ctx.fileIngest=true)", () => {
    *    unsupported MIME type 'image/jpeg'."
    * So `ingest_source` must branch per file type when the toggle is on:
    *   .pdf       → upload + `file` content block
-   *   .png/.jpg…  → inline `image_url` content block (no upload)
+   *   .png/.jpg…  → inline `image_url` base64 on Chat Completions; on the
+   *                 Responses API (ctx.responsesApi=true) upload + image
+   *                 `file_id` block, falling back to base64 on failure
    *   .pptx/.ppt → fall back to markitdown (runOffice)
    * These tests pin every branch.
    */
@@ -530,6 +532,60 @@ describe("runIngestTool file-upload mode (ctx.fileIngest=true)", () => {
     // Tool-result text must NOT echo the base64 bytes back — otherwise the
     // model would re-send megabytes on every follow-up turn.
     expect(result.output).not.toContain("data:image/jpeg;base64,");
+  });
+
+  it("uploads an image (purpose=vision) and returns a file_id image block on the Responses API", async () => {
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    await writeFile("raw/photo.jpg", jpg);
+    let uploadedPath: string | null = null;
+    let uploadedPurpose: string | undefined;
+    const result = await runIngestTool(
+      { path: "raw/photo.jpg" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async (filePath: string, purpose?: string) => {
+          uploadedPath = filePath;
+          uploadedPurpose = purpose;
+          return { id: "file-img-1" };
+        },
+      }),
+    );
+    expect(uploadedPath).toMatch(/raw\/photo\.jpg$/);
+    expect(uploadedPurpose).toBe("vision");
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.output).toContain("file-img-1");
+    expect(result.contentBlocks).toHaveLength(1);
+    const block = result.contentBlocks?.[0];
+    expect(block?.type).toBe("image_url");
+    if (block?.type === "image_url") {
+      expect(block.image_url.file_id).toBe("file-img-1");
+      expect(block.image_url.url).toBeUndefined();
+      expect(block.image_url.detail).toBe("auto");
+    }
+  });
+
+  it("falls back to inline base64 when the image upload fails on the Responses API", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await writeFile("raw/diagram.png", png);
+    const result = await runIngestTool(
+      { path: "raw/diagram.png" },
+      happyCtx({
+        fileIngest: true,
+        responsesApi: true,
+        uploadFile: async () => {
+          throw new Error("network down");
+        },
+      }),
+    );
+    expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
+    expect(result.output).toContain("Fell back to inline base64");
+    const block = result.contentBlocks?.[0];
+    expect(block?.type).toBe("image_url");
+    if (block?.type === "image_url") {
+      expect(block.image_url.url).toMatch(/^data:image\/png;base64,/);
+      expect(block.image_url.file_id).toBeUndefined();
+    }
   });
 
   it("attaches PNG with the correct image/png MIME", async () => {
@@ -819,7 +875,7 @@ describe("runIngestTool file-upload mode with responsesApi=true", () => {
     ]);
   });
 
-  it("keeps images inline as image_url even with responsesApi on (cheaper, works on both transports)", async () => {
+  it("uploads images by file_id when responsesApi is on (upload-first, base64 fallback)", async () => {
     const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
     await writeFile("raw/photo.jpg", jpg);
     let uploadCalled = false;
@@ -830,13 +886,18 @@ describe("runIngestTool file-upload mode with responsesApi=true", () => {
         responsesApi: true,
         uploadFile: async () => {
           uploadCalled = true;
-          return { id: "should-not-upload" };
+          return { id: "file-img-resp" };
         },
       }),
     );
-    expect(uploadCalled).toBe(false);
+    expect(uploadCalled).toBe(true);
     expect(result.output).toMatch(/^\[ingest_source ok kind=file-upload\]/);
-    expect(result.contentBlocks?.[0]?.type).toBe("image_url");
+    const block = result.contentBlocks?.[0];
+    expect(block?.type).toBe("image_url");
+    if (block?.type === "image_url") {
+      expect(block.image_url.file_id).toBe("file-img-resp");
+      expect(block.image_url.url).toBeUndefined();
+    }
   });
 
   it("falls back to markitdown when upload fails for office formats too", async () => {

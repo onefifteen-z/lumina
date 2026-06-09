@@ -143,6 +143,7 @@ app.whenReady().then(async () => {
 
   // Initialize chat service
   const chatService = new ChatService(llmService, fileSystemService);
+  chatService.setSearchIndex(searchIndexService);
   const chatHistoryService = new ChatHistoryService();
   if (vaultPath) {
     try {

@@ -191,7 +191,15 @@ export type ChatContentBlock =
   | {
       type: "image_url";
       image_url: {
-        url: string;
+        /** Inline data URL (base64). Used on Chat Completions. */
+        url?: string;
+        /**
+         * Provider file id from the Files API. Used on the Responses API,
+         * where an uploaded image is referenced as `input_image` by id
+         * instead of inlining base64. Exactly one of `url` / `file_id`
+         * is expected.
+         */
+        file_id?: string;
         detail?: "low" | "medium" | "high" | "ultra_high" | "auto";
       };
     };

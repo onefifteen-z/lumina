@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as fc from "fast-check";
-import { ChatService, clampShellTimeout, stripHeavyDataUrlsFromText } from "./chat-service";
+import {
+  ChatService,
+  clampShellTimeout,
+  stripHeavyDataUrlsFromText,
+  compactExtraMessages,
+  isCatalogFullRead,
+} from "./chat-service";
 import { LLMService } from "./llm-service";
 import { FileSystemService } from "./filesystem-service";
 import type { ChatMessage } from "../../shared/types";
@@ -778,5 +784,155 @@ describe("ChatService request_user_confirmation tool", () => {
       cancelLabel: undefined,
       tone: undefined,
     });
+  });
+});
+
+// ── compactExtraMessages ─────────────────────────────────────────
+
+/**
+ * The tool loop re-sends every prior tool result on each planning call.
+ * compactExtraMessages keeps the most recent results full and elides older
+ * oversized ones so context doesn't grow O(n²) and trip the timeout.
+ */
+describe("compactExtraMessages", () => {
+  const big = (n: number) => "x".repeat(n);
+  const toolMsg = (content: string, id: string) => ({
+    role: "tool",
+    content,
+    tool_call_id: id,
+  });
+
+  it("returns the input unchanged when there are <= 2 tool results", () => {
+    const msgs = [
+      { role: "assistant", content: "thinking" },
+      toolMsg(big(9000), "a"),
+      toolMsg(big(9000), "b"),
+    ];
+    expect(compactExtraMessages(msgs)).toBe(msgs);
+  });
+
+  it("elides older oversized tool results but keeps the latest two full", () => {
+    const oldBody = `[ingest_source ok kind=text]\n${big(9000)}`;
+    const midBody = `[exit: 0]\n${big(9000)}`;
+    const recentA = big(9000);
+    const recentB = big(9000);
+    const msgs = [
+      toolMsg(oldBody, "old"),
+      toolMsg(midBody, "mid"),
+      toolMsg(recentA, "rA"),
+      toolMsg(recentB, "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    // Oldest two elided
+    expect(out[0].content).toContain("[ingest_source ok kind=text]");
+    expect(out[0].content).toContain("elided to save context");
+    expect(out[1].content).toContain("elided to save context");
+    // Most recent two preserved verbatim
+    expect(out[2].content).toBe(recentA);
+    expect(out[3].content).toBe(recentB);
+  });
+
+  it("does not elide small older results below the threshold", () => {
+    const small = "short result";
+    const msgs = [
+      toolMsg(small, "old"),
+      toolMsg(big(9000), "rA"),
+      toolMsg(big(9000), "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    expect(out[0].content).toBe(small);
+  });
+
+  it("ignores non-tool messages when counting the keep window", () => {
+    const msgs = [
+      toolMsg(big(9000), "old"),
+      { role: "assistant", content: "narration" },
+      toolMsg(big(9000), "rA"),
+      toolMsg(big(9000), "rB"),
+    ];
+    const out = compactExtraMessages(msgs);
+    expect(out[0].content).toContain("elided to save context");
+    expect(out[1].content).toBe("narration");
+    expect(out[2].content).toBe(big(9000));
+    expect(out[3].content).toBe(big(9000));
+  });
+});
+
+// ── isCatalogFullRead ────────────────────────────────────────────
+
+describe("isCatalogFullRead", () => {
+  it("flags a full cat of a hub file", () => {
+    expect(isCatalogFullRead("cat wiki/index.md")).toBe(true);
+    expect(isCatalogFullRead("cat wiki/glossary.md")).toBe(true);
+    expect(isCatalogFullRead("cat wiki/overview.md")).toBe(true);
+    expect(isCatalogFullRead("cat wiki/log.md")).toBe(true);
+  });
+
+  it("does not flag narrowing reads of a hub file", () => {
+    expect(isCatalogFullRead("grep -i term wiki/index.md")).toBe(false);
+    expect(isCatalogFullRead("head -n 40 wiki/index.md")).toBe(false);
+    expect(isCatalogFullRead("tail -n 30 wiki/log.md")).toBe(false);
+    expect(isCatalogFullRead("wc -l wiki/index.md")).toBe(false);
+  });
+
+  it("does not flag non-hub files", () => {
+    expect(isCatalogFullRead("cat wiki/sources/foo.md")).toBe(false);
+    expect(isCatalogFullRead("cat raw/report.txt")).toBe(false);
+  });
+});
+
+// ── search_wiki tool ─────────────────────────────────────────────
+
+describe("ChatService search_wiki tool", () => {
+  type SearchResultLite = { title: string; filename: string; excerpt: string };
+
+  function buildService(
+    search?: (query: string) => Promise<SearchResultLite[]>,
+  ): ChatService {
+    const chat = new ChatService(mockLLMService([]), mockFileSystem(""));
+    if (search) chat.setSearchIndex({ search });
+    return chat;
+  }
+
+  async function invoke(chat: ChatService, args: Record<string, unknown>): Promise<string> {
+    const run = (chat as unknown as {
+      executeTool: (name: string, argsJson: string) => Promise<{ output: string }>;
+    }).executeTool;
+    const result = await run.call(chat, "search_wiki", JSON.stringify(args));
+    return result.output;
+  }
+
+  it("returns an error when no search index is wired", async () => {
+    const chat = buildService();
+    const out = await invoke(chat, { query: "transformers" });
+    expect(out).toMatch(/^\[search_wiki error\]/);
+  });
+
+  it("rejects an empty query", async () => {
+    const chat = buildService(async () => []);
+    const out = await invoke(chat, { query: "   " });
+    expect(out).toMatch(/^\[search_wiki error\]/);
+  });
+
+  it("formats matches as title | filename | excerpt and respects limit", async () => {
+    const results: SearchResultLite[] = [
+      { title: "Transformer", filename: "wiki/concepts/transformer.md", excerpt: "An  architecture\nwith attention" },
+      { title: "Attention", filename: "wiki/concepts/attention.md", excerpt: "scaled dot product" },
+      { title: "BERT", filename: "wiki/entities/bert.md", excerpt: "bidirectional" },
+    ];
+    const chat = buildService(async () => results);
+    const out = await invoke(chat, { query: "attention", limit: 2 });
+    expect(out).toMatch(/^\[search_wiki ok\]/);
+    expect(out).toContain("2 of 3 matches");
+    expect(out).toContain("- Transformer | wiki/concepts/transformer.md | An architecture with attention");
+    expect(out).toContain("- Attention | wiki/concepts/attention.md | scaled dot product");
+    expect(out).not.toContain("BERT");
+  });
+
+  it("reports no matches cleanly", async () => {
+    const chat = buildService(async () => []);
+    const out = await invoke(chat, { query: "nonexistent" });
+    expect(out).toMatch(/^\[search_wiki ok\]/);
+    expect(out).toContain("No pages matched");
   });
 });

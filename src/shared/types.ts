@@ -26,6 +26,13 @@ export interface ArticleMeta {
   wikilinks: string[]; // Titles of articles linked from this article
   excerpt: string; // First ~200 chars of body for search result previews
   /**
+   * Larger slice of the body (first ~2000 chars) used only to build the
+   * full-text search index. Kept separate from `excerpt` so the 200-char
+   * preview stays small for UI lists while search can still match terms
+   * that live deeper in the page body. Absent on non-markdown leaves.
+   */
+  searchBody?: string;
+  /**
    * Raw-source references declared in the article's `sources` frontmatter
    * field. Populated only for wiki .md files that declare them; absent on
    * non-markdown leaves and on wiki pages that don't reference any source.

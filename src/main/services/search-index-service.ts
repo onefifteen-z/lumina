@@ -72,7 +72,10 @@ export class SearchIndexService {
     this.titleToId.set(article.title, id);
 
     this.titleIndex.add(id, article.title);
-    this.contentIndex.add(id, article.excerpt);
+    // Prefer the larger `searchBody` slice (first ~2000 chars) so the index
+    // can match terms living past the 200-char preview; fall back to the
+    // excerpt for non-markdown leaves or callers that don't set searchBody.
+    this.contentIndex.add(id, article.searchBody ?? article.excerpt);
     this.tagsIndex.add(id, article.tags.join(" "));
   }
 
@@ -95,54 +98,69 @@ export class SearchIndexService {
    * Returns SearchResult[] with score and match snippets.
    */
   async search(query: string): Promise<SearchResult[]> {
-    if (!query.trim()) return [];
+    const q = query.trim();
+    if (!q) return [];
 
-    const titleHits: number[] = this.titleIndex.search(query, { limit: 100 });
-    const contentHits: number[] = this.contentIndex.search(query, {
-      limit: 100,
-    });
-    const tagsHits: number[] = this.tagsIndex.search(query, { limit: 100 });
+    const titleHits = this.searchFieldTokens(this.titleIndex, q);
+    const contentHits = this.searchFieldTokens(this.contentIndex, q);
+    const tagsHits = this.searchFieldTokens(this.tagsIndex, q);
 
-    // Merge results with scoring: title matches score highest
+    // Merge results with scoring: title matches score highest (3/2/1 field
+    // base weights). Title is processed first so that, for equal scores, the
+    // stable sort keeps title matches ahead of content/tags matches.
     const scoreMap = new Map<
       number,
       { score: number; matches: SearchMatch[] }
     >();
 
-    for (const id of titleHits) {
+    for (const [id] of titleHits) {
       const article = this.articles.get(id);
       if (!article) continue;
       const entry = scoreMap.get(id) || { score: 0, matches: [] };
       entry.score += 3;
       entry.matches.push({
         field: "title",
-        snippet: this.highlightMatch(article.title, query),
+        snippet: this.highlightMatch(article.title, q),
       });
       scoreMap.set(id, entry);
     }
 
-    for (const id of contentHits) {
+    for (const [id] of contentHits) {
       const article = this.articles.get(id);
       if (!article) continue;
       const entry = scoreMap.get(id) || { score: 0, matches: [] };
       entry.score += 2;
       entry.matches.push({
         field: "content",
-        snippet: this.buildSnippet(article.excerpt, query),
+        snippet: this.buildSnippet(article.searchBody ?? article.excerpt, q),
       });
       scoreMap.set(id, entry);
     }
 
-    for (const id of tagsHits) {
+    for (const [id] of tagsHits) {
       const article = this.articles.get(id);
       if (!article) continue;
       const entry = scoreMap.get(id) || { score: 0, matches: [] };
       entry.score += 1;
       entry.matches.push({
         field: "tags",
-        snippet: this.highlightMatch(article.tags.join(", "), query),
+        snippet: this.highlightMatch(article.tags.join(", "), q),
       });
       scoreMap.set(id, entry);
+    }
+
+    // Query-coverage bonus: reward pages that hit more of a multi-word
+    // query. Added once per page (max token coverage across fields, not
+    // summed per field) and kept small so it only breaks ties / orders
+    // multi-token results — it never lets a content match overtake a title
+    // match of equal coverage.
+    for (const [id, entry] of scoreMap) {
+      const coverage = Math.max(
+        titleHits.get(id) ?? 0,
+        contentHits.get(id) ?? 0,
+        tagsHits.get(id) ?? 0,
+      );
+      entry.score += coverage * 0.1;
     }
 
     const results: SearchResult[] = [];
@@ -161,6 +179,54 @@ export class SearchIndexService {
     // Sort by score descending
     results.sort((a, b) => b.score - a.score);
     return results;
+  }
+
+  /**
+   * Search a single FlexSearch index tolerantly and return a map of
+   * `id -> number of distinct query tokens that hit`.
+   *
+   * Two passes are combined so long, natural-language queries don't return
+   * nothing under FlexSearch's default AND semantics:
+   *   1. a whole-query `suggest` pass (good for short/exact queries; ranks
+   *      by best partial match), and
+   *   2. a per-token OR union (each whitespace-separated token searched on
+   *      its own and unioned) so a page matching only some tokens still
+   *      surfaces.
+   *
+   * The token-hit count lets the caller reward pages that cover more of the
+   * query without letting content out-rank title for equal coverage.
+   */
+  private searchFieldTokens(
+    index: InstanceType<typeof FlexSearch.Index>,
+    query: string,
+  ): Map<number, number> {
+    const hitTokenCount = new Map<number, number>();
+
+    const bump = (id: number) =>
+      hitTokenCount.set(id, (hitTokenCount.get(id) ?? 0) + 1);
+
+    // Whole-query pass: tolerant of missing tokens via `suggest`.
+    const suggested: number[] = index.search(query, {
+      limit: 100,
+      suggest: true,
+    });
+    for (const id of suggested) bump(id);
+
+    // Per-token OR union for multi-word queries.
+    const tokens = query.split(/\s+/).filter((t) => t.length > 0);
+    if (tokens.length > 1) {
+      for (const token of tokens) {
+        const ids: number[] = index.search(token, { limit: 100 });
+        const seen = new Set<number>();
+        for (const id of ids) {
+          if (seen.has(id)) continue; // dedupe within a single token
+          seen.add(id);
+          bump(id);
+        }
+      }
+    }
+
+    return hitTokenCount;
   }
 
   /**

@@ -98,8 +98,9 @@ Never retry an error blindly. Never invent a workaround that involves shelling o
 Once you have the content, return to CLAUDE.md's Ingest workflow:
 
 1. Discuss key takeaways with the user (3–5 bullets)
-2. Create `wiki/sources/<source-slug>.md` with frontmatter + summary
-3. Update affected entity / concept / topic / glossary / index / overview / log pages
+2. Locate affected pages with `search_wiki` using 1–3 keywords per query (run a few focused searches, not one long sentence), then read those page bodies in a single batched turn so they're fresh when you edit
+3. Create `wiki/sources/<source-slug>.md` with frontmatter + summary
+4. Update affected entity / concept / topic / glossary / index / overview / log pages
 
 Per CLAUDE.md's Tool-Use Discipline: do all of the above with `shell` calls in the same turn — don't announce and stop.
 

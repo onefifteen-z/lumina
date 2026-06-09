@@ -81,10 +81,12 @@ export class FileSystemService {
             (w) => w.target,
           );
           const tags = extractTags(article);
-          const excerpt = article.content
-            .replace(/\s+/g, " ")
-            .trim()
-            .slice(0, 200);
+          const normalisedBody = article.content.replace(/\s+/g, " ").trim();
+          const excerpt = normalisedBody.slice(0, 200);
+          // Larger slice fed only to the search index so queries can match
+          // terms that live past the 200-char preview. Capped to keep memory
+          // bounded across a large (many-page) vault.
+          const searchBody = normalisedBody.slice(0, 2000);
           // Pull raw-source references from frontmatter. We accept both
           // singular `source` (single string) and plural `sources` (array
           // or string) so authors using either convention get the same
@@ -101,6 +103,7 @@ export class FileSystemService {
             modified: article.frontmatter.modified,
             wikilinks,
             excerpt,
+            searchBody,
             ...(sources.length > 0 ? { sources } : {}),
           });
         } else {

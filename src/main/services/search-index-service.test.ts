@@ -190,6 +190,42 @@ describe("search", () => {
     const results = await service.search("zzzznonexistent");
     expect(results).toHaveLength(0);
   });
+
+  it("matches a multi-keyword query when only some tokens hit (OR semantics)", async () => {
+    service.addDocument(
+      makeArticle({
+        title: "Operating Model to Scale Generative AI",
+        filename: "operating-model.md",
+        excerpt:
+          "Centrally led, BU-executed operating model with a GenAI CoE and upskilling tiers.",
+        tags: ["mckinsey", "operating-model"],
+      }),
+    );
+    // A long natural-language query: under FlexSearch's default AND
+    // semantics this would return nothing because not every token is
+    // present. The tolerant search must still surface the page.
+    const results = await service.search(
+      "operating model generative ai business unit enablement upskilling roadmap",
+    );
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results[0].title).toBe("Operating Model to Scale Generative AI");
+  });
+
+  it("matches terms living in searchBody beyond the 200-char excerpt", async () => {
+    const deepTerm = "finops";
+    const filler = "lorem ipsum ".repeat(40); // > 200 chars of preamble
+    service.addDocument(
+      makeArticle({
+        title: "Platform Maturity",
+        filename: "platform.md",
+        excerpt: filler.slice(0, 200),
+        searchBody: `${filler} ${deepTerm} framework for generative ai`,
+      }),
+    );
+    const results = await service.search(deepTerm);
+    expect(results).toHaveLength(1);
+    expect(results[0].matches.some((m) => m.field === "content")).toBe(true);
+  });
 });
 
 // ─── searchByTag ────────────────────────────────────────────────────────────

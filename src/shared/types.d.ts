@@ -22,6 +22,12 @@ export interface ArticleMeta {
     wikilinks: string[];
     excerpt: string;
     /**
+     * Larger slice of the body (first ~2000 chars) used only to build the
+     * full-text search index. Kept separate from `excerpt` so the preview
+     * stays small while search can match terms deeper in the body.
+     */
+    searchBody?: string;
+    /**
      * Raw-source references declared in the article's `sources` frontmatter
      * field. Populated only for wiki .md files that declare them. Powers
      * the file-tree "Ingested" badge on raw/ files.

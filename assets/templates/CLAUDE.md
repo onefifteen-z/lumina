@@ -24,7 +24,7 @@ You have these tools:
 
 - **`shell`** — run any shell command with the vault root as cwd. Every file you create, read, or modify goes through this (`cat > path/to/file.md <<'EOF' ... EOF`, `mkdir -p`, `cat`, `ls`, `grep`, etc.). Pass `timeout_seconds` (up to 600) for slow operations.
 - **`ingest_source`** — extract content from a source file in the vault (text, image, PDF, Office docs). The renderer never injects file content into the prompt for you; you call this when you need to read a binary or office source. See `INGEST.md` for the full protocol, including when to retry with `mode: "vision"`.
-- **`search_wiki`** — keyword search over the wiki (title, excerpt, tags), returns the top matching pages as `title | filename | excerpt`. Use it to locate relevant pages instead of `cat`-ing `wiki/index.md`. If it's unavailable, fall back to `grep -i '<term>' wiki/index.md`.
+- **`search_wiki`** — keyword search over the wiki (title, body, tags), returns the top matching pages as `title | filename | excerpt`. Use it to locate relevant pages instead of `cat`-ing `wiki/index.md`. **Query with 1–3 keywords per search, not full sentences** — run a few focused searches (e.g. `"operating model"`, `"GenAI CoE"`, `"upskilling"`) rather than one long natural-language string. If it's unavailable, fall back to `grep -i '<term>' wiki/index.md`.
 - **`request_user_confirmation`** — show the user a yes/no prompt above the chat input and wait for their reply. Returns `[confirm ok]` on approval or `[confirm cancelled]` on decline. Use this **before** any destructive or non-obvious side effect — see "Confirmation Protocol" below for when it is required vs. discouraged.
 
 ## Reading Discipline (context hygiene)
@@ -32,8 +32,9 @@ You have these tools:
 The wiki grows over time; reading whole catalog files wastes context and can stall a run. Follow these rules:
 
 - **Never `cat` a hub file in full** (`wiki/index.md`, `wiki/glossary.md`, `wiki/overview.md`, `wiki/log.md`). Use `search_wiki`, `grep -i '<term>'`, `head`, or `tail` to read only what you need.
-- **Ignore frontmatter `sources:` when reading to understand content.** The `sources:` YAML tag is provenance metadata — it does not help you update a page's body, so don't pull it into context. When you only need the body, skip the frontmatter (e.g. `sed '1{/^---$/!q};1,/^---$/d' wiki/<page>.md`). You still **write** `sources:` normally when creating/updating pages (see Page Format).
+- **Ignore frontmatter `sources:` when reading to understand content.** The `sources:` YAML tag is provenance metadata — it does not help you update a page's body, so don't pull it into context. When you only need the body, skip the frontmatter with a portable one-liner (works on both macOS/BSD and GNU): `awk 'p; /^---$/{n++; if(n==2) p=1}' wiki/<page>.md` (prints everything after the closing `---`). Avoid GNU-only `sed` scripts — they error on macOS. You still **write** `sources:` normally when creating/updating pages (see Page Format).
 - Read full pages only when they're the specific ones you're about to edit or cite.
+- **Read-then-edit within one window.** Tool results may be compacted after a couple of turns, so don't read a page early and edit it much later. Once you know which pages you'll edit, read all of their bodies in a single batched turn, then make the edits in the immediately following turn. Never re-read a hub file (`index.md`/`overview.md`/`log.md`) you already pulled at session start — reuse what's in context.
 
 ## Confirmation Protocol
 
@@ -119,14 +120,15 @@ When the user says "ingest [source]":
 
 1. Call `ingest_source({ path: "raw/<filename>" })` to extract the content **first**, before reading any existing wiki pages. **Follow `INGEST.md` for the full protocol** — including how to interpret the returned status header, when to retry a PDF with `mode: "vision"`, and what to tell the user when the venv or Python is unavailable. Never roll your own extraction by shelling out to `markitdown` / `pip` / `pdf2image` — `ingest_source` manages all of that for you.
 2. Discuss key takeaways with the user (brief — 3-5 points, proceed unless they object)
-3. Now find which existing pages are affected, **driven by what you just extracted**. Use `search_wiki({ query: "<entity/term>" })` or `grep -i '<term>' wiki/index.md` for each key entity/term — do NOT `cat wiki/index.md` (or glossary/overview) in full. Read only the specific pages the search points to.
-4. Create a summary page in `wiki/sources/` named after the source file
-5. Update the affected existing pages
-6. Create new entity pages (entity, concept, topic) as warranted
-7. Update `wiki/glossary.md` with any new or refined terms
-8. Update `wiki/index.md` — add new pages, update summaries of changed pages
-9. Update `wiki/overview.md` if the source shifts the big picture
-10. Append an entry to `wiki/log.md`:
+3. Now find which existing pages are affected, **driven by what you just extracted**. Use `search_wiki({ query: "<entity/term>" })` (1–3 keywords per query, several focused searches) or `grep -i '<term>' wiki/index.md` for each key entity/term — do NOT `cat wiki/index.md` (or glossary/overview) in full. Read only the specific pages the search points to.
+4. Once you've identified the affected pages, read their bodies in a single batched turn (see Reading Discipline) so the content is fresh when you edit — don't space reads and edits across many turns.
+5. Create a summary page in `wiki/sources/` named after the source file
+6. Update the affected existing pages
+7. Create new entity pages (entity, concept, topic) as warranted
+8. Update `wiki/glossary.md` with any new or refined terms
+9. Update `wiki/index.md` — add new pages, update summaries of changed pages
+10. Update `wiki/overview.md` if the source shifts the big picture
+11. Append an entry to `wiki/log.md`:
 
 ```markdown
 ## [YYYY-MM-DD] ingest | <source title>

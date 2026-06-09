@@ -111,8 +111,15 @@ export function isSlashCommandPrefix(trimmed: string, prefix: string): boolean {
   return next === undefined || /\s/.test(next);
 }
 
-const DEFAULT_INGEST_PROMPT =
+export const DEFAULT_INGEST_PROMPT =
   "Please analyze the attached file and answer the user's request.";
+
+/** User-visible `/ingest` line for a vault-relative source path. */
+export function formatIngestSlashCommand(filename: string): string {
+  const needsQuotes = /\s/.test(filename);
+  const arg = needsQuotes ? `"${filename}"` : filename;
+  return `/ingest ${arg}`;
+}
 
 /**
  * Detect whether the caret is inside `/ingest <filename>` (first filename

@@ -7,6 +7,7 @@ import {
   segmentInput,
   parseSlashCommand,
   SLASH_COMMANDS,
+  formatIngestSlashCommand,
   isRawSource,
   filterIngestCandidates,
 } from "./ChatInput";
@@ -256,6 +257,18 @@ describe("ChatInput /ingest slash command parsing", () => {
 
   it("does not treat /linter as /lint", () => {
     expect(parseSlashCommand("/linter foo.md")).toBeNull();
+  });
+});
+
+describe("formatIngestSlashCommand", () => {
+  it("uses an unquoted path when there are no spaces", () => {
+    expect(formatIngestSlashCommand("raw/report.pdf")).toBe("/ingest raw/report.pdf");
+  });
+
+  it("quotes paths that contain spaces", () => {
+    expect(formatIngestSlashCommand("raw/Quarterly Deck.pptx")).toBe(
+      '/ingest "raw/Quarterly Deck.pptx"',
+    );
   });
 });
 

@@ -93,8 +93,58 @@ export function registerIpcHandlers(services: {
     ingest.setLLMService(llm);
   }
 
-  // Keep a cached article list for backlink computation
+  // Keep a cached article list for backlink computation and wikilink resolution
   let cachedArticles: ArticleMeta[] = [];
+
+  type WikilinkResolution = {
+    exists: boolean;
+    title: string;
+    filename?: string;
+  };
+
+  function articleBasename(filename: string): string | null {
+    if (!filename.toLowerCase().endsWith(".md")) return null;
+    return filename
+      .split("/")
+      .pop()!
+      .replace(/\.md$/i, "")
+      .toLowerCase();
+  }
+
+  function buildBasenameIndex(
+    articles: ArticleMeta[],
+  ): Map<string, ArticleMeta> {
+    const index = new Map<string, ArticleMeta>();
+    for (const article of articles) {
+      const basename = articleBasename(article.filename);
+      if (!basename || index.has(basename)) continue;
+      index.set(basename, article);
+    }
+    return index;
+  }
+
+  function resolveWikilinkInArticles(
+    target: string,
+    articles: ArticleMeta[],
+    basenameIndex?: Map<string, ArticleMeta>,
+  ): WikilinkResolution {
+    const index = basenameIndex ?? buildBasenameIndex(articles);
+    const targetLower = target.toLowerCase();
+    const targetAsFilename = titleToFilename(target).toLowerCase();
+    const match =
+      index.get(targetLower) ?? index.get(targetAsFilename);
+    if (match) {
+      return { exists: true, title: match.title, filename: match.filename };
+    }
+    return { exists: false, title: target };
+  }
+
+  async function getArticlesForLinkResolution(): Promise<ArticleMeta[]> {
+    if (cachedArticles.length > 0) return cachedArticles;
+    if (!fileSystem) return [];
+    cachedArticles = await fileSystem.scanVault();
+    return cachedArticles;
+  }
 
   /**
    * Initialize vault services for a given path. Creates the marker file,
@@ -362,37 +412,46 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle(
     "wiki:resolveWikilink",
+    async (_event, target: string): Promise<WikilinkResolution> => {
+      if (!fileSystem) return { exists: false, title: target };
+      try {
+        const articles = await getArticlesForLinkResolution();
+        return resolveWikilinkInArticles(target, articles);
+      } catch {
+        return { exists: false, title: target };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:resolveWikilinks",
     async (
       _event,
-      target: string,
-    ): Promise<{ exists: boolean; title: string; filename?: string }> => {
-      if (!fileSystem) return { exists: false, title: target };
-
-      // Obsidian-style: scan vault and find the file whose basename matches the
-      // link target, regardless of which subfolder it lives in.
-      try {
-        const articles = await fileSystem.scanVault();
-        const targetLower = target.toLowerCase();
-        const targetAsFilename = titleToFilename(target).toLowerCase();
-
-        const match = articles.find((a) => {
-          if (!a.filename.toLowerCase().endsWith(".md")) return false;
-          const basename = a.filename
-            .split("/")
-            .pop()!
-            .replace(/\.md$/i, "")
-            .toLowerCase();
-          return basename === targetLower || basename === targetAsFilename;
-        });
-
-        if (match) {
-          return { exists: true, title: match.title, filename: match.filename };
-        }
-      } catch {
-        // fall through
+      targets: string[],
+    ): Promise<Record<string, WikilinkResolution>> => {
+      if (!fileSystem) {
+        return Object.fromEntries(
+          targets.map((target) => [target, { exists: false, title: target }]),
+        );
       }
-
-      return { exists: false, title: target };
+      try {
+        const articles = await getArticlesForLinkResolution();
+        const basenameIndex = buildBasenameIndex(articles);
+        const results: Record<string, WikilinkResolution> = {};
+        for (const target of targets) {
+          if (!target || target in results) continue;
+          results[target] = resolveWikilinkInArticles(
+            target,
+            articles,
+            basenameIndex,
+          );
+        }
+        return results;
+      } catch {
+        return Object.fromEntries(
+          targets.map((target) => [target, { exists: false, title: target }]),
+        );
+      }
     },
   );
 

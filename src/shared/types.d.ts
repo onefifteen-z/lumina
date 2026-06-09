@@ -98,7 +98,13 @@ export interface WikiAPI {
     resolveWikilink(target: string): Promise<{
         exists: boolean;
         title: string;
+        filename?: string;
     }>;
+    resolveWikilinks(targets: string[]): Promise<Record<string, {
+        exists: boolean;
+        title: string;
+        filename?: string;
+    }>>;
     generateArticle(prompt: string): Promise<AsyncIterable<string>>;
     assistContent(params: LLMAssistParams): Promise<string>;
     isLLMAvailable(): Promise<boolean>;

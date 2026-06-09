@@ -10,7 +10,12 @@ import type {
   ConfirmationRequest,
 } from '../../shared/types';
 import { MessageList } from './chat/MessageList';
-import { ChatInput, parseSlashCommand } from './chat/ChatInput';
+import {
+  ChatInput,
+  DEFAULT_INGEST_PROMPT,
+  formatIngestSlashCommand,
+  parseSlashCommand,
+} from './chat/ChatInput';
 import { CodeBlock } from './chat/CodeBlock';
 import { ConfirmationBanner } from './chat/ConfirmationBanner';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
@@ -666,7 +671,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   const [confirmationQueue, setConfirmationQueue] = useState<ConfirmationRequest[]>([]);
 
   const { isOffline } = useNetworkStatus();
-  const { viewArticle } = useNavigation();
+  const { viewArticle, pendingIngestRequest, clearPendingIngestRequest } = useNavigation();
   const sessionRef = useRef<ChatSession | null>(null);
   const streamBuf = useRef('');
 
@@ -1234,6 +1239,9 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       firstTextFlushed.current = false;
       firstThinkingFlushed.current = false;
       userClosedStreamingRef.current = false;
+      // Clear sidebar selection so the right panel doesn't keep showing the
+      // previous round's thinking while the new round streams.
+      setActiveThinkingMsgId(null);
 
       let payload = content;
       let payloadBlocks: ChatContentBlock[] | undefined;
@@ -1285,6 +1293,23 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     },
     [buildIngestPrompt, buildLintPrompt],
   );
+
+  // Files sidebar → "Ingest": new session + `/ingest` workflow for that raw file.
+  const pendingIngestNonce = pendingIngestRequest?.nonce;
+  useEffect(() => {
+    if (pendingIngestNonce === undefined || !pendingIngestRequest) return;
+    const { filename } = pendingIngestRequest;
+    clearPendingIngestRequest();
+    void (async () => {
+      await handleNewSession();
+      await handleSend(
+        formatIngestSlashCommand(filename),
+        [],
+        { type: 'ingest', filename, prompt: DEFAULT_INGEST_PROMPT },
+      );
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on nonce only
+  }, [pendingIngestNonce]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -1393,18 +1418,19 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     return () => { if (closeThinkingRef) closeThinkingRef.current = null; };
   }, [closeThinkingRef]);
 
-  // Auto-open the thinking sidebar the first time a streaming entry appears,
-  // so users see what the model is doing without having to click the chip.
-  // We only auto-open once per generation, and respect explicit user closes.
+  // Auto-open the thinking sidebar when a streaming entry appears for the
+  // current generation, including when the panel still points at a prior
+  // round's finalized message. Respect explicit user closes.
   useEffect(() => {
     if (
       thinkingMap.__streaming__ &&
-      activeThinkingMsgId === null &&
+      isGenerating &&
+      activeThinkingMsgId !== '__streaming__' &&
       !userClosedStreamingRef.current
     ) {
       setActiveThinkingMsgId('__streaming__');
     }
-  }, [thinkingMap, activeThinkingMsgId]);
+  }, [thinkingMap, activeThinkingMsgId, isGenerating]);
 
   // Notify parent (AppShell) when active thinking changes
   useEffect(() => {

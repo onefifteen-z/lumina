@@ -16,6 +16,7 @@ import { NetworkStatusProvider, useNetworkStatus } from '../hooks/useNetworkStat
 import GenerateArticleDialog from './GenerateArticleDialog';
 import { IconRail, type SidebarView } from './IconRail';
 import { FilesView } from './FilesView';
+import { isRawSource } from './chat/ChatInput';
 import { SearchView } from './SearchView';
 import { SearchPopup } from './SearchPopup';
 import { FindBar } from './FindBar';
@@ -86,6 +87,14 @@ export interface NavigationContext {
   prefilledTitle: string | null;
   /** Clear the prefilled title once the editor has consumed it. */
   clearPrefilledTitle: () => void;
+  /**
+   * Open chat, start a fresh session, and run the ingest workflow for a
+   * `raw/` source file (same as typing `/ingest <path>` and sending).
+   */
+  ingestRawFile: (filename: string) => void;
+  /** Set when `ingestRawFile` runs; consumed by ChatView. */
+  pendingIngestRequest: { filename: string; nonce: number } | null;
+  clearPendingIngestRequest: () => void;
 }
 
 const NavContext = createContext<NavigationContext>({
@@ -101,6 +110,9 @@ const NavContext = createContext<NavigationContext>({
   refreshFileTree: () => { },
   prefilledTitle: null,
   clearPrefilledTitle: () => { },
+  ingestRawFile: () => { },
+  pendingIngestRequest: null,
+  clearPendingIngestRequest: () => { },
 });
 
 export const useNavigation = () => useContext(NavContext);
@@ -1142,6 +1154,10 @@ const AppShell: React.FC = () => {
   }, []);
 
   const [prefilledTitle, setPrefilledTitle] = useState<string | null>(null);
+  const [pendingIngestRequest, setPendingIngestRequest] = useState<{
+    filename: string;
+    nonce: number;
+  } | null>(null);
   const clearPrefilledTitle = useCallback(() => setPrefilledTitle(null), []);
 
   /**
@@ -1204,6 +1220,16 @@ const AppShell: React.FC = () => {
     }
   }, [theme]);
 
+  const clearPendingIngestRequest = useCallback(() => {
+    setPendingIngestRequest(null);
+  }, []);
+
+  const ingestRawFile = useCallback((filename: string) => {
+    if (!isRawSource(filename)) return;
+    setPendingIngestRequest({ filename, nonce: Date.now() });
+    navigate('chat');
+  }, [navigate]);
+
   const navCtx: NavigationContext = {
     view: activeView,
     navigate,
@@ -1217,6 +1243,9 @@ const AppShell: React.FC = () => {
     refreshFileTree,
     prefilledTitle,
     clearPrefilledTitle,
+    ingestRawFile,
+    pendingIngestRequest,
+    clearPendingIngestRequest,
   };
 
   // Still loading config

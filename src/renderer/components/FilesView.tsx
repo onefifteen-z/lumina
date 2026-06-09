@@ -5,6 +5,8 @@ import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { classifyFilename, filterArticlesForTab, type FileCategory } from "../lib/file-classification";
 import { computeIngestedRawFiles } from "../lib/ingest-status";
+import { useNavigation } from "./AppShell";
+import { isRawSource } from "./chat/ChatInput";
 
 /** Custom data type for drags that start inside the file tree. */
 const LUMINA_DRAG_PATH = "application/x-lumina-vault-path";
@@ -533,6 +535,7 @@ export function FilesView({
   onToggleBookmark,
   isBookmarked,
 }: FilesViewProps) {
+  const { ingestRawFile } = useNavigation();
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; filename: string } | null>(null);
   const [treeDropTarget, setTreeDropTarget] = useState<string | null>(null);
   const [dragSourcePath, setDragSourcePath] = useState<string | null>(null);
@@ -1058,6 +1061,18 @@ export function FilesView({
           className="fixed z-50 bg-sidebar-bg border border-border rounded-lg shadow-xl py-1 w-fit"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
+          {isRawSource(ctxMenu.filename) && (
+            <button
+              type="button"
+              onClick={() => {
+                ingestRawFile(ctxMenu.filename);
+                setCtxMenu(null);
+              }}
+              className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
+            >
+              Ingest
+            </button>
+          )}
           {onOpenInNewTab && (
             <button type="button" onClick={() => { onOpenInNewTab(ctxMenu.filename); setCtxMenu(null); }}
               className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">

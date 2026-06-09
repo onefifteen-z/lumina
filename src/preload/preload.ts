@@ -97,6 +97,10 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:resolveWikilink", target);
   },
 
+  resolveWikilinks(targets: string[]) {
+    return ipcRenderer.invoke("wiki:resolveWikilinks", targets);
+  },
+
   // ── LLM ──────────────────────────────────────────────────────────
 
   generateArticle(prompt: string): Promise<AsyncIterable<string>> {

@@ -335,16 +335,26 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
     if (links.length === 0) return;
 
     let cancelled = false;
-    Promise.all(
-      links.map(async (el) => {
+    const targets = [
+      ...new Set(
+        links
+          .map((el) => el.getAttribute('data-target'))
+          .filter((target): target is string => Boolean(target)),
+      ),
+    ];
+    if (targets.length === 0) return;
+
+    void window.api.resolveWikilinks(targets).then((resolved) => {
+      if (cancelled) return;
+      for (const el of links) {
         const target = el.getAttribute('data-target');
-        if (!target) return;
-        const resolved = await window.api.resolveWikilink(target);
-        if (!cancelled) {
-          el.classList.toggle('wikilink--missing', !resolved.exists);
+        if (!target) continue;
+        const match = resolved[target];
+        if (match) {
+          el.classList.toggle('wikilink--missing', !match.exists);
         }
-      })
-    );
+      }
+    });
     return () => { cancelled = true; };
   }, [renderedHtml]);
 

@@ -45,6 +45,7 @@ import {
   friendlyError,
   classifyLine,
   parseMarkdownLines,
+  computeOrderedListStarts,
   applyInlineFormatting,
 } from "../ChatView";
 
@@ -322,6 +323,21 @@ describe("parseMarkdownLines", () => {
     ]);
   });
 
+  it("keeps one ordered list when each item has an immediate explanation line", () => {
+    const result = parseMarkdownLines(
+      "1. Identify the use case\nPick a concrete business problem where GenAI might help.\n1. Prioritize the use case\nRank candidates by value, feasibility, and strategic fit.",
+    );
+    expect(result).toEqual([
+      {
+        type: "ol",
+        items: [
+          "Identify the use case\nPick a concrete business problem where GenAI might help.",
+          "Prioritize the use case\nRank candidates by value, feasibility, and strategic fit.",
+        ],
+      },
+    ]);
+  });
+
   it("groups unordered list items separated by blank lines", () => {
     const result = parseMarkdownLines("- a\n\n- b\n\n- c");
     expect(result).toEqual([{ type: "ul", items: ["a", "b", "c"] }]);
@@ -356,6 +372,19 @@ describe("parseMarkdownLines", () => {
     expect(result[0]).toEqual({ type: "paragraph", content: "Above" });
     expect(result[1]).toEqual({ type: "hr" });
     expect(result[2]).toEqual({ type: "paragraph", content: "Below" });
+  });
+});
+
+describe("computeOrderedListStarts", () => {
+  it("continues numbering across split ordered-list blocks", () => {
+    const blocks = parseMarkdownLines(
+      "1. Identify the use case\nPick a concrete business problem.\n1. Prioritize the use case\nRank candidates.\n\n- talent and operating model\n- governance and risk\n\n1. Shape the solution approach\nDecide what kind of build you need.\n1. Answer the key design questions\nDefine modality and functions.\n\n- modality: text, image\n\n1. Build the PoC/MVP",
+    );
+    expect(computeOrderedListStarts(blocks).filter((n) => n !== null)).toEqual([
+      1,
+      3,
+      5,
+    ]);
   });
 });
 

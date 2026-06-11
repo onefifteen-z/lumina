@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { LLMProviderConfig, PhoenixConfig } from '../../shared/types';
+import type { LLMProviderConfig, PhoenixConfig, VaultLanguage } from '../../shared/types';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
 const DEFAULT_PHOENIX: PhoenixConfig = { enabled: false, scheme: 'http', host: 'localhost', port: 6006 };
+const DEFAULT_VAULT_LANGUAGE: VaultLanguage = 'en';
 
 const SettingsPanel: React.FC = () => {
   // LLM provider fields
@@ -13,6 +14,7 @@ const SettingsPanel: React.FC = () => {
 
   // Vault
   const [vaultPath, setVaultPath] = useState('');
+  const [vaultLanguage, setVaultLanguage] = useState<VaultLanguage>(DEFAULT_VAULT_LANGUAGE);
 
   // Phoenix
   const [phoenixEnabled, setPhoenixEnabled] = useState(false);
@@ -33,27 +35,37 @@ const SettingsPanel: React.FC = () => {
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('idle');
   const [connError, setConnError] = useState<string | null>(null);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const [config, storedKey, vaultConfig] = await Promise.all([
+        window.api.getConfig(),
+        window.api.getApiKey(),
+        window.api.getVaultConfig(),
+      ]);
+      setVaultPath(config.vaultPath);
+      setEndpointUrl(config.llmProvider?.endpointUrl ?? '');
+      setModel(config.llmProvider?.model ?? '');
+      setApiKey(storedKey);
+      const ph = config.phoenix ?? DEFAULT_PHOENIX;
+      setPhoenixEnabled(ph.enabled);
+      setPhoenixScheme(ph.scheme ?? 'http');
+      setPhoenixHost(ph.host || 'localhost');
+      setPhoenixPort(String(ph.port || 6006));
+      setPdfImageIngest(config.pdfImageIngest ?? false);
+      setFileIngest(config.fileIngest ?? false);
+      setVaultLanguage(vaultConfig.language ?? DEFAULT_VAULT_LANGUAGE);
+    } catch {
+      // Defaults are fine
+    }
+  }, []);
+
   // Load current config on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [config, storedKey] = await Promise.all([
-          window.api.getConfig(),
-          window.api.getApiKey(),
-        ]);
+        await loadSettings();
         if (cancelled) return;
-        setVaultPath(config.vaultPath);
-        setEndpointUrl(config.llmProvider?.endpointUrl ?? '');
-        setModel(config.llmProvider?.model ?? '');
-        setApiKey(storedKey);
-        const ph = config.phoenix ?? DEFAULT_PHOENIX;
-        setPhoenixEnabled(ph.enabled);
-        setPhoenixScheme(ph.scheme ?? 'http');
-        setPhoenixHost(ph.host || 'localhost');
-        setPhoenixPort(String(ph.port || 6006));
-        setPdfImageIngest(config.pdfImageIngest ?? false);
-        setFileIngest(config.fileIngest ?? false);
       } catch {
         // Defaults are fine
       } finally {
@@ -61,7 +73,17 @@ const SettingsPanel: React.FC = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadSettings]);
+
+  useEffect(() => {
+    const onVaultSwitched = () => {
+      void loadSettings();
+    };
+    window.api.onVaultSwitched(onVaultSwitched);
+    return () => {
+      window.api.removeVaultSwitchedListener();
+    };
+  }, [loadSettings]);
 
   // Save all settings
   const handleSave = useCallback(async () => {
@@ -80,6 +102,7 @@ const SettingsPanel: React.FC = () => {
       };
 
       await window.api.saveConfig({ vaultPath, llmProvider, phoenix, pdfImageIngest, fileIngest });
+      await window.api.saveVaultConfig({ language: vaultLanguage });
       await window.api.saveApiKey(apiKey);
 
       setSaveMsg('Settings saved');
@@ -89,7 +112,7 @@ const SettingsPanel: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [endpointUrl, apiKey, model, vaultPath, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort, pdfImageIngest, fileIngest]);
+  }, [endpointUrl, apiKey, model, vaultPath, vaultLanguage, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort, pdfImageIngest, fileIngest]);
 
   // Test LLM connection
   const handleTestConnection = useCallback(async () => {
@@ -145,6 +168,22 @@ const SettingsPanel: React.FC = () => {
               Browse…
             </button>
           </div>
+        </label>
+
+        <label className="settings-field">
+          <span className="settings-field__label">Wiki language</span>
+          <select
+            className="settings-field__input"
+            value={vaultLanguage}
+            onChange={(e) => setVaultLanguage(e.target.value as VaultLanguage)}
+          >
+            <option value="en">English</option>
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese</option>
+          </select>
+          <span className="settings-field__hint">
+            Applied per vault and injected into the runtime system prompt.
+          </span>
         </label>
       </section>
 

@@ -331,6 +331,45 @@ describe("getBookmarks / setBookmarks", () => {
   });
 });
 
+// ─── vault config JSON ───────────────────────────────────────────────────────
+
+describe("getVaultConfig / saveVaultConfig", () => {
+  it("returns default language when file is missing", async () => {
+    expect(await service.getVaultConfig()).toEqual({ language: "en" });
+  });
+
+  it("writes and reads vault-config.json under .lumina", async () => {
+    await service.saveVaultConfig({ language: "ja" });
+    const abs = path.join(tmpDir, ".lumina", "vault-config.json");
+    const raw = JSON.parse(await fs.readFile(abs, "utf-8"));
+    expect(raw.language).toBe("ja");
+    expect(await service.getVaultConfig()).toEqual({ language: "ja" });
+  });
+
+  it("merges partial updates with existing values", async () => {
+    await service.saveVaultConfig({ language: "zh" });
+    await service.saveVaultConfig({});
+    expect(await service.getVaultConfig()).toEqual({ language: "zh" });
+  });
+
+  it("returns default language for invalid JSON shape", async () => {
+    const luminaDir = path.join(tmpDir, ".lumina");
+    await fs.mkdir(luminaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(luminaDir, "vault-config.json"),
+      JSON.stringify({ language: "de" }),
+      "utf-8",
+    );
+    expect(await service.getVaultConfig()).toEqual({ language: "en" });
+  });
+
+  it("throws when saving an unsupported language", async () => {
+    await expect(
+      service.saveVaultConfig({ language: "de" as unknown as "en" }),
+    ).rejects.toThrow("Invalid vault language");
+  });
+});
+
 // ─── moveVaultEntry / importExternalEntries ─────────────────────────────────
 
 describe("moveVaultEntry", () => {

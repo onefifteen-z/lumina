@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { ChatSession, ChatMessage, ChatContentBlock } from "../../shared/types";
-import type { ChatChunk } from "../../shared/types";
+import type { ChatChunk, VaultConfig, VaultLanguage } from "../../shared/types";
 import { LLMService } from "./llm-service";
 import { FileSystemService } from "./filesystem-service";
 import { startSpan } from "../telemetry";
@@ -51,6 +51,12 @@ const TOOL_RESULT_KEEP_FULL = 2;
 const TOOL_RESULT_ELIDE_OVER = 4_000;
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
+const DEFAULT_VAULT_LANGUAGE: VaultLanguage = "en";
+const VAULT_LANGUAGE_PROMPT: Record<VaultLanguage, string> = {
+  en: "English",
+  ja: "Japanese",
+  zh: "Chinese",
+};
 
 // Candidate filenames for the vault-level CLAUDE.md system prompt
 const CLAUDE_MD_CANDIDATES = [".CLAUDE.md", "CLAUDE.md", ".claude.md", "claude.md"];
@@ -1167,12 +1173,50 @@ export class ChatService {
     const base = await this.resolveBasePrompt((w) => {
       warning = warning ?? w;
     });
-    if (base.kind === "default") return { prompt: base.prompt, warning };
+    const language = await this.loadVaultLanguage();
+    if (base.kind === "default") {
+      return { prompt: this.withVaultLanguagePolicy(base.prompt, language), warning };
+    }
     const ingest = await this.loadIngestTemplateSafe();
+    const promptWithIngest = ingest ? `${base.prompt}\n\n${ingest}` : base.prompt;
     return {
-      prompt: ingest ? `${base.prompt}\n\n${ingest}` : base.prompt,
+      prompt: this.withVaultLanguagePolicy(promptWithIngest, language),
       warning,
     };
+  }
+
+  private withVaultLanguagePolicy(
+    prompt: string,
+    language: VaultLanguage | null,
+  ): string {
+    if (!language) return prompt;
+    const languageLabel = VAULT_LANGUAGE_PROMPT[language];
+    const policy = [
+      "## Vault language policy",
+      `- The wiki language for this vault is ${languageLabel}.`,
+      `- Write wiki page titles, file names, summaries, and body text in ${languageLabel}.`,
+      "- Keep folder names in English/romaji unless the user explicitly asks otherwise.",
+    ].join("\n");
+    return `${prompt}\n\n${policy}`;
+  }
+
+  private async loadVaultLanguage(): Promise<VaultLanguage | null> {
+    if (!this.fileSystem) return DEFAULT_VAULT_LANGUAGE;
+    const fsWithVaultConfig = this.fileSystem as FileSystemService & {
+      getVaultConfig?: () => Promise<VaultConfig>;
+    };
+    if (typeof fsWithVaultConfig.getVaultConfig !== "function") {
+      return null;
+    }
+    try {
+      const cfg = await fsWithVaultConfig.getVaultConfig();
+      if (cfg.language === "en" || cfg.language === "ja" || cfg.language === "zh") {
+        return cfg.language;
+      }
+      return DEFAULT_VAULT_LANGUAGE;
+    } catch {
+      return DEFAULT_VAULT_LANGUAGE;
+    }
   }
 
   /**

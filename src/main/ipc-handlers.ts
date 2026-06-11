@@ -8,6 +8,7 @@ import type {
   LLMAssistParams,
   ChatContentBlock,
   IngestRequest,
+  VaultConfig,
 } from "../shared/types";
 import { reconfigureTelemetry } from "./telemetry";
 import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
@@ -740,6 +741,13 @@ export function registerIpcHandlers(services: {
     return config.getConfig();
   });
 
+  ipcMain.handle("wiki:getVaultConfig", async () => {
+    if (!fileSystem) {
+      return { language: "en" as const };
+    }
+    return fileSystem.getVaultConfig();
+  });
+
   ipcMain.handle(
     "wiki:saveConfig",
     async (_event, partial: Partial<AppConfig>): Promise<void> => {
@@ -768,6 +776,16 @@ export function registerIpcHandlers(services: {
       if (partial.phoenix !== undefined) {
         reconfigureTelemetry(partial.phoenix).catch(() => {});
       }
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:saveVaultConfig",
+    async (_event, partial: Partial<VaultConfig>): Promise<void> => {
+    if (!fileSystem) {
+      throw new Error("No vault is open. Please select a vault folder first.");
+    }
+    await fileSystem.saveVaultConfig(partial ?? {});
     },
   );
 

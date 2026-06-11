@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useMemo, useCallback } from "react";
-import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileText, RefreshCw } from "lucide-react";
+import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileCode2, FileText, Image, RefreshCw } from "lucide-react";
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { classifyFilename, filterArticlesForTab, type FileCategory } from "../lib/file-classification";
@@ -10,6 +10,20 @@ import { isRawSource } from "./chat/ChatInput";
 
 /** Custom data type for drags that start inside the file tree. */
 const LUMINA_DRAG_PATH = "application/x-lumina-vault-path";
+const TREE_EXPANDED_STORAGE_PREFIX = "lumina-tree-expanded";
+const RAW_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".bmp",
+  ".tif",
+  ".tiff",
+  ".svg",
+]);
+
+export type RawFileIconKind = "pdf" | "markdown" | "image" | "none";
 
 function vaultParentDir(filename: string): string {
   const n = filename.replace(/\\/g, "/");
@@ -19,6 +33,47 @@ function vaultParentDir(filename: string): string {
 
 function normPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+export function rawFileIconKind(filename: string): RawFileIconKind {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+  for (const ext of RAW_IMAGE_EXTENSIONS) {
+    if (lower.endsWith(ext)) return "image";
+  }
+  return "none";
+}
+
+export function expandedStorageKey(vaultPath: string, tab: FileCategory): string {
+  return `${TREE_EXPANDED_STORAGE_PREFIX}:${vaultPath}:${tab}`;
+}
+
+export function loadExpandedFromStorage(vaultPath: string, tab: FileCategory): Set<string> | null {
+  try {
+    const raw = window.localStorage.getItem(expandedStorageKey(vaultPath, tab));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const out = new Set<string>();
+    for (const p of parsed) {
+      if (typeof p === "string" && p.trim()) out.add(normPath(p));
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export function saveExpandedToStorage(vaultPath: string, tab: FileCategory, paths: Set<string>): void {
+  try {
+    window.localStorage.setItem(
+      expandedStorageKey(vaultPath, tab),
+      JSON.stringify([...paths]),
+    );
+  } catch {
+    // Ignore quota/privacy mode failures.
+  }
 }
 
 /** True when the drag likely carries importable OS files (Electron/Chromium varies `types`). */
@@ -304,7 +359,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
 
   if (node.type === "file") {
     const isSelected = node.article.filename === selectedFilename;
-    const isPdf = node.article.filename.toLowerCase().endsWith(".pdf");
+    const iconKind = rawFileIconKind(node.article.filename);
     const dropInto = vaultParentDir(node.article.filename);
     const isDropHighlight = dropTargetPath !== null && normPath(dropTargetPath) === normPath(dropInto);
     const isIngested = ingestedRawSet.has(node.article.filename);
@@ -333,9 +388,17 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
             : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
         )}
       >
-        {isPdf ? (
+        {iconKind === "pdf" ? (
           <span className={`${fileLeadingReserve} flex items-center justify-start`}>
             <FileText size={13} className="shrink-0 text-red-400" />
+          </span>
+        ) : iconKind === "markdown" ? (
+          <span className={`${fileLeadingReserve} flex items-center justify-start`}>
+            <FileCode2 size={13} className="shrink-0 text-blue-400" />
+          </span>
+        ) : iconKind === "image" ? (
+          <span className={`${fileLeadingReserve} flex items-center justify-start`}>
+            <Image size={13} className="shrink-0 text-violet-400" />
           </span>
         ) : (
           <span className={fileLeadingReserve} aria-hidden />
@@ -431,6 +494,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
 // ── FilesView ──────────────────────────────────────────────────
 
 export interface FilesViewProps {
+  vaultPath: string;
   articles: ArticleMeta[];
   /** Folders under wiki/ or raw/ that exist on disk but contain no files (shown in tree). */
   emptyFolderPaths?: string[];
@@ -522,6 +586,7 @@ function TabBar({ activeTab, wikiCount, rawCount, onTabChange }: TabBarProps) {
 // ── FilesView ──────────────────────────────────────────────────
 
 export function FilesView({
+  vaultPath,
   articles,
   emptyFolderPaths = [],
   selectedFilename,
@@ -755,31 +820,76 @@ export function FilesView({
     [onDropOnTarget, tabRootPrefix],
   );
 
+  const initialTreePaths = useMemo(
+    () => ({
+      wiki: collectFolderPaths(wikiTree),
+      raw: collectFolderPaths(rawTree),
+    }),
+    [wikiTree, rawTree],
+  );
+
   // Per-tab folder expansion state — each tab remembers its own expanded folders
   const [perTabExpanded, setPerTabExpanded] = useState<{
     wiki: Set<string>;
     raw: Set<string>;
   }>(() => ({
-    wiki: collectFolderPaths(wikiTree),
-    raw: collectFolderPaths(rawTree),
+    wiki:
+      loadExpandedFromStorage(vaultPath, "wiki") ??
+      new Set(initialTreePaths.wiki),
+    raw:
+      loadExpandedFromStorage(vaultPath, "raw") ??
+      new Set(initialTreePaths.raw),
   }));
 
-  // When new folders appear (articles change), add them to both tabs' sets
-  const prevWikiTreeRef = React.useRef(wikiTree);
-  const prevRawTreeRef = React.useRef(rawTree);
-  if (prevWikiTreeRef.current !== wikiTree || prevRawTreeRef.current !== rawTree) {
-    prevWikiTreeRef.current = wikiTree;
-    prevRawTreeRef.current = rawTree;
-    const wikiPaths = collectFolderPaths(wikiTree);
-    const rawPaths = collectFolderPaths(rawTree);
+  const knownTreePathsRef = React.useRef(initialTreePaths);
+
+  // Rehydrate expand/collapse state when switching vaults.
+  React.useEffect(() => {
+    const nextWiki = loadExpandedFromStorage(vaultPath, "wiki");
+    const nextRaw = loadExpandedFromStorage(vaultPath, "raw");
     setPerTabExpanded((prev) => {
-      const nextWiki = new Set(prev.wiki);
-      wikiPaths.forEach((p) => nextWiki.add(p));
-      const nextRaw = new Set(prev.raw);
-      rawPaths.forEach((p) => nextRaw.add(p));
+      const wiki = nextWiki ?? new Set(initialTreePaths.wiki);
+      const raw = nextRaw ?? new Set(initialTreePaths.raw);
+      if (
+        prev.wiki.size === wiki.size &&
+        prev.raw.size === raw.size &&
+        [...prev.wiki].every((p) => wiki.has(p)) &&
+        [...prev.raw].every((p) => raw.has(p))
+      ) {
+        return prev;
+      }
+      return { wiki, raw };
+    });
+    knownTreePathsRef.current = initialTreePaths;
+  }, [vaultPath, initialTreePaths]);
+
+  // When tree folders change, prune stale paths and auto-expand only *new* folders.
+  React.useEffect(() => {
+    const currentPaths = initialTreePaths;
+    const prevPaths = knownTreePathsRef.current;
+    knownTreePathsRef.current = currentPaths;
+    setPerTabExpanded((prev) => {
+      const nextWiki = new Set(
+        [...prev.wiki].filter((p) => currentPaths.wiki.has(p)),
+      );
+      const nextRaw = new Set(
+        [...prev.raw].filter((p) => currentPaths.raw.has(p)),
+      );
+      currentPaths.wiki.forEach((p) => {
+        if (!prevPaths.wiki.has(p)) nextWiki.add(p);
+      });
+      currentPaths.raw.forEach((p) => {
+        if (!prevPaths.raw.has(p)) nextRaw.add(p);
+      });
       return { wiki: nextWiki, raw: nextRaw };
     });
-  }
+  }, [initialTreePaths]);
+
+  // Persist expand/collapse state per-vault and per-tab.
+  React.useEffect(() => {
+    saveExpandedToStorage(vaultPath, "wiki", perTabExpanded.wiki);
+    saveExpandedToStorage(vaultPath, "raw", perTabExpanded.raw);
+  }, [vaultPath, perTabExpanded]);
 
   // Auto-expand ancestor folders of the selected file so the highlighted
   // row is visible. Runs whenever the external selection changes — covers

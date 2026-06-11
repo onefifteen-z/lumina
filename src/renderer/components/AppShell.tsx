@@ -540,6 +540,7 @@ const SidebarLayout: React.FC<{
                 <SidebarContent>
                   {(activeView === 'files' || activeView === 'graph') && (
                     <FilesView
+                      vaultPath={vaultPath}
                       articles={articles}
                       emptyFolderPaths={emptyWikiRawFolders}
                       selectedFilename={selectedFilename}

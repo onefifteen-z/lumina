@@ -116,6 +116,14 @@ export interface VaultEntry {
   name: string; // basename of path
 }
 
+/** Per-vault wiki language used by runtime prompt policy injection. */
+export type VaultLanguage = "en" | "ja" | "zh";
+
+/** Per-vault settings persisted at `{vault}/.lumina/vault-config.json`. */
+export interface VaultConfig {
+  language: VaultLanguage;
+}
+
 /** Bookmarks persisted at `{vault}/.lumina/bookmarks.json`. */
 export interface BookmarksFile {
   version: number;
@@ -342,6 +350,8 @@ export interface WikiAPI {
   // Config
   getConfig(): Promise<AppConfig>;
   saveConfig(config: Partial<AppConfig>): Promise<void>;
+  getVaultConfig(): Promise<VaultConfig>;
+  saveVaultConfig(config: Partial<VaultConfig>): Promise<void>;
   getApiKey(): Promise<string>;
   saveApiKey(key: string): Promise<void>;
   testLLMConnection(config: LLMProviderConfig): Promise<boolean>;

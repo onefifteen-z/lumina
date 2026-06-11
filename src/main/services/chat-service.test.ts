@@ -10,7 +10,7 @@ import {
 } from "./chat-service";
 import { LLMService } from "./llm-service";
 import { FileSystemService } from "./filesystem-service";
-import type { ChatMessage } from "../../shared/types";
+import type { ChatMessage, VaultLanguage } from "../../shared/types";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -18,6 +18,16 @@ import type { ChatMessage } from "../../shared/types";
 function mockFileSystem(claudeContent: string): FileSystemService {
   return {
     readRawFile: vi.fn().mockResolvedValue(claudeContent),
+  } as unknown as FileSystemService;
+}
+
+function mockFileSystemWithLanguage(
+  claudeContent: string,
+  language: VaultLanguage,
+): FileSystemService {
+  return {
+    readRawFile: vi.fn().mockResolvedValue(claudeContent),
+    getVaultConfig: vi.fn().mockResolvedValue({ language }),
   } as unknown as FileSystemService;
 }
 
@@ -544,6 +554,40 @@ describe("ChatService edge case unit tests", () => {
     });
   });
 
+  describe("vault language policy injection", () => {
+    it("appends a Japanese policy block when vault language is ja", async () => {
+      const fs = mockFileSystemWithLanguage("VAULT CLAUDE", "ja");
+      const service = new ChatService(null, fs, NO_TEMPLATE);
+      const { session } = await service.startSession();
+      expect(session.systemPrompt).toContain("VAULT CLAUDE");
+      expect(session.systemPrompt).toContain("## Vault language policy");
+      expect(session.systemPrompt).toContain("The wiki language for this vault is Japanese.");
+    });
+
+    it("applies language policy when reloadClaudeMd is true", async () => {
+      const fs = mockFileSystemWithLanguage("first-prompt", "zh");
+      let readCount = 0;
+      (fs.readRawFile as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        readCount += 1;
+        return readCount === 1 ? "first-prompt" : "second-prompt";
+      });
+      const captured: Array<{ role: string; content: unknown }[]> = [];
+      const llm = {
+        callNonStreaming: vi.fn(async (messages: Array<{ role: string; content: unknown }>) => {
+          captured.push([...messages]);
+          return { content: "done", toolCalls: null };
+        }),
+        generateChat: vi.fn(),
+      } as unknown as LLMService;
+      const service = new ChatService(llm, fs, NO_TEMPLATE);
+      await service.startSession();
+      await drainGenerator(service.sendMessage("hello", undefined, { reloadClaudeMd: true }));
+      expect(captured[0][0].content).toContain(
+        "The wiki language for this vault is Chinese.",
+      );
+    });
+  });
+
   describe("new session clears history", () => {
     it("clears message history when starting a new session", async () => {
       const fs = mockFileSystem("system prompt");
@@ -909,8 +953,11 @@ describe("compactExtraMessages", () => {
     const blockMsg = {
       role: "user",
       content: [
-        { type: "text", text: "The following files have been uploaded:" },
-        { type: "image_url", image_url: { url: `data:image/png;base64,${bigB64}`, detail: "auto" } },
+        { type: "text" as const, text: "The following files have been uploaded:" },
+        {
+          type: "image_url" as const,
+          image_url: { url: `data:image/png;base64,${bigB64}`, detail: "auto" as const },
+        },
       ],
     };
     const recentA = big(9000);

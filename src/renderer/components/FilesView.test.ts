@@ -1,7 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import type { ArticleMeta } from "../../shared/types";
 import { classifyFilename, filterArticlesForTab } from "../lib/file-classification";
-import { ancestorFolderPaths, sortNodes } from "./FilesView";
+import {
+  ancestorFolderPaths,
+  expandedStorageKey,
+  loadExpandedFromStorage,
+  rawFileIconKind,
+  saveExpandedToStorage,
+  sortNodes,
+} from "./FilesView";
 
 /**
  * Unit tests for FilesView TabBar logic.
@@ -239,5 +246,61 @@ describe("sortNodes", () => {
     expect(sorted[0]?.type === "file" && sorted[0].article.filename).toBe("wiki/n2.md");
     expect(sorted[1]?.type).toBe("file");
     expect(sorted[1]?.type === "file" && sorted[1].article.filename).toBe("wiki/n10.md");
+  });
+});
+
+describe("expanded folder persistence helpers", () => {
+  beforeEach(() => {
+    const map = new Map<string, string>();
+    (globalThis as unknown as { window: { localStorage: Storage } }).window = {
+      localStorage: {
+        getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+        setItem: (k: string, v: string) => {
+          map.set(k, v);
+        },
+        removeItem: (k: string) => {
+          map.delete(k);
+        },
+        clear: () => map.clear(),
+        key: (i: number) => [...map.keys()][i] ?? null,
+        get length() {
+          return map.size;
+        },
+      } as Storage,
+    };
+  });
+
+  it("saves and restores expanded paths for the same vault/tab key", () => {
+    const vaultPath = "/tmp/vault-a";
+    const tab = "raw" as const;
+    saveExpandedToStorage(vaultPath, tab, new Set(["raw", "raw/images"]));
+    expect(loadExpandedFromStorage(vaultPath, tab)).toEqual(
+      new Set(["raw", "raw/images"]),
+    );
+  });
+
+  it("uses distinct keys per vault and tab", () => {
+    const k1 = expandedStorageKey("/tmp/a", "wiki");
+    const k2 = expandedStorageKey("/tmp/a", "raw");
+    const k3 = expandedStorageKey("/tmp/b", "wiki");
+    expect(k1).not.toBe(k2);
+    expect(k1).not.toBe(k3);
+    expect(k2).not.toBe(k3);
+  });
+});
+
+describe("raw file icon mapping", () => {
+  it("maps pdf to pdf icon kind", () => {
+    expect(rawFileIconKind("raw/report.PDF")).toBe("pdf");
+  });
+
+  it("maps markdown to markdown icon kind", () => {
+    expect(rawFileIconKind("raw/notes.md")).toBe("markdown");
+    expect(rawFileIconKind("raw/notes.markdown")).toBe("markdown");
+  });
+
+  it("maps image extensions to image icon kind", () => {
+    expect(rawFileIconKind("raw/pic.png")).toBe("image");
+    expect(rawFileIconKind("raw/photo.JPEG")).toBe("image");
   });
 });

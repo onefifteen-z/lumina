@@ -202,9 +202,39 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
         while (j < lines.length && lines[j].trim() === '') j++;
         if (j >= lines.length) break;
         const next = classifyLine(lines[j]);
-        if (next.type !== listType) break;
-        items.push(next.content);
-        i = j + 1;
+        if (next.type === listType) {
+          items.push(next.content);
+          i = j + 1;
+          continue;
+        }
+
+        // Compatibility path for LLM output style:
+        //   1. Step title
+        //   Explanation sentence
+        //   1. Next step
+        // Treat the paragraph line(s) as part of the previous ordered-list
+        // item when another ordered-list item follows, so numbering remains
+        // a single 1/2/3... sequence instead of resetting to 1 each time.
+        if (listType === 'ol' && next.type === 'paragraph' && j === i) {
+          const paraLines: string[] = [next.content];
+          let k = j + 1;
+          while (k < lines.length) {
+            if (lines[k].trim() === '') break;
+            const paraNext = classifyLine(lines[k]);
+            if (paraNext.type !== 'paragraph') break;
+            paraLines.push(paraNext.content);
+            k++;
+          }
+          let t = k;
+          while (t < lines.length && lines[t].trim() === '') t++;
+          if (t >= lines.length || classifyLine(lines[t]).type === 'ol') {
+            items[items.length - 1] += `\n${paraLines.join('\n')}`;
+            i = t;
+            continue;
+          }
+        }
+
+        break;
       }
       blocks.push({ type: listType, items });
     } else {
@@ -226,6 +256,23 @@ export function parseMarkdownLines(text: string): MarkdownBlock[] {
   }
 
   return blocks;
+}
+
+/**
+ * Compute visual start numbers for ordered-list blocks so separate `<ol>`
+ * segments in one assistant message can continue numbering (1..N) instead
+ * of resetting to 1 after explanatory paragraphs or sub-bullets.
+ */
+export function computeOrderedListStarts(
+  blocks: MarkdownBlock[],
+): Array<number | null> {
+  let nextStart = 1;
+  return blocks.map((block) => {
+    if (block.type !== 'ol') return null;
+    const start = nextStart;
+    nextStart += block.items.length;
+    return start;
+  });
 }
 
 /**
@@ -301,6 +348,7 @@ export function applyInlineFormatting(text: string, onWikilinkClick?: (target: s
 /** Render a text segment with line-by-line markdown parsing. */
 const MarkdownText: React.FC<{ content: string; onWikilinkClick?: (target: string) => void }> = ({ content, onWikilinkClick }) => {
   const blocks = parseMarkdownLines(content);
+  const olStarts = useMemo(() => computeOrderedListStarts(blocks), [blocks]);
 
   if (blocks.length === 0) return null;
 
@@ -337,7 +385,12 @@ const MarkdownText: React.FC<{ content: string; onWikilinkClick?: (target: strin
             );
           case 'ol':
             return (
-              <ol key={i} className="text-sm space-y-1 pl-5" style={{ listStyleType: 'decimal' }}>
+              <ol
+                key={i}
+                start={olStarts[i] ?? 1}
+                className="text-sm space-y-1 pl-5"
+                style={{ listStyleType: 'decimal' }}
+              >
                 {block.items.map((item, j) => (
                   <li key={j} className="break-words leading-relaxed pl-0.5">
                     {applyInlineFormatting(item, onWikilinkClick)}

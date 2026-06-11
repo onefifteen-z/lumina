@@ -5,6 +5,8 @@ import type {
   ArticleMeta,
   ArticleFile,
   BookmarksFile,
+  VaultConfig,
+  VaultLanguage,
   VaultChangeEvent,
 } from "../../shared/types";
 import {
@@ -17,6 +19,9 @@ import {
 } from "../../shared/markdown-parser";
 
 const BOOKMARKS_RELATIVE = path.join(".lumina", "bookmarks.json");
+const VAULT_CONFIG_RELATIVE = path.join(".lumina", "vault-config.json");
+const DEFAULT_VAULT_CONFIG: VaultConfig = { language: "en" };
+const SUPPORTED_VAULT_LANGUAGES: VaultLanguage[] = ["en", "ja", "zh"];
 
 /**
  * Pull raw-source references out of an article's frontmatter. Accepts:
@@ -204,6 +209,61 @@ export class FileSystemService {
 
   private bookmarksAbsolutePath(): string {
     return path.join(this.vaultPath, BOOKMARKS_RELATIVE);
+  }
+
+  private vaultConfigAbsolutePath(): string {
+    return path.join(this.vaultPath, VAULT_CONFIG_RELATIVE);
+  }
+
+  private isVaultLanguage(value: unknown): value is VaultLanguage {
+    return (
+      typeof value === "string" &&
+      SUPPORTED_VAULT_LANGUAGES.includes(value as VaultLanguage)
+    );
+  }
+
+  /**
+   * Read per-vault settings from `.lumina/vault-config.json`.
+   * Returns defaults when the file is missing, unreadable, or invalid.
+   */
+  async getVaultConfig(): Promise<VaultConfig> {
+    const abs = this.vaultConfigAbsolutePath();
+    try {
+      const raw = await fs.readFile(abs, "utf-8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        this.isVaultLanguage((parsed as Partial<VaultConfig>).language)
+      ) {
+        return { language: (parsed as VaultConfig).language };
+      }
+      console.warn(
+        "Invalid vault-config.json shape; expected { language: 'en' | 'ja' | 'zh' }",
+      );
+      return { ...DEFAULT_VAULT_CONFIG };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+        return { ...DEFAULT_VAULT_CONFIG };
+      }
+      console.warn("Failed to read vault-config.json:", err);
+      return { ...DEFAULT_VAULT_CONFIG };
+    }
+  }
+
+  /**
+   * Merge and persist per-vault settings at `.lumina/vault-config.json`.
+   */
+  async saveVaultConfig(partial: Partial<VaultConfig>): Promise<void> {
+    const current = await this.getVaultConfig();
+    const language = partial.language ?? current.language;
+    if (!this.isVaultLanguage(language)) {
+      throw new Error("Invalid vault language");
+    }
+    const payload: VaultConfig = { language };
+    const abs = this.vaultConfigAbsolutePath();
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, JSON.stringify(payload, null, 2), "utf-8");
   }
 
   /**

@@ -5,6 +5,7 @@ import type {
   LLMProviderConfig,
   LLMAssistParams,
   VaultEntry,
+  VaultConfig,
   WikiAPI,
   ChatTraceChunk,
   DebugLogEntry,
@@ -214,6 +215,14 @@ const api: WikiAPI = {
 
   saveConfig(config: Partial<AppConfig>) {
     return ipcRenderer.invoke("wiki:saveConfig", config);
+  },
+
+  getVaultConfig() {
+    return ipcRenderer.invoke("wiki:getVaultConfig");
+  },
+
+  saveVaultConfig(config: Partial<VaultConfig>) {
+    return ipcRenderer.invoke("wiki:saveVaultConfig", config);
   },
 
   getApiKey() {

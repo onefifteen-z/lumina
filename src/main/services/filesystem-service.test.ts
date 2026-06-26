@@ -370,6 +370,32 @@ describe("getVaultConfig / saveVaultConfig", () => {
   });
 });
 
+// ─── deleteVaultEntry ───────────────────────────────────────────────────────
+
+describe("deleteVaultEntry", () => {
+  it("removes a file by vault-relative path", async () => {
+    await fs.mkdir(path.join(tmpDir, "raw"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "raw", "gone.pdf"),
+      "pdf",
+    );
+    await service.deleteVaultEntry("raw/gone.pdf");
+    await expect(fs.access(path.join(tmpDir, "raw", "gone.pdf"))).rejects.toThrow();
+  });
+
+  it("removes a folder recursively", async () => {
+    await fs.mkdir(path.join(tmpDir, "wiki", "trash", "nested"), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, "wiki", "trash", "nested", "a.md"), "x");
+    await service.deleteVaultEntry("wiki/trash");
+    await expect(fs.access(path.join(tmpDir, "wiki", "trash"))).rejects.toThrow();
+  });
+
+  it("rejects deleting top-level wiki or raw folders", async () => {
+    await expect(service.deleteVaultEntry("wiki")).rejects.toThrow(/top-level/);
+    await expect(service.deleteVaultEntry("raw")).rejects.toThrow(/top-level/);
+  });
+});
+
 // ─── moveVaultEntry / importExternalEntries ─────────────────────────────────
 
 describe("moveVaultEntry", () => {

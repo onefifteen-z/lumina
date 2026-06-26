@@ -99,6 +99,7 @@ export interface WikiAPI {
     getArticle(title: string): Promise<ArticleFile>;
     saveArticle(article: ArticleFile, targetFolder?: string): Promise<void>;
     deleteArticle(title: string): Promise<void>;
+    deleteVaultEntry(relativePath: string): Promise<void>;
     articleExists(title: string, targetFolder?: string): Promise<boolean>;
     search(query: string): Promise<SearchResult[]>;
     searchByTag(tag: string): Promise<ArticleMeta[]>;

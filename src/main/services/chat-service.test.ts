@@ -14,19 +14,36 @@ import type { ChatMessage, VaultLanguage } from "../../shared/types";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-/** Create a mock FileSystemService that returns the given content for readRawFile. */
-function mockFileSystem(claudeContent: string): FileSystemService {
+/** Create a mock FileSystemService for vault prompt file reads. */
+function mockFileSystem(
+  claudeContent: string,
+  ingestContent?: string | null,
+): FileSystemService {
   return {
-    readRawFile: vi.fn().mockResolvedValue(claudeContent),
+    readRawFile: vi.fn().mockImplementation(async (path: string) => {
+      const lower = path.toLowerCase();
+      if (lower.endsWith("claude.md")) {
+        return claudeContent;
+      }
+      if (lower.endsWith("ingest.md")) {
+        if (ingestContent === null || ingestContent === undefined) {
+          throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+        }
+        return ingestContent;
+      }
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    }),
   } as unknown as FileSystemService;
 }
 
 function mockFileSystemWithLanguage(
   claudeContent: string,
   language: VaultLanguage,
+  ingestContent?: string | null,
 ): FileSystemService {
+  const base = mockFileSystem(claudeContent, ingestContent);
   return {
-    readRawFile: vi.fn().mockResolvedValue(claudeContent),
+    ...base,
     getVaultConfig: vi.fn().mockResolvedValue({ language }),
   } as unknown as FileSystemService;
 }
@@ -458,11 +475,14 @@ describe("ChatService edge case unit tests", () => {
 
   describe("reloadClaudeMd on sendMessage", () => {
     it("re-reads CLAUDE.md into session.systemPrompt before the LLM request", async () => {
-      let readCount = 0;
+      let claudeReadCount = 0;
       const fs = {
-        readRawFile: vi.fn(async () => {
-          readCount += 1;
-          return readCount === 1 ? "first-prompt" : "second-prompt";
+        readRawFile: vi.fn(async (path: string) => {
+          if (!path.toLowerCase().endsWith("claude.md")) {
+            throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+          }
+          claudeReadCount += 1;
+          return claudeReadCount === 1 ? "first-prompt" : "second-prompt";
         }),
       } as unknown as FileSystemService;
       const captured: Array<{ role: string; content: unknown }[]> = [];
@@ -486,25 +506,22 @@ describe("ChatService edge case unit tests", () => {
     });
   });
 
-  describe("INGEST.md concatenation", () => {
+  describe("INGEST.md resolution", () => {
     /**
-     * INGEST.md should be appended to whichever CLAUDE.md the loader
-     * resolves (vault override OR bundled template) — but NOT to the
-     * trivial DEFAULT_SYSTEM_PROMPT, because that path means everything
-     * else broke and muddling it with extraction protocol would just
-     * confuse the user.
+     * INGEST.md is resolved vault-first (like CLAUDE.md), then concatenated
+     * onto the CLAUDE part — but NOT onto the trivial DEFAULT_SYSTEM_PROMPT.
      */
     const INGEST_TMPL = "## INGEST PROTOCOL\nuse ingest_source.";
     const loadIngest = (): Promise<string | null> => Promise.resolve(INGEST_TMPL);
 
-    it("appends INGEST.md to vault CLAUDE.md", async () => {
+    it("appends bundled INGEST.md to vault CLAUDE.md when vault has no INGEST.md", async () => {
       const fs = mockFileSystem("VAULT CLAUDE");
       const service = new ChatService(null, fs, NO_TEMPLATE, loadIngest);
       const { session } = await service.startSession();
       expect(session.systemPrompt).toBe(`VAULT CLAUDE\n\n${INGEST_TMPL}`);
     });
 
-    it("appends INGEST.md to bundled CLAUDE.md template", async () => {
+    it("appends bundled INGEST.md to bundled CLAUDE.md template", async () => {
       const fs = mockFileSystem("");
       const TEMPLATE = "BUNDLED CLAUDE";
       const loadTemplate = (): Promise<string | null> =>
@@ -512,6 +529,20 @@ describe("ChatService edge case unit tests", () => {
       const service = new ChatService(null, fs, loadTemplate, loadIngest);
       const { session } = await service.startSession();
       expect(session.systemPrompt).toBe(`${TEMPLATE}\n\n${INGEST_TMPL}`);
+    });
+
+    it("uses vault INGEST.md instead of the bundled template when non-empty", async () => {
+      const fs = mockFileSystem("VAULT CLAUDE", "VAULT INGEST PROTOCOL");
+      const service = new ChatService(null, fs, NO_TEMPLATE, loadIngest);
+      const { session } = await service.startSession();
+      expect(session.systemPrompt).toBe("VAULT CLAUDE\n\nVAULT INGEST PROTOCOL");
+    });
+
+    it("falls back to bundled INGEST.md when vault INGEST.md is empty", async () => {
+      const fs = mockFileSystem("VAULT CLAUDE", "   \n\t  ");
+      const service = new ChatService(null, fs, NO_TEMPLATE, loadIngest);
+      const { session } = await service.startSession();
+      expect(session.systemPrompt).toBe(`VAULT CLAUDE\n\n${INGEST_TMPL}`);
     });
 
     it("does NOT append INGEST.md to the trivial default prompt", async () => {

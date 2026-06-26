@@ -187,6 +187,35 @@ export class FileSystemService {
   }
 
   /**
+   * Delete a vault file or folder (recursive for directories).
+   * Paths are vault-relative POSIX (`wiki/Note.md`, `wiki/inbox`).
+   */
+  async deleteVaultEntry(relativePath: string): Promise<void> {
+    const norm = relativePath
+      .replace(/\\/g, "/")
+      .replace(/^\/+/, "")
+      .replace(/\/+$/, "");
+    if (!norm) throw new Error("Invalid path");
+    if (norm.split("/").some((s) => s === "..")) {
+      throw new Error("Invalid path");
+    }
+    if (this.pathTouchesReserved(norm)) {
+      throw new Error("Cannot delete reserved paths");
+    }
+    if (norm === "wiki" || norm === "raw") {
+      throw new Error("Cannot delete top-level wiki or raw folders");
+    }
+
+    const abs = this.resolveUnderVault(norm);
+    const st = await fs.stat(abs);
+    if (st.isDirectory()) {
+      await fs.rm(abs, { recursive: true, force: true });
+    } else {
+      await fs.unlink(abs);
+    }
+  }
+
+  /**
    * Check whether a file exists in the vault.
    */
   async fileExists(filename: string): Promise<boolean> {

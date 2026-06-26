@@ -11,6 +11,20 @@ import { isRawSource } from "./chat/ChatInput";
 /** Custom data type for drags that start inside the file tree. */
 const LUMINA_DRAG_PATH = "application/x-lumina-vault-path";
 const TREE_EXPANDED_STORAGE_PREFIX = "lumina-tree-expanded";
+
+/** True for top-level wiki/raw rows — cannot be deleted from the tree menu. */
+export function isProtectedTreeFolder(folderPath: string): boolean {
+  const n = normPath(folderPath);
+  return n === "wiki" || n === "raw";
+}
+
+export type TreeContextTarget =
+  | { kind: "file"; path: string }
+  | { kind: "folder"; path: string };
+
+/** Sentinel filename for an in-tree placeholder while a new note is being composed (not on disk yet). */
+export const PENDING_NEW_SENTINEL = "__pending_new__";
+
 const RAW_IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -262,6 +276,82 @@ export function sortNodes(nodes: TreeNode[], sortMode: "modified" | "alpha" = "m
   });
 }
 
+/** Pick the vault-relative folder for a new markdown note. */
+export function resolveNewArticleFolder(
+  activeTab: FileCategory,
+  lastFocusedFolder: string | null,
+  selectedFile: string | null,
+): string {
+  if (lastFocusedFolder) return lastFocusedFolder;
+  if (selectedFile && selectedFile !== PENDING_NEW_SENTINEL) {
+    const parent = vaultParentDir(selectedFile);
+    return parent || activeTab;
+  }
+  return activeTab;
+}
+
+function findFolderNode(root: FolderNode, folderPath: string): FolderNode | null {
+  const parts = folderPath.split("/").filter((p) => p.length > 0);
+  let current: FolderNode = root;
+  for (const part of parts) {
+    const child = current.children.find(
+      (n): n is FolderNode => n.type === "folder" && n.name === part,
+    );
+    if (!child) return null;
+    current = child;
+  }
+  return current;
+}
+
+/** Insert an Untitled placeholder leaf under `folder` (vault-relative, e.g. `wiki/inbox`). */
+export function injectPendingNewFile(
+  tree: TreeNode[],
+  folder: string,
+  sortMode: "modified" | "alpha" = "modified",
+): TreeNode[] {
+  const normalized = normPath(folder);
+  if (!normalized) return tree;
+
+  const pendingNode: FileNode = {
+    type: "file",
+    name: "Untitled",
+    article: {
+      title: "Untitled",
+      filename: PENDING_NEW_SENTINEL,
+      tags: [],
+      created: "",
+      modified: "",
+      wikilinks: [],
+      excerpt: "",
+    },
+  };
+
+  const root: FolderNode = {
+    type: "folder",
+    name: "",
+    path: "",
+    children: tree.map((node) =>
+      node.type === "folder"
+        ? { ...node, children: [...node.children] }
+        : { ...node },
+    ),
+  };
+  ensureFolderPathInTree(root, normalized);
+  const target = findFolderNode(root, normalized);
+  if (!target) return tree;
+
+  if (
+    !target.children.some(
+      (n) => n.type === "file" && n.article.filename === PENDING_NEW_SENTINEL,
+    )
+  ) {
+    target.children.push(pendingNode);
+    target.children = sortNodes(target.children, sortMode);
+  }
+
+  return root.children;
+}
+
 /**
  * Ancestor folder paths for a vault-relative file path.
  *
@@ -316,6 +406,8 @@ interface TreeNodeProps {
   node: TreeNode;
   depth: number;
   selectedFilename: string | null;
+  /** Vault-relative folder path last clicked (or inferred from file selection). */
+  focusedFolderPath: string | null;
   expandedFolders: Set<string>;
   sortMode: "modified" | "alpha";
   /**
@@ -326,7 +418,7 @@ interface TreeNodeProps {
   ingestedRawSet: Set<string>;
   onSelectArticle: (filename: string) => void;
   onToggleFolder: (path: string) => void;
-  onContextMenu?: (e: React.MouseEvent, filename: string) => void;
+  onContextMenu?: (e: React.MouseEvent, target: TreeContextTarget) => void;
   dropTargetPath: string | null;
   dragSourcePath: string | null;
   onDragStartRow: (e: React.DragEvent, path: string) => void;
@@ -339,6 +431,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   node,
   depth,
   selectedFilename,
+  focusedFolderPath,
   expandedFolders,
   sortMode,
   ingestedRawSet,
@@ -359,29 +452,38 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
 
   if (node.type === "file") {
     const isSelected = node.article.filename === selectedFilename;
-    const iconKind = rawFileIconKind(node.article.filename);
-    const dropInto = vaultParentDir(node.article.filename);
-    const isDropHighlight = dropTargetPath !== null && normPath(dropTargetPath) === normPath(dropInto);
-    const isIngested = ingestedRawSet.has(node.article.filename);
+    const isPendingNew = node.article.filename === PENDING_NEW_SENTINEL;
+    const iconKind = isPendingNew ? "markdown" : rawFileIconKind(node.article.filename);
+    const dropInto = isPendingNew ? null : vaultParentDir(node.article.filename);
+    const isDropHighlight =
+      dropInto !== null &&
+      dropTargetPath !== null &&
+      normPath(dropTargetPath) === normPath(dropInto);
+    const isIngested = !isPendingNew && ingestedRawSet.has(node.article.filename);
     return (
       <button
         type="button"
         data-filename={node.article.filename}
-        title={isIngested ? `${node.article.title} — ingested into the wiki` : node.article.title}
-        draggable
-        onDragStart={(e) => onDragStartRow(e, node.article.filename)}
-        onDragEnd={onDragEndRow}
-        onDragOver={(e) => onDragOverTarget(e, dropInto)}
-        onDrop={(e) => onDropOnTarget(e, dropInto)}
-        onClick={() => onSelectArticle(node.article.filename)}
-        onContextMenu={(e) => onContextMenu?.(e, node.article.filename)}
+        title={isPendingNew ? "Untitled — not saved yet" : isIngested ? `${node.article.title} — ingested into the wiki` : node.article.title}
+        draggable={!isPendingNew}
+        onDragStart={isPendingNew ? undefined : (e) => onDragStartRow(e, node.article.filename)}
+        onDragEnd={isPendingNew ? undefined : onDragEndRow}
+        onDragOver={dropInto ? (e) => onDragOverTarget(e, dropInto) : undefined}
+        onDrop={dropInto ? (e) => onDropOnTarget(e, dropInto) : undefined}
+        onClick={isPendingNew ? undefined : () => onSelectArticle(node.article.filename)}
+        onContextMenu={
+          isPendingNew
+            ? undefined
+            : (e) => onContextMenu?.(e, { kind: "file", path: node.article.filename })
+        }
         style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
           // Removed parent `truncate` — it conflicts with flex children
           // and was clipping the trailing "Ingested" pill on long file
           // names. The label span owns truncation now via flex-1 min-w-0.
           "flex items-center gap-1 w-full text-left transition-colors",
-          "focus-visible:outline-none cursor-grab active:cursor-grabbing",
+          "focus-visible:outline-none",
+          isPendingNew ? "cursor-default" : "cursor-grab active:cursor-grabbing",
           isDropHighlight && "bg-primary-bg/40",
           isSelected
             ? "bg-primary-bg text-text-primary"
@@ -403,7 +505,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
         ) : (
           <span className={fileLeadingReserve} aria-hidden />
         )}
-        <span className="flex-1 min-w-0 truncate">{node.name}</span>
+        <span className={cn("flex-1 min-w-0 truncate", isPendingNew && "italic")}>{node.name}</span>
         {isIngested && (
           // Compact dot-style badge. We avoid a wide text pill ("INGESTED")
           // because it competes for horizontal space with long file names
@@ -423,22 +525,29 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
   // Folder node
   const isExpanded = expandedFolders.has(node.path);
   const isDropHighlight = dropTargetPath !== null && normPath(dropTargetPath) === normPath(node.path);
+  const isFocused =
+    focusedFolderPath !== null && normPath(focusedFolderPath) === normPath(node.path);
   return (
     <div>
       <button
         type="button"
+        data-folder-path={node.path}
         draggable
         onDragStart={(e) => onDragStartRow(e, node.path)}
         onDragEnd={onDragEndRow}
         onDragOver={(e) => onDragOverTarget(e, node.path)}
         onDrop={(e) => onDropOnTarget(e, node.path)}
         onClick={() => onToggleFolder(node.path)}
+        onContextMenu={(e) => onContextMenu?.(e, { kind: "folder", path: node.path })}
         style={{ paddingLeft: `${indent}px`, paddingTop: "5px", paddingBottom: "5px", paddingRight: "12px", fontSize: "12.5px" }}
         className={cn(
           "flex items-center gap-0 w-full",
-          "text-text-primary hover:bg-surface-hover transition-colors cursor-grab active:cursor-grabbing",
+          "transition-colors cursor-grab active:cursor-grabbing",
           "focus-visible:outline-none",
-          isDropHighlight && "bg-primary-bg/40"
+          isDropHighlight && "bg-primary-bg/40",
+          isFocused
+            ? "bg-primary-bg text-text-primary"
+            : "text-text-secondary hover:bg-surface-hover hover:text-text-primary",
         )}
       >
         <span className={`${fileLeadingReserve} flex items-center justify-start pointer-events-none`}>
@@ -471,6 +580,7 @@ const TreeNodeRow: React.FC<TreeNodeProps> = ({
               node={child}
               depth={depth + 1}
               selectedFilename={selectedFilename}
+              focusedFolderPath={focusedFolderPath}
               expandedFolders={expandedFolders}
               sortMode={sortMode}
               ingestedRawSet={ingestedRawSet}
@@ -499,6 +609,8 @@ export interface FilesViewProps {
   /** Folders under wiki/ or raw/ that exist on disk but contain no files (shown in tree). */
   emptyFolderPaths?: string[];
   selectedFilename: string | null;
+  /** When composing a new note, show an Untitled placeholder under this folder. */
+  pendingNewFile?: { folder: string } | null;
   loading: boolean;
   error: string | null;
   onSelectArticle: (filename: string) => void;
@@ -509,6 +621,8 @@ export interface FilesViewProps {
   onOpenInNewTab?: (filename: string) => void;
   onToggleBookmark?: (filename: string) => void;
   isBookmarked?: (filename: string) => boolean;
+  /** Called after a file or folder is deleted from the tree context menu. */
+  onEntryDeleted?: (path: string, kind: "file" | "folder") => void;
 }
 
 // ── TabBar (inline) ────────────────────────────────────────────
@@ -590,6 +704,7 @@ export function FilesView({
   articles,
   emptyFolderPaths = [],
   selectedFilename,
+  pendingNewFile = null,
   loading,
   error,
   onSelectArticle,
@@ -599,16 +714,14 @@ export function FilesView({
   onOpenInNewTab,
   onToggleBookmark,
   isBookmarked,
+  onEntryDeleted,
 }: FilesViewProps) {
   const { ingestRawFile } = useNavigation();
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; filename: string } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<
+    ({ x: number; y: number } & TreeContextTarget) | null
+  >(null);
   const [treeDropTarget, setTreeDropTarget] = useState<string | null>(null);
   const [dragSourcePath, setDragSourcePath] = useState<string | null>(null);
-
-  const handleCtx = useCallback((e: React.MouseEvent, filename: string) => {
-    e.preventDefault();
-    setCtxMenu({ x: e.clientX, y: e.clientY, filename });
-  }, []);
 
   // Close context menu on any click
   React.useEffect(() => {
@@ -636,6 +749,13 @@ export function FilesView({
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
   const newFolderInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    kind: "file" | "folder";
+    path: string;
+    label: string;
+  } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   React.useEffect(() => {
     if (!newFolderOpen) return;
     const t = window.setTimeout(() => {
@@ -658,15 +778,40 @@ export function FilesView({
     return () => window.removeEventListener("keydown", onKey);
   }, [newFolderOpen]);
 
+  React.useEffect(() => {
+    if (!deleteConfirm || deleteBusy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDeleteConfirm(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleteConfirm, deleteBusy]);
+
   // Per-tab selection tracking — stores the last selected filename per tab for highlight restoration
   const [tabSelections, setTabSelections] = useState<{
     wiki: string | null;
     raw: string | null;
   }>(() => {
     const init: { wiki: string | null; raw: string | null } = { wiki: null, raw: null };
-    if (selectedFilename) init[classifyFilename(selectedFilename)] = selectedFilename;
+    if (selectedFilename && selectedFilename !== PENDING_NEW_SENTINEL) {
+      init[classifyFilename(selectedFilename)] = selectedFilename;
+    }
     return init;
   });
+
+  /** Last folder row clicked per tab — drives the target folder for "New Markdown". */
+  const [lastFocusedFolder, setLastFocusedFolder] = useState<{
+    wiki: string | null;
+    raw: string | null;
+  }>(() => ({ wiki: "wiki", raw: "raw" }));
+
+  const handleCtx = useCallback((e: React.MouseEvent, target: TreeContextTarget) => {
+    e.preventDefault();
+    if (target.kind === "folder") {
+      setLastFocusedFolder((prev) => ({ ...prev, [activeTab]: target.path }));
+    }
+    setCtxMenu({ x: e.clientX, y: e.clientY, ...target });
+  }, [activeTab]);
 
   // Sync tabSelections when selectedFilename prop changes from outside (wikilink
   // navigation, search, graph). Route the highlight to the tab the file
@@ -676,7 +821,7 @@ export function FilesView({
   const prevSelectedRef = React.useRef(selectedFilename);
   if (prevSelectedRef.current !== selectedFilename) {
     prevSelectedRef.current = selectedFilename;
-    if (selectedFilename !== null && selectedFilename !== "__new__") {
+    if (selectedFilename !== null && selectedFilename !== "__new__" && selectedFilename !== PENDING_NEW_SENTINEL) {
       const targetTab = classifyFilename(selectedFilename);
       setTabSelections((prev) =>
         prev[targetTab] === selectedFilename ? prev : { ...prev, [targetTab]: selectedFilename },
@@ -704,7 +849,13 @@ export function FilesView({
     () => buildTree(rawArticles, sortMode, rawExtraFolders),
     [rawArticles, sortMode, rawExtraFolders],
   );
-  const tree = activeTab === "wiki" ? wikiTree : rawTree;
+  const baseTree = activeTab === "wiki" ? wikiTree : rawTree;
+  const tree = useMemo(() => {
+    if (!pendingNewFile) return baseTree;
+    const pendingTab = classifyFilename(`${pendingNewFile.folder}/_.md`);
+    if (pendingTab !== activeTab) return baseTree;
+    return injectPendingNewFile(baseTree, pendingNewFile.folder, sortMode);
+  }, [activeTab, baseTree, pendingNewFile, sortMode]);
 
   // Which raw/ files have been ingested? Recomputed only when the article
   // list identity changes (vault rescans + watcher events). The function
@@ -891,13 +1042,35 @@ export function FilesView({
     saveExpandedToStorage(vaultPath, "raw", perTabExpanded.raw);
   }, [vaultPath, perTabExpanded]);
 
+  // Auto-expand ancestor folders of the pending new note placeholder.
+  React.useEffect(() => {
+    if (!pendingNewFile) return;
+    const targetTab = classifyFilename(`${pendingNewFile.folder}/_.md`);
+    const ancestors = ancestorFolderPaths(`${pendingNewFile.folder}/Untitled.md`);
+    if (ancestors.length === 0) return;
+    setPerTabExpanded((prev) => {
+      const cur = prev[targetTab];
+      let changed = false;
+      const next = new Set(cur);
+      for (const p of ancestors) {
+        if (!next.has(p)) {
+          next.add(p);
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      return { ...prev, [targetTab]: next };
+    });
+    if (targetTab !== activeTab) setActiveTab(targetTab);
+  }, [pendingNewFile, activeTab]);
+
   // Auto-expand ancestor folders of the selected file so the highlighted
   // row is visible. Runs whenever the external selection changes — covers
   // wikilink navigation, search jumps, graph clicks, and Back/Forward.
   // Only adds to the expanded set (never collapses), so user-collapsed
   // folders elsewhere stay collapsed.
   React.useEffect(() => {
-    if (!selectedFilename || selectedFilename === "__new__") return;
+    if (!selectedFilename || selectedFilename === "__new__" || selectedFilename === PENDING_NEW_SENTINEL) return;
     const targetTab = classifyFilename(selectedFilename);
     const ancestors = ancestorFolderPaths(selectedFilename);
     if (ancestors.length === 0) return;
@@ -921,24 +1094,38 @@ export function FilesView({
   // have to thread refs through TreeNodeRow. Depends on perTabExpanded so
   // the scroll runs again once any newly-expanded ancestor folders mount.
   const treeScrollRef = React.useRef<HTMLDivElement>(null);
+  const scrollTargetFilename =
+    pendingNewFile && classifyFilename(`${pendingNewFile.folder}/_.md`) === activeTab
+      ? PENDING_NEW_SENTINEL
+      : selectedFilename;
   React.useEffect(() => {
-    if (!selectedFilename || selectedFilename === "__new__") return;
-    if (classifyFilename(selectedFilename) !== activeTab) return;
+    if (!scrollTargetFilename || scrollTargetFilename === "__new__") return;
+    if (
+      scrollTargetFilename !== PENDING_NEW_SENTINEL &&
+      classifyFilename(scrollTargetFilename) !== activeTab
+    ) {
+      return;
+    }
     const container = treeScrollRef.current;
     if (!container) return;
     const id = window.requestAnimationFrame(() => {
       const escaped = (window.CSS && typeof CSS.escape === "function")
-        ? CSS.escape(selectedFilename)
-        : selectedFilename.replace(/"/g, '\\"');
+        ? CSS.escape(scrollTargetFilename)
+        : scrollTargetFilename.replace(/"/g, '\\"');
       const row = container.querySelector<HTMLElement>(`[data-filename="${escaped}"]`);
       if (row) row.scrollIntoView({ block: "nearest", inline: "nearest" });
     });
     return () => window.cancelAnimationFrame(id);
-  }, [selectedFilename, activeTab, perTabExpanded]);
+  }, [scrollTargetFilename, activeTab, perTabExpanded, pendingNewFile]);
 
   // When a file is selected, store it in the active tab's selection and forward to parent
   const handleSelectArticle = useCallback(
     (filename: string) => {
+      if (filename === PENDING_NEW_SENTINEL) return;
+      const parentDir = vaultParentDir(filename);
+      if (parentDir) {
+        setLastFocusedFolder((prev) => ({ ...prev, [activeTab]: parentDir }));
+      }
       setTabSelections((prev) => ({ ...prev, [activeTab]: filename }));
       onSelectArticle(filename);
     },
@@ -950,13 +1137,24 @@ export function FilesView({
     setActiveTab(tab);
   }, []);
 
-  // The highlight filename for the tree: use the active tab's stored selection
-  const highlightFilename = tabSelections[activeTab];
+  const pendingHighlight =
+    pendingNewFile && classifyFilename(`${pendingNewFile.folder}/_.md`) === activeTab
+      ? PENDING_NEW_SENTINEL
+      : null;
+
+  // The highlight filename for the tree: pending Untitled placeholder, or the active tab's stored selection
+  const highlightFilename = pendingHighlight ?? tabSelections[activeTab];
+
+  const focusedFolderPath =
+    pendingNewFile && classifyFilename(`${pendingNewFile.folder}/_.md`) === activeTab
+      ? pendingNewFile.folder
+      : lastFocusedFolder[activeTab];
 
   // Active tab's expansion set
   const expandedFolders = perTabExpanded[activeTab];
 
   const toggleFolder = (path: string) => {
+    setLastFocusedFolder((prev) => ({ ...prev, [activeTab]: path }));
     setPerTabExpanded((prev) => {
       const current = prev[activeTab];
       const next = new Set(current);
@@ -1018,6 +1216,44 @@ export function FilesView({
     });
   }, [onRefresh]);
 
+  const handleNewFileInFolder = useCallback(
+    (folderPath: string) => {
+      setLastFocusedFolder((prev) => ({ ...prev, [activeTab]: folderPath }));
+      onNewArticle(folderPath);
+      setCtxMenu(null);
+    },
+    [activeTab, onNewArticle],
+  );
+
+  const openDeleteConfirm = useCallback((target: TreeContextTarget) => {
+    const label = target.path.split("/").pop() ?? target.path;
+    setCtxMenu(null);
+    setDeleteConfirm({ kind: target.kind, path: target.path, label });
+  }, []);
+
+  const cancelDeleteConfirm = useCallback(() => {
+    if (deleteBusy) return;
+    setDeleteConfirm(null);
+  }, [deleteBusy]);
+
+  const confirmDeleteEntry = useCallback(async () => {
+    if (!deleteConfirm || deleteBusy) return;
+    const { kind, path } = deleteConfirm;
+    setDeleteBusy(true);
+    try {
+      await window.api.deleteVaultEntry(path);
+      setDeleteConfirm(null);
+      onEntryDeleted?.(path, kind);
+      if (onRefresh) await Promise.resolve(onRefresh());
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Delete failed");
+      setDeleteConfirm(null);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deleteConfirm, deleteBusy, onEntryDeleted, onRefresh]);
+
   return (
     <div className="flex flex-col h-full min-h-0 min-w-0">
       {/* Tab Bar */}
@@ -1033,9 +1269,13 @@ export function FilesView({
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-3 py-2">
         <ToolbarButton title="New Markdown" onClick={() => {
-          const sel = tabSelections[activeTab];
-          const parentDir = sel ? vaultParentDir(sel) : activeTab;
-          onNewArticle(parentDir || activeTab);
+          const targetFolder = resolveNewArticleFolder(
+            activeTab,
+            lastFocusedFolder[activeTab],
+            tabSelections[activeTab],
+          );
+          setLastFocusedFolder((prev) => ({ ...prev, [activeTab]: targetFolder }));
+          onNewArticle(targetFolder);
         }}>
           <FilePlus size={15} />
         </ToolbarButton>
@@ -1076,7 +1316,7 @@ export function FilesView({
         {error && (
           <p className="px-4 py-6 text-sm text-red-400 pointer-events-none shrink-0">{error}</p>
         )}
-        {!error && !loading && tree.length === 0 && (
+        {!error && !loading && tree.length === 0 && !pendingNewFile && (
           <p className="px-4 py-6 text-sm text-text-secondary pointer-events-none shrink-0">No articles yet — drop files here</p>
         )}
         {!error &&
@@ -1088,6 +1328,7 @@ export function FilesView({
               node={node}
               depth={0}
               selectedFilename={highlightFilename}
+              focusedFolderPath={focusedFolderPath}
               expandedFolders={expandedFolders}
               sortMode={sortMode}
               ingestedRawSet={ingestedRawSet}
@@ -1166,38 +1407,122 @@ export function FilesView({
         </div>
       )}
 
+      {deleteConfirm && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deleteBusy) cancelDeleteConfirm();
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="lumina-delete-title"
+            aria-describedby="lumina-delete-desc"
+            className="w-full max-w-sm rounded-lg border border-border bg-sidebar-bg p-4 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="lumina-delete-title" className="text-sm font-semibold text-text-primary">
+              {deleteConfirm.kind === "file" ? "Delete file" : "Delete folder"}
+            </h2>
+            <p id="lumina-delete-desc" className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+              {deleteConfirm.kind === "file" ? (
+                <>
+                  Delete <span className="font-medium text-text-primary">{deleteConfirm.label}</span>? This
+                  cannot be undone.
+                </>
+              ) : (
+                <>
+                  Delete folder{" "}
+                  <span className="font-medium text-text-primary">{deleteConfirm.label}</span> and everything
+                  inside it? This cannot be undone.
+                </>
+              )}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={cancelDeleteConfirm}
+                className="rounded-md border border-border bg-main-bg px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => void confirmDeleteEntry()}
+                className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+              >
+                {deleteBusy ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {ctxMenu && (
         <div
           className="fixed z-50 bg-sidebar-bg border border-border rounded-lg shadow-xl py-1 w-fit"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          {isRawSource(ctxMenu.filename) && (
-            <button
-              type="button"
-              onClick={() => {
-                ingestRawFile(ctxMenu.filename);
-                setCtxMenu(null);
-              }}
-              className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer"
-            >
-              Ingest
-            </button>
-          )}
-          {onOpenInNewTab && (
-            <button type="button" onClick={() => { onOpenInNewTab(ctxMenu.filename); setCtxMenu(null); }}
-              className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
-              Open in new tab
-            </button>
-          )}
-          <button type="button" onClick={() => { window.api.revealInFinder(ctxMenu.filename); setCtxMenu(null); }}
-            className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
-            Reveal in Finder
-          </button>
-          {onToggleBookmark && (
-            <button type="button" onClick={() => { onToggleBookmark(ctxMenu.filename); setCtxMenu(null); }}
-              className="block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap text-text-secondary hover:bg-surface-hover hover:text-text-primary cursor-pointer">
-              {isBookmarked?.(ctxMenu.filename) ? 'Remove bookmark' : 'Bookmark'}
-            </button>
+          {ctxMenu.kind === "folder" ? (
+            <>
+              <ContextMenuItem
+                label="New file"
+                onClick={() => handleNewFileInFolder(ctxMenu.path)}
+              />
+              <ContextMenuItem
+                label="Reveal in Finder"
+                onClick={() => {
+                  void window.api.revealInFinder(ctxMenu.path);
+                  setCtxMenu(null);
+                }}
+              />
+              {!isProtectedTreeFolder(ctxMenu.path) && (
+                <ContextMenuItem label="Delete" destructive onClick={() => openDeleteConfirm(ctxMenu)} />
+              )}
+            </>
+          ) : (
+            <>
+              {isRawSource(ctxMenu.path) && (
+                <ContextMenuItem
+                  label="Ingest"
+                  onClick={() => {
+                    ingestRawFile(ctxMenu.path);
+                    setCtxMenu(null);
+                  }}
+                />
+              )}
+              {onOpenInNewTab && (
+                <ContextMenuItem
+                  label="Open in new tab"
+                  onClick={() => {
+                    onOpenInNewTab(ctxMenu.path);
+                    setCtxMenu(null);
+                  }}
+                />
+              )}
+              <ContextMenuItem
+                label="Reveal in Finder"
+                onClick={() => {
+                  void window.api.revealInFinder(ctxMenu.path);
+                  setCtxMenu(null);
+                }}
+              />
+              {onToggleBookmark && (
+                <ContextMenuItem
+                  label={isBookmarked?.(ctxMenu.path) ? "Remove bookmark" : "Bookmark"}
+                  onClick={() => {
+                    onToggleBookmark(ctxMenu.path);
+                    setCtxMenu(null);
+                  }}
+                />
+              )}
+              <ContextMenuItem label="Delete" destructive onClick={() => openDeleteConfirm(ctxMenu)} />
+            </>
           )}
         </div>
       )}
@@ -1206,6 +1531,31 @@ export function FilesView({
 }
 
 // ── Toolbar icon button ────────────────────────────────────────
+
+function ContextMenuItem({
+  label,
+  onClick,
+  destructive = false,
+}: {
+  label: string;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "block w-full text-left px-3 py-1.5 text-xs whitespace-nowrap cursor-pointer",
+        destructive
+          ? "text-red-400 hover:bg-surface-hover hover:text-red-300"
+          : "text-text-secondary hover:bg-surface-hover hover:text-text-primary",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
 
 function ToolbarButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
   return (

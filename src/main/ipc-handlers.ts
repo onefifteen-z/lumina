@@ -21,6 +21,8 @@ import { ChatHistoryService } from "./services/chat-history-service";
 import { ConfirmationService } from "./services/confirmation-service";
 import { IngestService } from "./services/ingest-service";
 import { debugLog, getDebugLogBacklog } from "./debug-log";
+import { readClaudeMdTemplate, readIngestMdTemplate } from "./services/template-service";
+import { CLAUDE_MD_CANDIDATES } from "../shared/vault-prompt-files";
 
 // Track whether the renderer has unsaved changes
 let rendererHasUnsavedChanges = false;
@@ -268,6 +270,51 @@ export function registerIpcHandlers(services: {
     },
   );
 
+  /**
+   * Copy the bundled CLAUDE.md template into the vault as `CLAUDE.md`.
+   * Fails if any CLAUDE.md candidate already exists on disk.
+   */
+  ipcMain.handle(
+    "wiki:createVaultClaudeMdFromTemplate",
+    async (): Promise<string> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
+      for (const candidate of CLAUDE_MD_CANDIDATES) {
+        if (await fileSystem.fileExists(candidate)) {
+          throw new Error(`${candidate} already exists in this vault`);
+        }
+      }
+      const template = await readClaudeMdTemplate();
+      if (!template?.trim()) {
+        throw new Error("Bundled CLAUDE.md template is unavailable");
+      }
+      const filename = "CLAUDE.md";
+      await fileSystem.writeRawFile(filename, template);
+      const articles = await fileSystem.scanVault();
+      if (searchIndex) await searchIndex.buildIndex(articles);
+      cachedArticles = articles;
+      return filename;
+    },
+  );
+
+  ipcMain.handle("wiki:getBundledClaudeMdTemplate", async (): Promise<string> => {
+    const template = await readClaudeMdTemplate();
+    if (!template?.trim()) {
+      throw new Error("Bundled CLAUDE.md template is unavailable");
+    }
+    return template;
+  });
+
+  ipcMain.handle("wiki:getBundledIngestMdTemplate", async (): Promise<string> => {
+    const template = await readIngestMdTemplate();
+    if (!template?.trim()) {
+      throw new Error("Bundled INGEST.md template is unavailable");
+    }
+    return template;
+  });
+
   ipcMain.handle(
     "wiki:deleteArticle",
     async (_event, title: string): Promise<void> => {
@@ -279,6 +326,20 @@ export function registerIpcHandlers(services: {
       await fileSystem.deleteArticle(filename);
       searchIndex?.removeDocument(title);
       cachedArticles = cachedArticles.filter((a) => a.title !== title);
+    },
+  );
+
+  ipcMain.handle(
+    "wiki:deleteVaultEntry",
+    async (_event, relativePath: string): Promise<void> => {
+      if (!fileSystem)
+        throw new Error(
+          "No vault is open. Please select a vault folder first.",
+        );
+      await fileSystem.deleteVaultEntry(relativePath);
+      const articles = await fileSystem.scanVault();
+      if (searchIndex) await searchIndex.buildIndex(articles);
+      cachedArticles = articles;
     },
   );
 

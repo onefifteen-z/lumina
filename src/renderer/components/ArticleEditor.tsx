@@ -4,6 +4,7 @@ import { EditorView, keymap } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
 import { basicSetup } from 'codemirror';
 import { useNavigation } from './AppShell';
+import { vaultPromptExistsTitle } from '../../shared/vault-prompt-files';
 import { serializeArticleFile } from '../../shared/markdown-parser';
 import { obsidianSyntaxExtensions } from '../extensions/obsidian-syntax';
 import { wikilinkAutocomplete } from '../extensions/wikilink-autocomplete';
@@ -25,7 +26,7 @@ export interface ArticleEditorProps {
 }
 
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfterSave }) => {
-  const { editingFilename, navigate, generatedContent, clearGeneratedContent, prefilledTitle, clearPrefilledTitle, targetFolder, refreshFileTree } = useNavigation();
+  const { editingFilename, navigate, generatedContent, clearGeneratedContent, prefilledTitle, clearPrefilledTitle, targetFolder, refreshFileTree, pendingVaultPromptDraft, cancelVaultPromptDraft, completeVaultPromptDraft } = useNavigation();
 
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -90,6 +91,30 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
     const editorContent = viewRef.current?.state.doc.toString() ?? '';
     const trimmedTitle = title.trim();
 
+    if (pendingVaultPromptDraft) {
+      setSaveStatus('saving');
+      try {
+        const existsTitle = vaultPromptExistsTitle(pendingVaultPromptDraft);
+        const exists = await window.api.articleExists(existsTitle, undefined);
+        if (exists) {
+          window.alert(`${pendingVaultPromptDraft} already exists in this vault.`);
+          setSaveStatus('error');
+          return;
+        }
+        await window.api.writeRawFile(pendingVaultPromptDraft, editorContent);
+        savedTitleRef.current = existsTitle;
+        savedContentRef.current = editorContent;
+        setIsDirty(false);
+        await completeVaultPromptDraft();
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (err) {
+        console.error(`Failed to save ${pendingVaultPromptDraft}:`, err);
+        setSaveStatus('error');
+      }
+      return;
+    }
+
     if (!trimmedTitle) {
       setSaveStatus('error');
       return;
@@ -147,7 +172,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
       console.error('Failed to save article:', err);
       setSaveStatus('error');
     }
-  }, [title, originalFrontmatter, editingFilename, targetFolder, onAfterSave]);
+  }, [title, originalFrontmatter, editingFilename, targetFolder, onAfterSave, pendingVaultPromptDraft, completeVaultPromptDraft]);
 
   // Keep saveHandlerRef in sync so the keymap closure always calls the latest save
   useEffect(() => {
@@ -421,17 +446,22 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
   }, []);
 
   const handleBack = useCallback(() => {
+    if (pendingVaultPromptDraft) {
+      clearGeneratedContent();
+      cancelVaultPromptDraft();
+      return;
+    }
     if (isDirty) {
       const discard = window.confirm('You have unsaved changes. Discard them and go back?');
       if (!discard) return;
     }
     navigate('browse');
-  }, [navigate, isDirty]);
+  }, [navigate, isDirty, pendingVaultPromptDraft, clearGeneratedContent, cancelVaultPromptDraft]);
 
   const statusLabel =
     saveStatus === 'saving' ? 'Saving…' :
       saveStatus === 'saved' ? 'Saved' :
-        saveStatus === 'error' ? (title.trim() ? 'Error saving' : 'Title is required') :
+        saveStatus === 'error' ? (pendingVaultPromptDraft || title.trim() ? 'Error saving' : 'Title is required') :
           '';
 
   const statusClass =
@@ -453,9 +483,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
             type="button"
             className="article-editor__back-btn"
             onClick={handleBack}
-            aria-label={embedded ? 'Cancel editing and return to preview' : 'Back to articles'}
+            aria-label={pendingVaultPromptDraft ? `Cancel creating ${pendingVaultPromptDraft}` : embedded ? 'Cancel editing and return to preview' : 'Back to articles'}
           >
-            {embedded ? 'Cancel' : '← Back'}
+            {pendingVaultPromptDraft ? 'Cancel' : embedded ? 'Cancel' : '← Back'}
           </button>
         </div>
         <div className="article-editor__toolbar-right">
@@ -480,8 +510,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ embedded = false, onAfter
         </div>
       </div>
 
-      {/* Title input — full-page editor only (inline uses front-matter title from file). */}
-      {!embedded && (
+      {/* Title — hidden for vault CLAUDE.md draft (fixed filename). */}
+      {pendingVaultPromptDraft && (
+        <p className="article-editor__title px-4 pt-2 text-sm font-semibold text-text-primary">{pendingVaultPromptDraft}</p>
+      )}
+      {!embedded && !pendingVaultPromptDraft && (
         <input
           className="article-editor__title"
           type="text"

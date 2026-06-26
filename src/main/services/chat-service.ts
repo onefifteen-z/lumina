@@ -10,6 +10,10 @@ import { context, trace, SpanStatusCode } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
 import { debugLog } from "../debug-log";
 import { readClaudeMdTemplate, readIngestMdTemplate } from "./template-service";
+import {
+  CLAUDE_MD_CANDIDATES,
+  INGEST_MD_CANDIDATES,
+} from "../../shared/vault-prompt-files";
 import { runIngestTool } from "./ingest-tool";
 
 const execAsync = promisify(exec);
@@ -58,8 +62,6 @@ const VAULT_LANGUAGE_PROMPT: Record<VaultLanguage, string> = {
   zh: "Chinese",
 };
 
-// Candidate filenames for the vault-level CLAUDE.md system prompt
-const CLAUDE_MD_CANDIDATES = [".CLAUDE.md", "CLAUDE.md", ".claude.md", "claude.md"];
 
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -1147,20 +1149,14 @@ export class ChatService {
    *   3. Hardcoded `DEFAULT_SYSTEM_PROMPT` — last-resort fallback if even
    *      the bundled template is missing (shouldn't happen in practice).
    *
-   * The bundled INGEST.md is force-appended to (1) and (2) — never to (3).
-   * This is a deliberate product contract: the user owns CLAUDE.md and can
-   * rewrite it freely, but they cannot opt out of the ingest protocol. The
-   * vault owner customising CLAUDE.md still benefits from the latest ingest
-   * protocol shipped with the app version they're running, and shouldn't
-   * have to copy-paste it. We don't append to the trivial default because
-   * that path means everything else broke; muddling it with ingest
-   * instructions would be confusing.
+   * INGEST.md is resolved independently with the same vault-first rule:
+   *   1. Vault-level INGEST.md (any of INGEST_MD_CANDIDATES) — non-empty wins.
+   *   2. Bundled template at `assets/templates/INGEST.md` — when the vault
+   *      has no INGEST.md or the file is empty/whitespace-only.
    *
-   * Note: vault CLAUDE.md content is never trimmed or summarised before
-   * appending INGEST.md — even a one-line vault CLAUDE.md gets the full
-   * ingest protocol concatenated. If you ever want to add an "opt out of
-   * INGEST.md" knob (e.g. a vault config flag), do it as an intentional
-   * change here, not by adding a length/threshold heuristic.
+   * The resolved CLAUDE and INGEST parts are concatenated for (1)/(2) CLAUDE
+   * paths — never for the trivial CLAUDE default (3), because that path means
+   * everything else broke.
    *
    * Read errors other than ENOENT are surfaced as a warning so the renderer
    * can show a banner; the session still proceeds with the next-best prompt.
@@ -1177,7 +1173,9 @@ export class ChatService {
     if (base.kind === "default") {
       return { prompt: this.withVaultLanguagePolicy(base.prompt, language), warning };
     }
-    const ingest = await this.loadIngestTemplateSafe();
+    const ingest = await this.resolveIngestPrompt((w) => {
+      warning = warning ?? w;
+    });
     const promptWithIngest = ingest ? `${base.prompt}\n\n${ingest}` : base.prompt;
     return {
       prompt: this.withVaultLanguagePolicy(promptWithIngest, language),
@@ -1257,7 +1255,34 @@ export class ChatService {
     return { kind: "default", prompt: DEFAULT_SYSTEM_PROMPT };
   }
 
-  /** Load INGEST.md, swallowing any error — it's an enhancement, not a hard requirement. */
+  /**
+   * Pick the INGEST.md prompt (vault override or bundled template).
+   */
+  private async resolveIngestPrompt(
+    reportWarning: (w: string) => void,
+  ): Promise<string | null> {
+    if (this.fileSystem) {
+      for (const candidate of INGEST_MD_CANDIDATES) {
+        try {
+          const content = await this.fileSystem.readRawFile(candidate);
+          if (content && content.trim().length > 0) {
+            return content;
+          }
+        } catch (err: unknown) {
+          const error = err as NodeJS.ErrnoException;
+          if (error.code !== "ENOENT") {
+            reportWarning(
+              `Failed to read ${candidate}: ${error.message ?? "Unknown error"}. Falling back to bundled INGEST.md.`,
+            );
+          }
+        }
+      }
+    }
+
+    return this.loadIngestTemplateSafe();
+  }
+
+  /** Load bundled INGEST.md, swallowing any error. */
   private async loadIngestTemplateSafe(): Promise<string | null> {
     try {
       const tmpl = await this.ingestTemplateLoader();

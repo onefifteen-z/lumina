@@ -10,6 +10,13 @@ import { useDomFindBackend } from '../find/use-dom-find-backend';
 import ArticleLiveEditor from './ArticleLiveEditor';
 import { ArticleFrontmatterFields, cloneFrontmatter } from './ArticleFrontmatterFields';
 import { normalizeSourceRef } from '../lib/ingest-status';
+import { isVaultPromptConfigFilename, vaultPromptDraftFilename, type VaultPromptDraftFilename } from '../../shared/vault-prompt-files';
+
+function isMissingVaultFileError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes("enoent") || msg.includes("no such file");
+}
 
 const markdownToHtml = markdownArticleBodyToHtml;
 
@@ -203,10 +210,12 @@ const InlineArticleLiveBlock: React.FC<{
 
   return (
     <div className="article-browser__inline-live article-live-editor">
-      <div className="article-live-editor__properties" data-article-properties>
-        <h3 className="article-live-editor__properties-title">Properties</h3>
-        <ArticleFrontmatterFields draftFm={fm} onPatch={onPatch} />
-      </div>
+      {!isVaultPromptConfigFilename(filename) && (
+        <div className="article-live-editor__properties" data-article-properties>
+          <h3 className="article-live-editor__properties-title">Properties</h3>
+          <ArticleFrontmatterFields draftFm={fm} onPatch={onPatch} />
+        </div>
+      )}
       <ArticleLiveEditor
         filename={filename}
         article={{ ...article, frontmatter: fm }}
@@ -228,6 +237,9 @@ interface ArticleBrowserProps {
   onNavigate?: (filename: string) => void;
   /** When true, the same tab shows CodeMirror under the metadata instead of a separate editor screen. */
   inlineEditActive?: boolean;
+  /** Open the create dialog for a missing vault prompt file. */
+  onCreateClaudeMd?: () => void;
+  onCreateIngestMd?: () => void;
 }
 
 const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
@@ -235,6 +247,8 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
   onHeadingsChange,
   onNavigate,
   inlineEditActive = false,
+  onCreateClaudeMd,
+  onCreateIngestMd,
 }) => {
   const { editArticle } = useNavigation();
 
@@ -245,6 +259,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
   const [backlinks, setBacklinks] = useState<{ title: string; filename: string }[]>([]);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
+  const [vaultPromptMissing, setVaultPromptMissing] = useState<VaultPromptDraftFilename | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const liveEditorFindRootRef = useRef<HTMLDivElement>(null);
   const [liveFindEpoch, setLiveFindEpoch] = useState(0);
@@ -283,6 +298,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
 
     setArticleLoading(true);
     setArticleError(null);
+    setVaultPromptMissing(null);
     setArticle(null);
     setCurrentFilename(null);
     setRenderedHtml('');
@@ -299,7 +315,14 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
       setBacklinks(links);
       onHeadingsChange?.(headings);
     } catch (err) {
-      setArticleError(err instanceof Error ? err.message : 'Failed to load article');
+      const missingKind = vaultPromptDraftFilename(filename);
+      if (missingKind && isMissingVaultFileError(err)) {
+        setVaultPromptMissing(missingKind);
+        setArticleError(null);
+      } else {
+        setVaultPromptMissing(null);
+        setArticleError(err instanceof Error ? err.message : 'Failed to load article');
+      }
     } finally {
       setArticleLoading(false);
     }
@@ -315,6 +338,7 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
       setRenderedHtml('');
       setBacklinks([]);
       setArticleError(null);
+      setVaultPromptMissing(null);
       onHeadingsChange?.([]);
     }
   }, [selectedFilename, selectArticle]);
@@ -501,7 +525,44 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
         <div className="article-browser__status">Loading article…</div>
       )}
 
-      {selectedFilename && articleError && (
+      {selectedFilename && vaultPromptMissing && !articleLoading && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 py-12 text-center">
+          <div className="max-w-md">
+            <h2 className="text-base font-semibold text-text-primary">
+              {vaultPromptMissing === 'CLAUDE.md'
+                ? 'Using bundled CLAUDE.md'
+                : 'Using bundled INGEST.md'}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+              {vaultPromptMissing === 'CLAUDE.md' ? (
+                <>
+                  This vault has no CLAUDE.md yet. Chat sessions use Lumina&apos;s built-in template.
+                  Create a vault-specific copy if you want to customize wiki structure, workflows, and
+                  lint conventions.
+                </>
+              ) : (
+                <>
+                  This vault has no INGEST.md yet. Ingest workflows use Lumina&apos;s built-in template.
+                  Create a vault-specific copy to customize source extraction and the ingest_source protocol.
+                </>
+              )}
+            </p>
+          </div>
+          {(vaultPromptMissing === 'CLAUDE.md' ? onCreateClaudeMd : onCreateIngestMd) && (
+            <button
+              type="button"
+              onClick={vaultPromptMissing === 'CLAUDE.md' ? onCreateClaudeMd : onCreateIngestMd}
+              className="rounded-md border border-primary-border bg-accent/15 px-4 py-2 text-sm font-medium text-text-primary hover:bg-accent/25 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-border"
+            >
+              {vaultPromptMissing === 'CLAUDE.md'
+                ? 'Create vault CLAUDE.md…'
+                : 'Create vault INGEST.md…'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {selectedFilename && articleError && !vaultPromptMissing && (
         <div className="article-browser__status article-browser__status--error">
           {articleError}
         </div>
@@ -523,8 +584,8 @@ const ArticleBrowser: React.FC<ArticleBrowserProps> = ({
             </h1>
           )}
 
-          {/* Properties panel — read-only preview; inline edit uses the same slot above the editor */}
-          {!inlineEditActive && (
+          {/* Properties panel — omitted for vault CLAUDE.md (raw config, not a wiki page). */}
+          {!inlineEditActive && selectedFilename && !isVaultPromptConfigFilename(selectedFilename) && (
           <div className="mb-6 pb-4 border-b border-border">
             <h2 className="text-sm font-semibold text-text-primary mb-3">Properties</h2>
             <div className="flex flex-col gap-2.5">

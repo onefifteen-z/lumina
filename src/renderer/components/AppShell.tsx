@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from 'react';
 import type { WikiAPI, ArticleMeta } from '../../shared/types';
 import { getConfigFiles } from '../lib/file-classification';
+import type { VaultPromptDraftFilename } from '../../shared/vault-prompt-files';
+import { isClaudeMdFilename } from '../../shared/vault-prompt-files';
 import {
   readStoredPanelWidth,
   writeStoredPanelWidth,
@@ -28,6 +30,7 @@ import { ContentToolbar } from './ContentToolbar';
 import { GraphView } from './GraphView';
 import { VaultSwitcher } from './VaultSwitcher';
 import { VaultInitDialog } from './VaultInitDialog';
+import { VaultPromptCreateDialog } from './VaultPromptCreateDialog';
 import { WelcomeScreen } from './WelcomeScreen';
 import {
   PanelLeftClose,
@@ -87,6 +90,12 @@ export interface NavigationContext {
   prefilledTitle: string | null;
   /** Clear the prefilled title once the editor has consumed it. */
   clearPrefilledTitle: () => void;
+  /** True while composing a new vault CLAUDE.md or INGEST.md — written only on Save. */
+  pendingVaultPromptDraft: VaultPromptDraftFilename | null;
+  /** Abandon a vault prompt draft without writing a file. */
+  cancelVaultPromptDraft: () => void;
+  /** Finalize after a vault prompt draft was saved to disk. */
+  completeVaultPromptDraft: () => void;
   /**
    * Open chat, start a fresh session, and run the ingest workflow for a
    * `raw/` source file (same as typing `/ingest <path>` and sending).
@@ -110,6 +119,9 @@ const NavContext = createContext<NavigationContext>({
   refreshFileTree: () => { },
   prefilledTitle: null,
   clearPrefilledTitle: () => { },
+  pendingVaultPromptDraft: null,
+  cancelVaultPromptDraft: () => { },
+  completeVaultPromptDraft: () => { },
   ingestRawFile: () => { },
   pendingIngestRequest: null,
   clearPendingIngestRequest: () => { },
@@ -185,6 +197,11 @@ const SidebarLayout: React.FC<{
   onNewArticle: (targetFolder?: string) => void;
   onNewFolder: (folderPath: string) => void;
   onRefreshFileTree: () => void | Promise<void>;
+  onVaultEntryDeleted?: (path: string, kind: "file" | "folder") => void;
+  /** Vault-relative folder for an in-progress new note (placeholder in tree). */
+  targetFolder: string | null;
+  /** True while the blank new-article editor is open. */
+  isNewArticle: boolean;
   emptyWikiRawFolders: string[];
   currentTheme: 'light' | 'dark' | 'system';
   onToggleTheme: () => void;
@@ -197,7 +214,10 @@ const SidebarLayout: React.FC<{
   onToggleBookmark: (filename: string) => void;
   hasClaudeMd: boolean;
   vaultReloadKey: number;
+  /** Open confirm dialog — bundled CLAUDE.md is copied only after user confirms. */
   onCreateEmptyClaudeMd: () => void;
+  /** Open confirm dialog — bundled INGEST.md is copied only after user confirms. */
+  onCreateEmptyIngestMd: () => void;
 }> = ({
   activeView,
   onViewChange,
@@ -216,6 +236,9 @@ const SidebarLayout: React.FC<{
   onNewArticle,
   onNewFolder,
   onRefreshFileTree,
+  onVaultEntryDeleted,
+  targetFolder,
+  isNewArticle,
   emptyWikiRawFolders,
   currentTheme,
   onToggleTheme,
@@ -229,6 +252,7 @@ const SidebarLayout: React.FC<{
   hasClaudeMd,
   vaultReloadKey,
   onCreateEmptyClaudeMd,
+  onCreateEmptyIngestMd,
 }) => {
     const { open, setOpen } = useSidebar();
     const { editArticle, navigate, viewArticle } = useNavigation();
@@ -305,6 +329,16 @@ const SidebarLayout: React.FC<{
         return next;
       });
     }, [selectedFilename, onSelectArticle]);
+
+    const handleEntryDeleted = useCallback((path: string, kind: "file" | "folder") => {
+      const prefix = `${path}/`;
+      if (kind === "file") {
+        closeTab(path);
+      } else {
+        setTabs((prev) => prev.filter((t) => t !== path && !t.startsWith(prefix)));
+      }
+      onVaultEntryDeleted?.(path, kind);
+    }, [closeTab, onVaultEntryDeleted]);
 
     // Navigation history is managed by AppShell and passed as props.
 
@@ -531,6 +565,7 @@ const SidebarLayout: React.FC<{
             onSelectConfigFile={viewArticle}
             hasClaudeMd={hasClaudeMd}
             onCreateEmptyClaudeMd={onCreateEmptyClaudeMd}
+            onCreateEmptyIngestMd={onCreateEmptyIngestMd}
           />
 
           {/* Sidebar Panel */}
@@ -544,6 +579,9 @@ const SidebarLayout: React.FC<{
                       articles={articles}
                       emptyFolderPaths={emptyWikiRawFolders}
                       selectedFilename={selectedFilename}
+                      pendingNewFile={
+                        isNewArticle && targetFolder ? { folder: targetFolder } : null
+                      }
                       loading={articlesLoading}
                       error={articlesError}
                       onSelectArticle={(f) =>
@@ -555,6 +593,7 @@ const SidebarLayout: React.FC<{
                       onOpenInNewTab={openInNewTab}
                       onToggleBookmark={onToggleBookmark}
                       isBookmarked={(f) => bookmarks.has(f)}
+                      onEntryDeleted={handleEntryDeleted}
                     />
                   )}
                   {activeView === 'bookmarks' && (
@@ -666,6 +705,8 @@ const SidebarLayout: React.FC<{
                     onHeadingsChange={onHeadingsChange}
                     onNavigate={selectWithHistory}
                     inlineEditActive={inlineEditActive}
+                    onCreateClaudeMd={onCreateEmptyClaudeMd}
+                    onCreateIngestMd={onCreateEmptyIngestMd}
                   />
                 )}
                 {editingFilename !== null && !inlineEditActive && <ArticleEditor />}
@@ -735,9 +776,10 @@ const AppShell: React.FC = () => {
   const [articlesError, setArticlesError] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => new Set());
   const [showVaultInit, setShowVaultInit] = useState(false);
+  const [vaultPromptCreateOpen, setVaultPromptCreateOpen] = useState<VaultPromptDraftFilename | null>(null);
+  const [pendingVaultPromptDraft, setPendingVaultPromptDraft] = useState<VaultPromptDraftFilename | null>(null);
 
-  const CLAUDE_CANDIDATES = ['.CLAUDE.md', 'CLAUDE.md', '.claude.md', 'claude.md'];
-  const hasClaudeMd = articles.some((a) => CLAUDE_CANDIDATES.includes(a.filename));
+  const hasClaudeMd = articles.some((a) => isClaudeMdFilename(a.filename));
 
   const onToggleBookmark = useCallback((filename: string) => {
     setBookmarks((prev) => {
@@ -1052,6 +1094,29 @@ const AppShell: React.FC = () => {
     }
   }, []);
 
+  const handleVaultEntryDeleted = useCallback((path: string, kind: "file" | "folder") => {
+    const prefix = `${path}/`;
+    const touches = (filename: string | null) =>
+      filename !== null && (filename === path || filename.startsWith(prefix));
+
+    if (touches(selectedFilename)) setSelectedFilename(null);
+    if (touches(editingFilename)) setEditingFilename(null);
+
+    setBookmarks((prev) => {
+      const matches =
+        kind === "file"
+          ? (f: string) => f === path
+          : (f: string) => f === path || f.startsWith(prefix);
+      if (![...prev].some(matches)) return prev;
+      const next = new Set([...prev].filter((f) => !matches(f)));
+      const rollback = new Set(prev);
+      void window.api.setBookmarks([...next]).catch(() => {
+        setBookmarks(rollback);
+      });
+      return next;
+    });
+  }, [selectedFilename, editingFilename]);
+
   const prevSidebarViewRef = useRef<SidebarView>(activeView);
 
   // When leaving settings/chat/search/etc. for Files or Graph, rescan the vault
@@ -1161,38 +1226,60 @@ const AppShell: React.FC = () => {
   const clearPrefilledTitle = useCallback(() => setPrefilledTitle(null), []);
 
   /**
-   * Create an empty CLAUDE.md in the vault root and immediately open it for
-   * editing. The bundled CLAUDE.md template is intentionally NOT exposed to
-   * the user — it's a runtime system prompt fallback only. The file the user
-   * owns starts empty so they can write whatever conventions they want; the
-   * bundled template fills in behind the scenes for chat sessions until the
-   * user puts content in their own CLAUDE.md.
+   * Ask whether to copy the bundled CLAUDE.md template into the vault.
+   * The file is only created after the user confirms in the dialog.
    */
-  const handleCreateEmptyClaudeMd = useCallback(async () => {
-    try {
-      await window.api.writeRawFile('CLAUDE.md', '');
-    } catch (err) {
-      console.error('Failed to create empty CLAUDE.md:', err);
-      return;
-    }
-    const [list, emptyDirs] = await Promise.all([
-      window.api.listArticles(),
-      window.api.listEmptyWikiRawFolders(),
-    ]);
-    setArticles(list);
-    setEmptyWikiRawFolders(emptyDirs);
-    const claudeFile = list.find((a) => a.filename.toLowerCase() === 'claude.md');
-    if (claudeFile) {
-      setSelectedFilename(claudeFile.filename);
-      setEditingFilename(claudeFile.filename);
-    }
+  const requestCreateClaudeMd = useCallback(() => {
+    setVaultPromptCreateOpen('CLAUDE.md');
   }, []);
+
+  const requestCreateIngestMd = useCallback(() => {
+    setVaultPromptCreateOpen('INGEST.md');
+  }, []);
+
+  const confirmCreateVaultPrompt = useCallback(async () => {
+    const kind = vaultPromptCreateOpen;
+    if (!kind) return;
+    try {
+      const template =
+        kind === 'CLAUDE.md'
+          ? await window.api.getBundledClaudeMdTemplate()
+          : await window.api.getBundledIngestMdTemplate();
+      setVaultPromptCreateOpen(null);
+      setPendingVaultPromptDraft(kind);
+      setGeneratedContent(template);
+      setEditingFilename('');
+      setSelectedFilename(null);
+      setActiveView('files');
+    } catch (err) {
+      console.error(`Failed to load ${kind} template:`, err);
+      window.alert(err instanceof Error ? err.message : `Failed to load ${kind} template`);
+      setVaultPromptCreateOpen(null);
+    }
+  }, [vaultPromptCreateOpen]);
+
+  const cancelVaultPromptDraft = useCallback(() => {
+    const kind = pendingVaultPromptDraft;
+    setPendingVaultPromptDraft(null);
+    setGeneratedContent(null);
+    setEditingFilename(null);
+    if (kind) setSelectedFilename(kind);
+  }, [pendingVaultPromptDraft]);
+
+  const completeVaultPromptDraft = useCallback(async () => {
+    const kind = pendingVaultPromptDraft;
+    setPendingVaultPromptDraft(null);
+    setGeneratedContent(null);
+    setEditingFilename(null);
+    if (kind) setSelectedFilename(kind);
+    await refreshFileTree();
+  }, [pendingVaultPromptDraft, refreshFileTree]);
 
   const handleVaultInit = useCallback(async () => {
     // Scaffold only the folder structure. CLAUDE.md / INGEST.md are
     // intentionally NOT created here — the bundled templates fill in as the
     // runtime system prompt, and the user can create their own CLAUDE.md
-    // later to override it (see handleCreateEmptyClaudeMd).
+    // later to override it (see requestCreateClaudeMd).
     await window.api.createFolder('raw');
     await window.api.createFolder('wiki');
     // Write the `.lumina-vault` marker last, so its presence reliably means
@@ -1241,6 +1328,9 @@ const AppShell: React.FC = () => {
     refreshFileTree,
     prefilledTitle,
     clearPrefilledTitle,
+    pendingVaultPromptDraft,
+    cancelVaultPromptDraft,
+    completeVaultPromptDraft,
     ingestRawFile,
     pendingIngestRequest,
     clearPendingIngestRequest,
@@ -1279,6 +1369,9 @@ const AppShell: React.FC = () => {
               onNewArticle={createNewArticle}
               onNewFolder={createNewFolder}
               onRefreshFileTree={refreshFileTree}
+              onVaultEntryDeleted={handleVaultEntryDeleted}
+              targetFolder={targetFolder}
+              isNewArticle={editingFilename === ''}
               emptyWikiRawFolders={emptyWikiRawFolders}
               currentTheme={theme}
               onToggleTheme={handleToggleTheme}
@@ -1297,7 +1390,8 @@ const AppShell: React.FC = () => {
               onToggleBookmark={onToggleBookmark}
               hasClaudeMd={hasClaudeMd}
               vaultReloadKey={vaultReloadKey}
-              onCreateEmptyClaudeMd={handleCreateEmptyClaudeMd}
+              onCreateEmptyClaudeMd={requestCreateClaudeMd}
+              onCreateEmptyIngestMd={requestCreateIngestMd}
             />
           </SidebarProvider>
         </TooltipProvider>
@@ -1322,6 +1416,15 @@ const AppShell: React.FC = () => {
           onConfirm={handleVaultInit}
           onCancel={() => { setShowVaultInit(false); setActiveView('files'); }}
         />
+
+        {vaultPromptCreateOpen && (
+          <VaultPromptCreateDialog
+            kind={vaultPromptCreateOpen}
+            open
+            onConfirm={confirmCreateVaultPrompt}
+            onCancel={() => setVaultPromptCreateOpen(null)}
+          />
+        )}
 
         {/* Debug log overlay (⌘⇧D) */}
         <DebugLogPanel

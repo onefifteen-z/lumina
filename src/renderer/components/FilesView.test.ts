@@ -4,8 +4,11 @@ import { classifyFilename, filterArticlesForTab } from "../lib/file-classificati
 import {
   ancestorFolderPaths,
   expandedStorageKey,
+  injectPendingNewFile,
   loadExpandedFromStorage,
+  PENDING_NEW_SENTINEL,
   rawFileIconKind,
+  resolveNewArticleFolder,
   saveExpandedToStorage,
   sortNodes,
 } from "./FilesView";
@@ -302,5 +305,68 @@ describe("raw file icon mapping", () => {
   it("maps image extensions to image icon kind", () => {
     expect(rawFileIconKind("raw/pic.png")).toBe("image");
     expect(rawFileIconKind("raw/photo.JPEG")).toBe("image");
+  });
+});
+
+describe("resolveNewArticleFolder", () => {
+  it("prefers the last focused folder over the selected file parent", () => {
+    expect(
+      resolveNewArticleFolder("raw", "raw/inbox", "raw/other/note.md"),
+    ).toBe("raw/inbox");
+  });
+
+  it("falls back to the selected file parent when no folder was focused", () => {
+    expect(resolveNewArticleFolder("wiki", null, "wiki/notes/a.md")).toBe("wiki/notes");
+  });
+
+  it("falls back to the active tab root when nothing is selected", () => {
+    expect(resolveNewArticleFolder("raw", null, null)).toBe("raw");
+  });
+});
+
+describe("injectPendingNewFile", () => {
+  it("adds an Untitled placeholder under the target folder", () => {
+    const tree = [
+      {
+        type: "folder" as const,
+        name: "raw",
+        path: "raw",
+        children: [
+          {
+            type: "folder" as const,
+            name: "inbox",
+            path: "raw/inbox",
+            children: [],
+          },
+        ],
+      },
+    ];
+    const next = injectPendingNewFile(tree, "raw/inbox", "alpha");
+    const raw = next[0];
+    expect(raw?.type).toBe("folder");
+    if (raw?.type !== "folder") return;
+    const inbox = raw.children.find((n) => n.type === "folder" && n.name === "inbox");
+    expect(inbox?.type).toBe("folder");
+    if (inbox?.type !== "folder") return;
+    const pending = inbox.children.find((n) => n.type === "file");
+    expect(pending?.type).toBe("file");
+    if (pending?.type !== "file") return;
+    expect(pending.name).toBe("Untitled");
+    expect(pending.article.filename).toBe(PENDING_NEW_SENTINEL);
+  });
+
+  it("creates missing folder segments for an empty tree", () => {
+    const next = injectPendingNewFile([], "wiki/drafts", "alpha");
+    expect(next.some((n) => n.type === "folder" && n.name === "wiki")).toBe(true);
+    const wiki = next.find((n) => n.type === "folder" && n.name === "wiki");
+    if (wiki?.type !== "folder") return;
+    const drafts = wiki.children.find((n) => n.type === "folder" && n.name === "drafts");
+    expect(drafts?.type).toBe("folder");
+    if (drafts?.type !== "folder") return;
+    expect(
+      drafts.children.some(
+        (n) => n.type === "file" && n.article.filename === PENDING_NEW_SENTINEL,
+      ),
+    ).toBe(true);
   });
 });

@@ -47,10 +47,8 @@ export function readClaudeMdTemplate(): Promise<string | null> {
 /**
  * Convenience: read the bundled INGEST.md template.
  *
- * INGEST.md is the protocol the model follows when CLAUDE.md tells it to
- * ingest a source. We always concatenate it onto the CLAUDE.md system
- * prompt so the model has both the wiki workflow ("what to do") and the
- * extraction protocol ("how to get content out") in one place.
+ * Used when the vault has no non-empty INGEST.md. The resolved ingest
+ * protocol is concatenated onto the CLAUDE.md system prompt.
  */
 export function readIngestMdTemplate(): Promise<string | null> {
   return readTemplate("INGEST.md");

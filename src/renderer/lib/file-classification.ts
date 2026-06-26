@@ -1,4 +1,5 @@
 import type { ArticleMeta } from "../../shared/types";
+import { isClaudeMdFilename, isIngestMdFilename } from "../../shared/vault-prompt-files";
 
 export type FileCategory = "wiki" | "raw";
 
@@ -51,11 +52,16 @@ export function filterArticlesForTab(
 }
 
 /**
- * Extract only CLAUDE.md from the article list for the config menu.
+ * Extract vault CLAUDE.md and INGEST.md entries for the config menu / icon rail.
  */
 export function getConfigFiles(articles: ArticleMeta[]): ArticleMeta[] {
-  return articles.filter((article) => {
-    const basename = article.filename.split("/").pop() ?? article.filename;
-    return basename.toUpperCase() === "CLAUDE.MD";
-  });
+  return articles
+    .filter(
+      (article) =>
+        isClaudeMdFilename(article.filename) || isIngestMdFilename(article.filename),
+    )
+    .sort((a, b) => {
+      const rank = (filename: string) => (isClaudeMdFilename(filename) ? 0 : 1);
+      return rank(a.filename) - rank(b.filename) || a.filename.localeCompare(b.filename);
+    });
 }

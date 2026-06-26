@@ -38,8 +38,23 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:writeRawFile", filename, content);
   },
 
+  createVaultClaudeMdFromTemplate() {
+    return ipcRenderer.invoke("wiki:createVaultClaudeMdFromTemplate");
+  },
+
+  getBundledClaudeMdTemplate() {
+    return ipcRenderer.invoke("wiki:getBundledClaudeMdTemplate");
+  },
+
+  getBundledIngestMdTemplate() {
+    return ipcRenderer.invoke("wiki:getBundledIngestMdTemplate");
+  },
+
   deleteArticle(title: string) {
     return ipcRenderer.invoke("wiki:deleteArticle", title);
+  },
+  deleteVaultEntry(relativePath: string) {
+    return ipcRenderer.invoke("wiki:deleteVaultEntry", relativePath);
   },
 
   articleExists(title: string, targetFolder?: string) {

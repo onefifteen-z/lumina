@@ -314,7 +314,18 @@ export interface WikiAPI {
    * exactly the content provided (e.g. an empty CLAUDE.md slot).
    */
   writeRawFile(filename: string, content: string): Promise<void>;
+  /**
+   * Copy bundled CLAUDE.md into the vault (fails if one already exists).
+   * Prefer the draft flow ({@link getBundledClaudeMdTemplate} + save) for UI.
+   */
+  createVaultClaudeMdFromTemplate(): Promise<string>;
+  /** Read the bundled CLAUDE.md template (for in-editor draft before first save). */
+  getBundledClaudeMdTemplate(): Promise<string>;
+  /** Read the bundled INGEST.md template (for in-editor draft before first save). */
+  getBundledIngestMdTemplate(): Promise<string>;
   deleteArticle(title: string): Promise<void>;
+  /** Delete a vault file or folder by vault-relative path. */
+  deleteVaultEntry(relativePath: string): Promise<void>;
   articleExists(title: string, targetFolder?: string): Promise<boolean>;
   createFolder(relativePath: string): Promise<void>;
   /** Paths like `wiki/inbox` that exist on disk but contain no indexed files. */

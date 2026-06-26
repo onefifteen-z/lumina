@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Files, Search, Bookmark, MessageSquare, Settings, Sun, Moon, Network, FileCode } from "lucide-react";
+import { Files, Search, Bookmark, MessageSquare, Settings, Sun, Moon, Network, FileCode, FileInput } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -8,6 +8,7 @@ import {
 import { cn } from "../lib/utils";
 
 import type { ArticleMeta } from "../../shared/types";
+import { isClaudeMdFilename, isIngestMdFilename } from "../../shared/vault-prompt-files";
 
 export type SidebarView = "files" | "search" | "bookmarks" | "chat" | "graph" | "settings";
 
@@ -20,12 +21,10 @@ export interface IconRailProps {
   configFiles?: ArticleMeta[];
   onSelectConfigFile?: (filename: string) => void;
   hasClaudeMd?: boolean;
-  /**
-   * Invoked when the user clicks the CLAUDE.md slot but no CLAUDE.md file
-   * exists yet in the vault. The host should create an empty CLAUDE.md in
-   * the vault and open it in the editor for the user to fill in.
-   */
+  /** Open the confirm dialog to create vault CLAUDE.md from the bundled template. */
   onCreateEmptyClaudeMd?: () => void;
+  /** Open the confirm dialog to create vault INGEST.md from the bundled template. */
+  onCreateEmptyIngestMd?: () => void;
 }
 
 
@@ -43,13 +42,30 @@ const bottomItems: { view: SidebarView; icon: React.ElementType; label: string }
 
 const allItems = [...topItems, ...bottomItems];
 
-export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme, onToggleTheme, configFiles, onSelectConfigFile, hasClaudeMd = true, onCreateEmptyClaudeMd }: IconRailProps) {
+type PromptSlotKind = "claude" | "ingest";
+
+function findPromptFile(configFiles: ArticleMeta[] | undefined, kind: PromptSlotKind): ArticleMeta | undefined {
+  return configFiles?.find((file) =>
+    kind === "claude" ? isClaudeMdFilename(file.filename) : isIngestMdFilename(file.filename),
+  );
+}
+
+export function IconRail({
+  activeView,
+  onViewChange,
+  isSidebarOpen,
+  currentTheme,
+  onToggleTheme,
+  configFiles,
+  onSelectConfigFile,
+  hasClaudeMd = true,
+  onCreateEmptyClaudeMd,
+  onCreateEmptyIngestMd,
+}: IconRailProps) {
   const visibleTopItems = hasClaudeMd ? topItems : topItems.filter((i) => i.view !== "chat");
-  // The CLAUDE.md slot is always visible. When the vault has no CLAUDE.md we
-  // surface a muted appearance so the user can tell the file doesn't exist
-  // yet, but the button is still actionable: clicking it creates an empty
-  // CLAUDE.md and opens it for editing.
-  const claudeFile = configFiles?.[0];
+  const claudeFile = findPromptFile(configFiles, "claude");
+  const ingestFile = findPromptFile(configFiles, "ingest");
+
   const claudeButtonVisible = Boolean(
     (claudeFile && onSelectConfigFile) || onCreateEmptyClaudeMd,
   );
@@ -61,6 +77,19 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
       onCreateEmptyClaudeMd?.();
     }
   };
+
+  const ingestButtonVisible = Boolean(
+    (ingestFile && onSelectConfigFile) || onCreateEmptyIngestMd,
+  );
+  const ingestButtonEnabled = Boolean(ingestFile || onCreateEmptyIngestMd);
+  const handleIngestClick = (): void => {
+    if (ingestFile && onSelectConfigFile) {
+      onSelectConfigFile(ingestFile.filename);
+    } else {
+      onCreateEmptyIngestMd?.();
+    }
+  };
+
   const allVisibleItems = [...visibleTopItems, ...bottomItems];
   const buttonRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -128,7 +157,7 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
         {visibleTopItems.map((item, i) => renderButton(item, i))}
       </div>
 
-      {/* Config button + Settings pushed to bottom */}
+      {/* Config buttons + Settings pushed to bottom */}
       <div className="flex flex-col items-center gap-1 mt-auto" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {claudeButtonVisible && (
           <Tooltip>
@@ -143,9 +172,6 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
                   claudeButtonEnabled
                     ? "cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary"
                     : "cursor-not-allowed text-text-tertiary opacity-50",
-                  // Muted state when CLAUDE.md doesn't exist yet — keeps the
-                  // slot visually distinct from "open existing file" without
-                  // hiding the affordance.
                   !claudeFile && claudeButtonEnabled && "text-text-tertiary hover:text-text-secondary"
                 )}
               >
@@ -153,7 +179,31 @@ export function IconRail({ activeView, onViewChange, isSidebarOpen, currentTheme
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              {claudeFile ? "CLAUDE.md" : "CLAUDE.md (not in vault — click to create)"}
+              {claudeFile ? "CLAUDE.md" : "CLAUDE.md (using bundled template — click to create)"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {ingestButtonVisible && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={ingestFile ? "Open INGEST.md" : "Create INGEST.md"}
+                disabled={!ingestButtonEnabled}
+                onClick={handleIngestClick}
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-primary-border focus-visible:outline-none",
+                  ingestButtonEnabled
+                    ? "cursor-pointer text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                    : "cursor-not-allowed text-text-tertiary opacity-50",
+                  !ingestFile && ingestButtonEnabled && "text-text-tertiary hover:text-text-secondary"
+                )}
+              >
+                <FileInput size={18} aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {ingestFile ? "INGEST.md" : "INGEST.md (using bundled template — click to create)"}
             </TooltipContent>
           </Tooltip>
         )}

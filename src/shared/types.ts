@@ -164,6 +164,8 @@ export interface AppConfig {
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
+  /** App version the user last acknowledged via the changelog popup. */
+  lastSeenVersion: string;
 }
 
 /** Parameters for LLM content assistance actions. */
@@ -361,6 +363,7 @@ export interface WikiAPI {
   // Config
   getConfig(): Promise<AppConfig>;
   saveConfig(config: Partial<AppConfig>): Promise<void>;
+  getAppVersion(): Promise<string>;
   getVaultConfig(): Promise<VaultConfig>;
   saveVaultConfig(config: Partial<VaultConfig>): Promise<void>;
   getApiKey(): Promise<string>;

@@ -228,6 +228,10 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:getConfig");
   },
 
+  getAppVersion() {
+    return ipcRenderer.invoke("wiki:getAppVersion");
+  },
+
   saveConfig(config: Partial<AppConfig>) {
     return ipcRenderer.invoke("wiki:saveConfig", config);
   },

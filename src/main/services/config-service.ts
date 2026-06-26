@@ -18,6 +18,7 @@ interface StoreSchema {
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
+  lastSeenVersion: string;
 }
 
 export class ConfigService {
@@ -37,6 +38,7 @@ export class ConfigService {
         theme: "system",
         chatHistorySidebarOpen: false,
         lastChatSessionId: "",
+        lastSeenVersion: "",
       },
     });
 
@@ -54,6 +56,7 @@ export class ConfigService {
       theme: this.store.get("theme"),
       chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
       lastChatSessionId: this.store.get("lastChatSessionId"),
+      lastSeenVersion: this.store.get("lastSeenVersion") ?? "",
     };
   }
 
@@ -82,6 +85,9 @@ export class ConfigService {
     }
     if (partial.lastChatSessionId !== undefined) {
       this.store.set("lastChatSessionId", partial.lastChatSessionId);
+    }
+    if (partial.lastSeenVersion !== undefined) {
+      this.store.set("lastSeenVersion", partial.lastSeenVersion);
     }
   }
 

@@ -18,7 +18,7 @@
   "themeAriaDark": "Dark background on. Activate to use a light background.",
   "themeTitleLight": "Switch to dark theme",
   "themeTitleDark": "Switch to light theme",
-  "heroEyebrow": "LLM Wiki · desktop app · v0.8.6",
+  "heroEyebrow": "LLM Wiki · desktop app · v0.8.7",
   "heroH1Html": "Think wiki.<br />Ask your <span class=\"hero__accent\">LLM</span>.",
   "heroLeadHtml": "Your personal <strong>LLM wiki vault</strong> for the team: Markdown, graph, search, and chat in one place. Keep files in Box, SharePoint, or Git for sharing and version history.",
   "heroDownloadBtn": "Download Lumina",

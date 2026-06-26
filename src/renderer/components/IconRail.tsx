@@ -20,7 +20,6 @@ export interface IconRailProps {
   onToggleTheme: () => void;
   configFiles?: ArticleMeta[];
   onSelectConfigFile?: (filename: string) => void;
-  hasClaudeMd?: boolean;
   /** Open the confirm dialog to create vault CLAUDE.md from the bundled template. */
   onCreateEmptyClaudeMd?: () => void;
   /** Open the confirm dialog to create vault INGEST.md from the bundled template. */
@@ -58,11 +57,9 @@ export function IconRail({
   onToggleTheme,
   configFiles,
   onSelectConfigFile,
-  hasClaudeMd = true,
   onCreateEmptyClaudeMd,
   onCreateEmptyIngestMd,
 }: IconRailProps) {
-  const visibleTopItems = hasClaudeMd ? topItems : topItems.filter((i) => i.view !== "chat");
   const claudeFile = findPromptFile(configFiles, "claude");
   const ingestFile = findPromptFile(configFiles, "ingest");
 
@@ -90,7 +87,7 @@ export function IconRail({
     }
   };
 
-  const allVisibleItems = [...visibleTopItems, ...bottomItems];
+  const allVisibleItems = [...topItems, ...bottomItems];
   const buttonRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
   const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
@@ -154,7 +151,7 @@ export function IconRail({
     >
       {/* Top group */}
       <div className="flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        {visibleTopItems.map((item, i) => renderButton(item, i))}
+        {topItems.map((item, i) => renderButton(item, i))}
       </div>
 
       {/* Config buttons + Settings pushed to bottom */}
@@ -208,7 +205,7 @@ export function IconRail({
           </Tooltip>
         )}
         {bottomItems.map((item, i) =>
-          renderButton(item, visibleTopItems.length + i)
+          renderButton(item, topItems.length + i)
         )}
       </div>
 

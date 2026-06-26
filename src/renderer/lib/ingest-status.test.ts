@@ -3,6 +3,7 @@ import type { ArticleMeta } from "../../shared/types";
 import {
   normalizeSourceRef,
   computeIngestedRawFiles,
+  collectNonIngestedRawFilesInFolder,
   ingestStem,
 } from "./ingest-status";
 
@@ -364,5 +365,79 @@ describe("ingestStem", () => {
     expect(nfc).not.toBe(nfd);
     expect(ingestStem(nfd)).toBe(ingestStem(nfc));
     expect(ingestStem(nfd)).toBe("沖プラ定例");
+  });
+});
+
+describe("collectNonIngestedRawFilesInFolder", () => {
+  const articles: ArticleMeta[] = [
+    {
+      title: "a",
+      filename: "raw/inbox/a.pdf",
+      tags: [],
+      created: "",
+      modified: "",
+      wikilinks: [],
+      excerpt: "",
+    },
+    {
+      title: "b",
+      filename: "raw/inbox/nested/b.md",
+      tags: [],
+      created: "",
+      modified: "",
+      wikilinks: [],
+      excerpt: "",
+    },
+    {
+      title: "c",
+      filename: "raw/other/c.pdf",
+      tags: [],
+      created: "",
+      modified: "",
+      wikilinks: [],
+      excerpt: "",
+    },
+    {
+      title: "done",
+      filename: "raw/inbox/done.pdf",
+      tags: [],
+      created: "",
+      modified: "",
+      wikilinks: [],
+      excerpt: "",
+    },
+    {
+      title: "Done summary",
+      filename: "wiki/sources/done.md",
+      tags: [],
+      created: "",
+      modified: "",
+      wikilinks: [],
+      excerpt: "",
+      sources: ["raw/inbox/done.pdf"],
+    },
+  ];
+
+  it("returns non-ingested raw files under a folder recursively", () => {
+    const ingested = computeIngestedRawFiles(articles);
+    expect(collectNonIngestedRawFilesInFolder("raw/inbox", articles, ingested)).toEqual([
+      "raw/inbox/a.pdf",
+      "raw/inbox/nested/b.md",
+    ]);
+  });
+
+  it("includes all raw files when the folder is raw/", () => {
+    const ingested = computeIngestedRawFiles(articles);
+    expect(collectNonIngestedRawFilesInFolder("raw", articles, ingested)).toEqual([
+      "raw/inbox/a.pdf",
+      "raw/inbox/nested/b.md",
+      "raw/other/c.pdf",
+    ]);
+  });
+
+  it("returns [] for wiki folders", () => {
+    expect(
+      collectNonIngestedRawFilesInFolder("wiki/inbox", articles, new Set()),
+    ).toEqual([]);
   });
 });

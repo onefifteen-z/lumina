@@ -724,7 +724,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   const [confirmationQueue, setConfirmationQueue] = useState<ConfirmationRequest[]>([]);
 
   const { isOffline } = useNetworkStatus();
-  const { viewArticle, pendingIngestRequest, clearPendingIngestRequest } = useNavigation();
+  const { viewArticle, pendingIngestRequest, clearPendingIngestRequest, advanceIngestQueue, clearIngestQueue } = useNavigation();
   const sessionRef = useRef<ChatSession | null>(null);
   const streamBuf = useRef('');
 
@@ -752,6 +752,11 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   // subsequent chunks are coalesced via rAF.
   const firstTextFlushed = useRef(false);
   const firstThinkingFlushed = useRef(false);
+
+  const advanceIngestQueueRef = useRef(advanceIngestQueue);
+  const clearIngestQueueRef = useRef(clearIngestQueue);
+  useEffect(() => { advanceIngestQueueRef.current = advanceIngestQueue; }, [advanceIngestQueue]);
+  useEffect(() => { clearIngestQueueRef.current = clearIngestQueue; }, [clearIngestQueue]);
 
   const flushNow = useCallback(() => {
     if (rafHandle.current !== null) {
@@ -1101,6 +1106,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
       setIsGenerating(false);
 
       if (err) {
+        clearIngestQueueRef.current();
         let errorType = 'unknown';
         let errorMessage = err;
         const colonIdx = err.indexOf(':');
@@ -1146,6 +1152,10 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
         if (streamBuf.current) {
           setMessages((prev) => [...prev, assistantMsg]);
         }
+      }
+
+      if (!err) {
+        advanceIngestQueueRef.current();
       }
 
       setStreamingContent('');
@@ -1213,6 +1223,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   );
 
   const handleNewSession = useCallback(async () => {
+    clearIngestQueue();
     if (isGenerating) {
       await window.api.stopChatGeneration();
       setIsGenerating(false);
@@ -1230,7 +1241,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     setError(null);
     setShowWelcome(true);
     await initSession();
-  }, [isGenerating, initSession]);
+  }, [isGenerating, initSession, clearIngestQueue]);
 
   const loadSession = useCallback(async (sessionId: string) => {
     // Critical: sync the *main-process* chat session too. Without this, the
@@ -1367,12 +1378,13 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
   }, [pendingIngestNonce]);
 
   const handleStop = useCallback(async () => {
+    clearIngestQueue();
     try {
       await window.api.stopChatGeneration();
     } catch {
       // ignore
     }
-  }, []);
+  }, [clearIngestQueue]);
 
   const handleRetry = useCallback(async () => {
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');

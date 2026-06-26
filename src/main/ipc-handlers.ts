@@ -1,5 +1,4 @@
-import { ipcMain, BrowserWindow } from "electron";
-import { shell } from "electron";
+import { ipcMain, BrowserWindow, app, shell } from "electron";
 import type {
   ArticleFile,
   ArticleMeta,
@@ -800,6 +799,10 @@ export function registerIpcHandlers(services: {
 
   ipcMain.handle("wiki:getConfig", async (): Promise<AppConfig> => {
     return config.getConfig();
+  });
+
+  ipcMain.handle("wiki:getAppVersion", async (): Promise<string> => {
+    return app.getVersion();
   });
 
   ipcMain.handle("wiki:getVaultConfig", async () => {

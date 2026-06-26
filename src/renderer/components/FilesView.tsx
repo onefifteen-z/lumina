@@ -4,9 +4,9 @@ import { FilePlus, FolderPlus, ArrowDownAZ, ArrowDownWideNarrow, ChevronRight, C
 import type { ArticleMeta } from "../../shared/types";
 import { cn } from "../lib/utils";
 import { classifyFilename, filterArticlesForTab, type FileCategory } from "../lib/file-classification";
-import { computeIngestedRawFiles } from "../lib/ingest-status";
+import { computeIngestedRawFiles, collectNonIngestedRawFilesInFolder } from "../lib/ingest-status";
 import { useNavigation } from "./AppShell";
-import { isRawSource } from "./chat/ChatInput";
+import { isRawFolderPath, isRawSource } from "./chat/ChatInput";
 
 /** Custom data type for drags that start inside the file tree. */
 const LUMINA_DRAG_PATH = "application/x-lumina-vault-path";
@@ -716,7 +716,7 @@ export function FilesView({
   isBookmarked,
   onEntryDeleted,
 }: FilesViewProps) {
-  const { ingestRawFile } = useNavigation();
+  const { ingestRawFile, ingestRawFiles } = useNavigation();
   const [ctxMenu, setCtxMenu] = useState<
     ({ x: number; y: number } & TreeContextTarget) | null
   >(null);
@@ -1474,6 +1474,23 @@ export function FilesView({
                 label="New file"
                 onClick={() => handleNewFileInFolder(ctxMenu.path)}
               />
+              {isRawFolderPath(ctxMenu.path) && (() => {
+                const pending = collectNonIngestedRawFilesInFolder(
+                  ctxMenu.path,
+                  articles,
+                  ingestedRawSet,
+                );
+                if (pending.length === 0) return null;
+                return (
+                  <ContextMenuItem
+                    label={`Ingest uningested files (${pending.length})`}
+                    onClick={() => {
+                      ingestRawFiles(pending);
+                      setCtxMenu(null);
+                    }}
+                  />
+                );
+              })()}
               <ContextMenuItem
                 label="Reveal in Finder"
                 onClick={() => {

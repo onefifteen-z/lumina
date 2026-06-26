@@ -171,3 +171,31 @@ function isWikiArticle(article: ArticleMeta): boolean {
 function isRawArticle(article: ArticleMeta): boolean {
   return topFolder(article.filename) === "raw";
 }
+
+function normalizeVaultPath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+}
+
+/**
+ * List vault-relative `raw/` files under `folderPath` (recursive) that are
+ * not yet marked ingested by {@link computeIngestedRawFiles}.
+ */
+export function collectNonIngestedRawFilesInFolder(
+  folderPath: string,
+  articles: readonly ArticleMeta[],
+  ingestedRawSet: ReadonlySet<string>,
+): string[] {
+  const folder = normalizeVaultPath(folderPath);
+  const lower = folder.toLowerCase();
+  if (lower !== "raw" && !lower.startsWith("raw/")) return [];
+
+  const prefix = `${folder}/`;
+  return articles
+    .map((a) => normalizeVaultPath(a.filename))
+    .filter((filename) => {
+      if (topFolder(filename) !== "raw") return false;
+      if (filename !== folder && !filename.startsWith(prefix)) return false;
+      return !ingestedRawSet.has(filename);
+    })
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+}

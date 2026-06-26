@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, createContext
 import type { WikiAPI, ArticleMeta } from '../../shared/types';
 import { getConfigFiles } from '../lib/file-classification';
 import type { VaultPromptDraftFilename } from '../../shared/vault-prompt-files';
-import { isClaudeMdFilename } from '../../shared/vault-prompt-files';
 import {
   readStoredPanelWidth,
   writeStoredPanelWidth,
@@ -31,6 +30,8 @@ import { GraphView } from './GraphView';
 import { VaultSwitcher } from './VaultSwitcher';
 import { VaultInitDialog } from './VaultInitDialog';
 import { VaultPromptCreateDialog } from './VaultPromptCreateDialog';
+import { ChangelogDialog } from './ChangelogDialog';
+import { getChangelogSince, type ChangelogEntry } from '../lib/changelog';
 import { WelcomeScreen } from './WelcomeScreen';
 import {
   PanelLeftClose,
@@ -101,9 +102,18 @@ export interface NavigationContext {
    * `raw/` source file (same as typing `/ingest <path>` and sending).
    */
   ingestRawFile: (filename: string) => void;
-  /** Set when `ingestRawFile` runs; consumed by ChatView. */
+  /**
+   * Ingest several raw files one at a time — each file gets its own chat
+   * session after the previous ingest completes.
+   */
+  ingestRawFiles: (filenames: string[]) => void;
+  /** Set when `ingestRawFile` / batch ingest runs; consumed by ChatView. */
   pendingIngestRequest: { filename: string; nonce: number } | null;
   clearPendingIngestRequest: () => void;
+  /** Start the next queued raw ingest, if any (ChatView only). */
+  advanceIngestQueue: () => void;
+  /** Drop any remaining queued raw ingests. */
+  clearIngestQueue: () => void;
 }
 
 const NavContext = createContext<NavigationContext>({
@@ -123,8 +133,11 @@ const NavContext = createContext<NavigationContext>({
   cancelVaultPromptDraft: () => { },
   completeVaultPromptDraft: () => { },
   ingestRawFile: () => { },
+  ingestRawFiles: () => { },
   pendingIngestRequest: null,
   clearPendingIngestRequest: () => { },
+  advanceIngestQueue: () => { },
+  clearIngestQueue: () => { },
 });
 
 export const useNavigation = () => useContext(NavContext);
@@ -212,7 +225,6 @@ const SidebarLayout: React.FC<{
   onVaultSwitched: (newPath: string, newName: string) => void;
   bookmarks: Set<string>;
   onToggleBookmark: (filename: string) => void;
-  hasClaudeMd: boolean;
   vaultReloadKey: number;
   /** Open confirm dialog — bundled CLAUDE.md is copied only after user confirms. */
   onCreateEmptyClaudeMd: () => void;
@@ -249,7 +261,6 @@ const SidebarLayout: React.FC<{
   onVaultSwitched,
   bookmarks,
   onToggleBookmark,
-  hasClaudeMd,
   vaultReloadKey,
   onCreateEmptyClaudeMd,
   onCreateEmptyIngestMd,
@@ -563,7 +574,6 @@ const SidebarLayout: React.FC<{
             onToggleTheme={onToggleTheme}
             configFiles={configFiles}
             onSelectConfigFile={viewArticle}
-            hasClaudeMd={hasClaudeMd}
             onCreateEmptyClaudeMd={onCreateEmptyClaudeMd}
             onCreateEmptyIngestMd={onCreateEmptyIngestMd}
           />
@@ -778,8 +788,9 @@ const AppShell: React.FC = () => {
   const [showVaultInit, setShowVaultInit] = useState(false);
   const [vaultPromptCreateOpen, setVaultPromptCreateOpen] = useState<VaultPromptDraftFilename | null>(null);
   const [pendingVaultPromptDraft, setPendingVaultPromptDraft] = useState<VaultPromptDraftFilename | null>(null);
-
-  const hasClaudeMd = articles.some((a) => isClaudeMdFilename(a.filename));
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[]>([]);
+  const [appVersion, setAppVersion] = useState('');
 
   const onToggleBookmark = useCallback((filename: string) => {
     setBookmarks((prev) => {
@@ -846,6 +857,59 @@ const AppShell: React.FC = () => {
       mq.removeEventListener('change', handleSystemChange);
     };
   }, []);
+
+  // Show changelog popup on first launch after a version update.
+  useEffect(() => {
+    if (firstRun !== false) return;
+
+    let cancelled = false;
+
+    const checkChangelog = async () => {
+      try {
+        const [config, version] = await Promise.all([
+          window.api.getConfig(),
+          window.api.getAppVersion(),
+        ]);
+        if (cancelled) return;
+
+        setAppVersion(version);
+
+        if (!config.lastSeenVersion) {
+          await window.api.saveConfig({ lastSeenVersion: version });
+          return;
+        }
+
+        if (config.lastSeenVersion === version) return;
+
+        const entries = getChangelogSince(config.lastSeenVersion);
+        if (entries.length === 0) {
+          await window.api.saveConfig({ lastSeenVersion: version });
+          return;
+        }
+
+        setChangelogEntries(entries);
+        setChangelogOpen(true);
+      } catch {
+        // Non-fatal — skip the popup if config/version cannot be read.
+      }
+    };
+
+    void checkChangelog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firstRun]);
+
+  const handleChangelogClose = useCallback(async () => {
+    setChangelogOpen(false);
+    try {
+      const version = appVersion || await window.api.getAppVersion();
+      await window.api.saveConfig({ lastSeenVersion: version });
+    } catch {
+      // ignore
+    }
+  }, [appVersion]);
 
   // Keep refs in sync so the global keydown handler can read latest state.
   useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
@@ -1223,6 +1287,7 @@ const AppShell: React.FC = () => {
     filename: string;
     nonce: number;
   } | null>(null);
+  const ingestQueueRef = useRef<string[]>([]);
   const clearPrefilledTitle = useCallback(() => setPrefilledTitle(null), []);
 
   /**
@@ -1309,9 +1374,30 @@ const AppShell: React.FC = () => {
     setPendingIngestRequest(null);
   }, []);
 
+  const clearIngestQueue = useCallback(() => {
+    ingestQueueRef.current = [];
+  }, []);
+
+  const advanceIngestQueue = useCallback(() => {
+    const [next, ...rest] = ingestQueueRef.current;
+    if (!next) return;
+    ingestQueueRef.current = rest;
+    setPendingIngestRequest({ filename: next, nonce: Date.now() });
+  }, []);
+
   const ingestRawFile = useCallback((filename: string) => {
     if (!isRawSource(filename)) return;
+    ingestQueueRef.current = [];
     setPendingIngestRequest({ filename, nonce: Date.now() });
+    navigate('chat');
+  }, [navigate]);
+
+  const ingestRawFiles = useCallback((filenames: string[]) => {
+    const valid = filenames.filter(isRawSource);
+    if (valid.length === 0) return;
+    const [first, ...rest] = valid;
+    ingestQueueRef.current = rest;
+    setPendingIngestRequest({ filename: first, nonce: Date.now() });
     navigate('chat');
   }, [navigate]);
 
@@ -1332,8 +1418,11 @@ const AppShell: React.FC = () => {
     cancelVaultPromptDraft,
     completeVaultPromptDraft,
     ingestRawFile,
+    ingestRawFiles,
     pendingIngestRequest,
     clearPendingIngestRequest,
+    advanceIngestQueue,
+    clearIngestQueue,
   };
 
   // Still loading config
@@ -1388,7 +1477,6 @@ const AppShell: React.FC = () => {
               }}
               bookmarks={bookmarks}
               onToggleBookmark={onToggleBookmark}
-              hasClaudeMd={hasClaudeMd}
               vaultReloadKey={vaultReloadKey}
               onCreateEmptyClaudeMd={requestCreateClaudeMd}
               onCreateEmptyIngestMd={requestCreateIngestMd}
@@ -1425,6 +1513,13 @@ const AppShell: React.FC = () => {
             onCancel={() => setVaultPromptCreateOpen(null)}
           />
         )}
+
+        <ChangelogDialog
+          open={changelogOpen}
+          entries={changelogEntries}
+          appVersion={appVersion}
+          onClose={() => { void handleChangelogClose(); }}
+        />
 
         {/* Debug log overlay (⌘⇧D) */}
         <DebugLogPanel

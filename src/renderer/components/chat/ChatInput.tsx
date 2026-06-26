@@ -374,6 +374,12 @@ export function isRawSource(filename: string): boolean {
   return normalised.startsWith(RAW_FOLDER_PREFIX);
 }
 
+/** True when a tree folder path lives under the vault `raw/` tree. */
+export function isRawFolderPath(folderPath: string): boolean {
+  const normalised = folderPath.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "").toLowerCase();
+  return normalised === "raw" || normalised.startsWith(RAW_FOLDER_PREFIX);
+}
+
 /**
  * Pick the candidate pool for the `/ingest` picker.
  *

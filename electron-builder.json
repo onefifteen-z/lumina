@@ -7,7 +7,11 @@
   "files": ["dist/**/*", "package.json"],
   "asarUnpack": [
     "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-    "node_modules/@napi-rs/canvas/**/*"
+    "node_modules/@napi-rs/canvas/**/*",
+    "node_modules/node-llama-cpp/**/*",
+    "node_modules/@node-llama-cpp/**/*",
+    "node_modules/better-sqlite3/**/*",
+    "node_modules/sqlite-vec*/**/*"
   ],
   "extraResources": [
     {

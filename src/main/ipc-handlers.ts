@@ -13,6 +13,8 @@ import { reconfigureTelemetry } from "./telemetry";
 import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
 import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
+import { QmdSearchService } from "./services/qmd-search-service";
+import { WikiSearchRouter } from "./services/wiki-search-router";
 import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
 import { ChatService } from "./services/chat-service";
@@ -61,6 +63,8 @@ export function registerIpcHandlers(services: {
       : services.mainWindow;
   let fileSystem = services.fileSystem;
   let searchIndex = services.searchIndex;
+  let qmdSearch: QmdSearchService | null = null;
+  let wikiSearchRouter: WikiSearchRouter | null = null;
   const { config } = services;
   let llm = services.llm;
   const chat = services.chat ?? null;
@@ -74,6 +78,60 @@ export function registerIpcHandlers(services: {
     chat?.setFileIngest(cfg.fileIngest);
   }
   syncPdfImageIngestFromConfig();
+
+  function syncQmdSearchFromConfig(): void {
+    const enabled = config.getConfig().qmdSearch.enabled;
+    chat?.setQmdSearchEnabled(enabled);
+  }
+  syncQmdSearchFromConfig();
+
+  function attachWikiSearchRouter(): void {
+    if (!searchIndex) {
+      wikiSearchRouter = null;
+      chat?.setSearchIndex(null);
+      return;
+    }
+    if (!wikiSearchRouter) {
+      wikiSearchRouter = new WikiSearchRouter(
+        searchIndex,
+        qmdSearch,
+        () => config.getConfig().qmdSearch.enabled,
+      );
+    } else {
+      wikiSearchRouter.setQmdService(qmdSearch);
+    }
+    chat?.setSearchIndex(wikiSearchRouter);
+  }
+
+  async function closeQmdSearch(): Promise<void> {
+    if (qmdSearch) {
+      qmdSearch.setProgressHandler(null);
+      await qmdSearch.close();
+      qmdSearch = null;
+    }
+  }
+
+  async function initQmdSearch(vaultPath: string): Promise<void> {
+    await closeQmdSearch();
+    const qmdCfg = config.getConfig().qmdSearch;
+    if (!qmdCfg.enabled) {
+      attachWikiSearchRouter();
+      return;
+    }
+    qmdSearch = new QmdSearchService(vaultPath, qmdCfg);
+    qmdSearch.setProgressHandler((progress) => {
+      getMainWindow()?.webContents.send("wiki:qmdProgress", progress);
+    });
+    attachWikiSearchRouter();
+    void qmdSearch.initialize().then(() => {
+      attachWikiSearchRouter();
+      getMainWindow()?.webContents.send("wiki:qmdStatusChanged");
+    });
+  }
+
+  function scheduleQmdUpdate(): void {
+    qmdSearch?.scheduleUpdate();
+  }
 
   /**
    * Rebuild the LLM service from the current persisted config and API key,
@@ -174,7 +232,8 @@ export function registerIpcHandlers(services: {
     });
 
     chat?.setFileSystemService(fileSystem);
-    chat?.setSearchIndex(searchIndex);
+    await initQmdSearch(vaultPath);
+    syncQmdSearchFromConfig();
     ingest.setFileSystemService(fileSystem);
     try {
       chatHistory?.open(vaultPath);
@@ -246,6 +305,7 @@ export function registerIpcHandlers(services: {
       const articles = await fileSystem.scanVault();
       if (searchIndex) await searchIndex.buildIndex(articles);
       cachedArticles = articles;
+      scheduleQmdUpdate();
     },
   );
 
@@ -266,6 +326,7 @@ export function registerIpcHandlers(services: {
       const articles = await fileSystem.scanVault();
       if (searchIndex) await searchIndex.buildIndex(articles);
       cachedArticles = articles;
+      scheduleQmdUpdate();
     },
   );
 
@@ -294,6 +355,7 @@ export function registerIpcHandlers(services: {
       const articles = await fileSystem.scanVault();
       if (searchIndex) await searchIndex.buildIndex(articles);
       cachedArticles = articles;
+      scheduleQmdUpdate();
       return filename;
     },
   );
@@ -325,6 +387,7 @@ export function registerIpcHandlers(services: {
       await fileSystem.deleteArticle(filename);
       searchIndex?.removeDocument(title);
       cachedArticles = cachedArticles.filter((a) => a.title !== title);
+      scheduleQmdUpdate();
     },
   );
 
@@ -339,6 +402,7 @@ export function registerIpcHandlers(services: {
       const articles = await fileSystem.scanVault();
       if (searchIndex) await searchIndex.buildIndex(articles);
       cachedArticles = articles;
+      scheduleQmdUpdate();
     },
   );
 
@@ -380,6 +444,7 @@ export function registerIpcHandlers(services: {
     const articles = await fileSystem.scanVault();
     if (searchIndex) await searchIndex.buildIndex(articles);
     cachedArticles = articles;
+    scheduleQmdUpdate();
   }
 
   ipcMain.handle(
@@ -459,6 +524,44 @@ export function registerIpcHandlers(services: {
   ipcMain.handle("wiki:searchByTag", async (_event, tag: string) => {
     if (!searchIndex) return [];
     return searchIndex.searchByTag(tag);
+  });
+
+  ipcMain.handle("wiki:getQmdStatus", async () => {
+    if (!qmdSearch) {
+      const qmdCfg = config.getConfig().qmdSearch;
+      return {
+        enabled: qmdCfg.enabled,
+        ready: false,
+        indexing: false,
+        embedding: false,
+        totalDocuments: 0,
+        needsEmbedding: 0,
+        hasVectorIndex: false,
+        lastUpdatedAt: null,
+        error: null,
+        progress: null,
+      };
+    }
+    return qmdSearch.getDetailedStatus();
+  });
+
+  ipcMain.handle("wiki:rebuildQmdIndex", async () => {
+    if (!fileSystem) {
+      throw new Error("No vault is open. Please select a vault folder first.");
+    }
+    const qmdCfg = config.getConfig().qmdSearch;
+    if (!qmdCfg.enabled) {
+      throw new Error("QMD search is disabled. Enable it in Settings first.");
+    }
+    if (!qmdSearch) {
+      await initQmdSearch(fileSystem.getVaultPath());
+    }
+    if (!qmdSearch) {
+      throw new Error("Failed to initialize QMD search.");
+    }
+    qmdSearch.setConfig(qmdCfg);
+    await qmdSearch.rebuild();
+    getMainWindow()?.webContents.send("wiki:qmdStatusChanged");
   });
 
   // ── Link resolution ──────────────────────────────────────────────
@@ -832,6 +935,27 @@ export function registerIpcHandlers(services: {
 
       config.saveConfig(partial);
       syncPdfImageIngestFromConfig();
+      if (partial.qmdSearch !== undefined) {
+        syncQmdSearchFromConfig();
+        const qmdCfg = config.getConfig().qmdSearch;
+        if (fileSystem) {
+          if (qmdCfg.enabled) {
+            if (qmdSearch) {
+              qmdSearch.setConfig(qmdCfg);
+              void qmdSearch.initialize().then(() => {
+                getMainWindow()?.webContents.send("wiki:qmdStatusChanged");
+              });
+            } else {
+              void initQmdSearch(fileSystem.getVaultPath());
+            }
+          } else {
+            void closeQmdSearch().then(() => {
+              attachWikiSearchRouter();
+              getMainWindow()?.webContents.send("wiki:qmdStatusChanged");
+            });
+          }
+        }
+      }
       // If the provider config changed, rebuild the LLM service immediately.
       if (partial.llmProvider !== undefined) {
         rebuildLLMService();
@@ -924,4 +1048,10 @@ export function registerIpcHandlers(services: {
       debugLog("debug", `ui:${payload.tag}`, payload.message, payload.data);
     },
   );
+
+  if (fileSystem && searchIndex) {
+    void initQmdSearch(fileSystem.getVaultPath());
+  } else if (searchIndex) {
+    attachWikiSearchRouter();
+  }
 }

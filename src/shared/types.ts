@@ -145,6 +145,46 @@ export interface PhoenixConfig {
   port: number;
 }
 
+/** QMD search mode: keyword-only (BM25) or hybrid (BM25 + vectors + rerank). */
+export type QmdSearchMode = "lex" | "hybrid";
+
+/** Application-level QMD semantic search settings. */
+export interface QmdSearchConfig {
+  /** When true, Chat `search_wiki` uses QMD instead of FlexSearch. */
+  enabled: boolean;
+  mode: QmdSearchMode;
+  /** Automatically generate embeddings after indexing. */
+  autoEmbed: boolean;
+}
+
+/** Runtime status of the per-vault QMD index. */
+export interface QmdSearchStatus {
+  enabled: boolean;
+  ready: boolean;
+  indexing: boolean;
+  embedding: boolean;
+  totalDocuments: number;
+  needsEmbedding: number;
+  hasVectorIndex: boolean;
+  lastUpdatedAt: string | null;
+  error: string | null;
+  progress: QmdSearchProgress | null;
+}
+
+/** Progress event while QMD is updating or embedding. */
+export interface QmdSearchProgress {
+  phase: "update" | "embed";
+  current: number;
+  total: number;
+  message: string;
+}
+
+export const DEFAULT_QMD_SEARCH_CONFIG: QmdSearchConfig = {
+  enabled: false,
+  mode: "hybrid",
+  autoEmbed: true,
+};
+
 /** Application-level configuration persisted via electron-store. */
 export interface AppConfig {
   vaultPath: string;
@@ -161,6 +201,8 @@ export interface AppConfig {
    * accepts file_id for PDFs).
    */
   fileIngest: boolean;
+  /** Optional QMD hybrid search for Chat `search_wiki` (UI search stays FlexSearch). */
+  qmdSearch: QmdSearchConfig;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -349,6 +391,10 @@ export interface WikiAPI {
   // Search
   search(query: string): Promise<SearchResult[]>;
   searchByTag(tag: string): Promise<ArticleMeta[]>;
+  getQmdStatus(): Promise<QmdSearchStatus>;
+  rebuildQmdIndex(): Promise<void>;
+  onQmdProgress(callback: (progress: QmdSearchProgress) => void): void;
+  removeQmdProgressListener(): void;
 
   // Link resolution
   getBacklinks(title: string): Promise<{ title: string; filename: string }[]>;

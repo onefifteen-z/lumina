@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { LLMProviderConfig, PhoenixConfig, VaultLanguage } from '../../shared/types';
+import type {
+  LLMProviderConfig,
+  PhoenixConfig,
+  QmdSearchMode,
+  QmdSearchStatus,
+  VaultLanguage,
+} from '../../shared/types';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
@@ -28,6 +34,12 @@ const SettingsPanel: React.FC = () => {
   /** Upload PDF/image/PPTX via OpenAI Files API. */
   const [fileIngest, setFileIngest] = useState(false);
 
+  const [qmdSearchEnabled, setQmdSearchEnabled] = useState(false);
+  const [qmdSearchMode, setQmdSearchMode] = useState<QmdSearchMode>('hybrid');
+  const [qmdAutoEmbed, setQmdAutoEmbed] = useState(true);
+  const [qmdStatus, setQmdStatus] = useState<QmdSearchStatus | null>(null);
+  const [qmdRebuilding, setQmdRebuilding] = useState(false);
+
   // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,7 +65,16 @@ const SettingsPanel: React.FC = () => {
       setPhoenixPort(String(ph.port || 6006));
       setPdfImageIngest(config.pdfImageIngest ?? false);
       setFileIngest(config.fileIngest ?? false);
+      setQmdSearchEnabled(config.qmdSearch?.enabled ?? false);
+      setQmdSearchMode(config.qmdSearch?.mode ?? 'hybrid');
+      setQmdAutoEmbed(config.qmdSearch?.autoEmbed ?? true);
       setVaultLanguage(vaultConfig.language ?? DEFAULT_VAULT_LANGUAGE);
+      try {
+        const status = await window.api.getQmdStatus();
+        setQmdStatus(status);
+      } catch {
+        setQmdStatus(null);
+      }
     } catch {
       // Defaults are fine
     }
@@ -85,6 +106,22 @@ const SettingsPanel: React.FC = () => {
     };
   }, [loadSettings]);
 
+  useEffect(() => {
+    const refreshStatus = () => {
+      void window.api.getQmdStatus().then(setQmdStatus).catch(() => setQmdStatus(null));
+    };
+    window.api.onQmdProgress(() => {
+      refreshStatus();
+    });
+    const interval = qmdSearchEnabled
+      ? window.setInterval(refreshStatus, 3000)
+      : undefined;
+    return () => {
+      window.api.removeQmdProgressListener();
+      if (interval) window.clearInterval(interval);
+    };
+  }, [qmdSearchEnabled]);
+
   // Save all settings
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -101,7 +138,18 @@ const SettingsPanel: React.FC = () => {
         port: Number.isNaN(port) || port <= 0 ? 6006 : port,
       };
 
-      await window.api.saveConfig({ vaultPath, llmProvider, phoenix, pdfImageIngest, fileIngest });
+      await window.api.saveConfig({
+        vaultPath,
+        llmProvider,
+        phoenix,
+        pdfImageIngest,
+        fileIngest,
+        qmdSearch: {
+          enabled: qmdSearchEnabled,
+          mode: qmdSearchMode,
+          autoEmbed: qmdAutoEmbed,
+        },
+      });
       await window.api.saveVaultConfig({ language: vaultLanguage });
       await window.api.saveApiKey(apiKey);
 
@@ -112,7 +160,38 @@ const SettingsPanel: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  }, [endpointUrl, apiKey, model, vaultPath, vaultLanguage, phoenixEnabled, phoenixScheme, phoenixHost, phoenixPort, pdfImageIngest, fileIngest]);
+  }, [
+    endpointUrl,
+    apiKey,
+    model,
+    vaultPath,
+    vaultLanguage,
+    phoenixEnabled,
+    phoenixScheme,
+    phoenixHost,
+    phoenixPort,
+    pdfImageIngest,
+    fileIngest,
+    qmdSearchEnabled,
+    qmdSearchMode,
+    qmdAutoEmbed,
+  ]);
+
+  const handleRebuildQmd = useCallback(async () => {
+    setQmdRebuilding(true);
+    setSaveMsg(null);
+    try {
+      await window.api.rebuildQmdIndex();
+      const status = await window.api.getQmdStatus();
+      setQmdStatus(status);
+      setSaveMsg('QMD index rebuilt');
+      setTimeout(() => setSaveMsg(null), 3000);
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : 'Failed to rebuild QMD index');
+    } finally {
+      setQmdRebuilding(false);
+    }
+  }, []);
 
   // Test LLM connection
   const handleTestConnection = useCallback(async () => {
@@ -289,6 +368,79 @@ const SettingsPanel: React.FC = () => {
             : <>File upload is not supported by the current LLM endpoint. Only OpenAI-compatible endpoints support this feature.</>
           }
         </p>
+      </section>
+
+      {/* ── QMD semantic search ───────────────────────── */}
+      <section className="settings-section">
+        <div className="settings-section__header-row">
+          <h3 className="settings-section__heading">Semantic search (QMD)</h3>
+          <button
+            type="button"
+            className={`phoenix-toggle ${qmdSearchEnabled ? 'phoenix-toggle--on' : ''}`}
+            onClick={() => setQmdSearchEnabled((v) => !v)}
+            aria-pressed={qmdSearchEnabled}
+          >
+            <span className="phoenix-toggle__track">
+              <span className="phoenix-toggle__thumb" />
+            </span>
+            <span className="phoenix-toggle__label">{qmdSearchEnabled ? 'Enabled' : 'Disabled'}</span>
+          </button>
+        </div>
+        <p className="settings-section__hint">
+          When enabled, Chat <code className="settings-inline-code">search_wiki</code> uses local QMD
+          hybrid search (BM25 + vectors + reranking). Global search (<span className="kbd">⌘⇧F</span>)
+          stays on FlexSearch for instant results. First enable downloads local GGUF models (~hundreds of MB).
+        </p>
+        {qmdSearchEnabled && (
+          <>
+            <label className="settings-field">
+              <span className="settings-field__label">Search mode</span>
+              <select
+                className="settings-field__input"
+                value={qmdSearchMode}
+                onChange={(e) => setQmdSearchMode(e.target.value as QmdSearchMode)}
+              >
+                <option value="hybrid">Hybrid (best quality)</option>
+                <option value="lex">Keyword only (faster)</option>
+              </select>
+            </label>
+            <div className="settings-section__header-row">
+              <span className="settings-field__label">Auto-embed after indexing</span>
+              <button
+                type="button"
+                className={`phoenix-toggle ${qmdAutoEmbed ? 'phoenix-toggle--on' : ''}`}
+                onClick={() => setQmdAutoEmbed((v) => !v)}
+                aria-pressed={qmdAutoEmbed}
+              >
+                <span className="phoenix-toggle__track">
+                  <span className="phoenix-toggle__thumb" />
+                </span>
+                <span className="phoenix-toggle__label">{qmdAutoEmbed ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+            {qmdStatus && (
+              <p className="settings-section__hint">
+                {qmdStatus.ready ? 'Ready' : qmdStatus.indexing || qmdStatus.embedding ? 'Building index…' : 'Not ready'}
+                {' · '}
+                {qmdStatus.totalDocuments} documents
+                {qmdStatus.needsEmbedding > 0
+                  ? ` · ${qmdStatus.needsEmbedding} pending embed`
+                  : ''}
+                {qmdStatus.error ? ` · Error: ${qmdStatus.error}` : ''}
+              </p>
+            )}
+            <div className="settings-field__row settings-field__row--actions">
+              <button
+                className="settings-field__btn"
+                type="button"
+                onClick={handleRebuildQmd}
+                disabled={qmdRebuilding || !vaultPath}
+              >
+                {qmdRebuilding ? 'Rebuilding…' : 'Rebuild index'}
+              </button>
+            </div>
+          </>
+        )}
       </section>
 
       {/* ── Phoenix Observability Section ────────────── */}

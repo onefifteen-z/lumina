@@ -12,6 +12,7 @@ import type {
   ChatContentBlock,
   ConfirmationRequest,
   IngestRequest,
+  QmdSearchProgress,
 } from "../shared/types";
 
 /**
@@ -109,6 +110,24 @@ const api: WikiAPI = {
 
   searchByTag(tag: string) {
     return ipcRenderer.invoke("wiki:searchByTag", tag);
+  },
+
+  getQmdStatus() {
+    return ipcRenderer.invoke("wiki:getQmdStatus");
+  },
+
+  rebuildQmdIndex() {
+    return ipcRenderer.invoke("wiki:rebuildQmdIndex");
+  },
+
+  onQmdProgress(callback: (progress: QmdSearchProgress) => void) {
+    ipcRenderer.on("wiki:qmdProgress", (_event, progress: QmdSearchProgress) =>
+      callback(progress),
+    );
+  },
+
+  removeQmdProgressListener() {
+    ipcRenderer.removeAllListeners("wiki:qmdProgress");
   },
 
   // ── Link resolution ──────────────────────────────────────────────

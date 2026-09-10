@@ -457,6 +457,8 @@ export class ChatService {
         >;
       }
     | null = null;
+  /** When true, `search_wiki` uses QMD hybrid/semantic search (see Settings). */
+  private qmdSearchEnabled = false;
   /**
    * Generic user-confirmation channel (renderer-backed yes/no prompt).
    * Injected by the IPC layer. `null` means "don't prompt" — matches the
@@ -904,6 +906,11 @@ export class ChatService {
     this.searchIndex = index;
   }
 
+  /** Mirrors Settings → QMD semantic search for `search_wiki` query style. */
+  setQmdSearchEnabled(enabled: boolean): void {
+    this.qmdSearchEnabled = enabled;
+  }
+
   /** Mirrors Settings → PDF page images; drives ingest_source vision behaviour. */
   setPdfImageIngest(enabled: boolean): void {
     this.pdfImageIngest = enabled;
@@ -1171,16 +1178,29 @@ export class ChatService {
     });
     const language = await this.loadVaultLanguage();
     if (base.kind === "default") {
-      return { prompt: this.withVaultLanguagePolicy(base.prompt, language), warning };
+      const withLanguage = this.withVaultLanguagePolicy(base.prompt, language);
+      return { prompt: this.withQmdSearchPolicy(withLanguage), warning };
     }
     const ingest = await this.resolveIngestPrompt((w) => {
       warning = warning ?? w;
     });
     const promptWithIngest = ingest ? `${base.prompt}\n\n${ingest}` : base.prompt;
+    const withLanguage = this.withVaultLanguagePolicy(promptWithIngest, language);
     return {
-      prompt: this.withVaultLanguagePolicy(promptWithIngest, language),
+      prompt: this.withQmdSearchPolicy(withLanguage),
       warning,
     };
+  }
+
+  private withQmdSearchPolicy(prompt: string): string {
+    if (!this.qmdSearchEnabled) return prompt;
+    const policy = [
+      "## QMD search policy",
+      "- Semantic search (QMD) is enabled for `search_wiki`.",
+      "- You may use a short natural-language query (one sentence) when locating pages.",
+      "- Still prefer focused queries over dumping the whole question into one search.",
+    ].join("\n");
+    return `${prompt}\n\n${policy}`;
   }
 
   private withVaultLanguagePolicy(

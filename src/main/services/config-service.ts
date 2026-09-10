@@ -2,7 +2,14 @@ import { app, dialog, safeStorage, BrowserWindow } from "electron";
 import Store from "electron-store";
 import path from "path";
 import fs from "fs";
-import { AppConfig, LLMProviderConfig, PhoenixConfig, VaultEntry } from "../../shared/types";
+import {
+  AppConfig,
+  DEFAULT_QMD_SEARCH_CONFIG,
+  LLMProviderConfig,
+  PhoenixConfig,
+  QmdSearchConfig,
+  VaultEntry,
+} from "../../shared/types";
 
 const API_KEY_BUFFER_ENCODING = "latin1";
 const API_KEY_FILE = "llm-api-key.enc";
@@ -15,6 +22,7 @@ interface StoreSchema {
   phoenix: PhoenixConfig;
   pdfImageIngest: boolean;
   fileIngest: boolean;
+  qmdSearch: QmdSearchConfig;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -35,6 +43,7 @@ export class ConfigService {
         phoenix: { enabled: false, scheme: "http", host: "localhost", port: 6006 },
         pdfImageIngest: false,
         fileIngest: false,
+        qmdSearch: DEFAULT_QMD_SEARCH_CONFIG,
         theme: "system",
         chatHistorySidebarOpen: false,
         lastChatSessionId: "",
@@ -53,6 +62,10 @@ export class ConfigService {
       phoenix: this.store.get("phoenix"),
       pdfImageIngest: this.store.get("pdfImageIngest") ?? false,
       fileIngest: this.store.get("fileIngest") ?? false,
+      qmdSearch: {
+        ...DEFAULT_QMD_SEARCH_CONFIG,
+        ...(this.store.get("qmdSearch") ?? {}),
+      },
       theme: this.store.get("theme"),
       chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
       lastChatSessionId: this.store.get("lastChatSessionId"),
@@ -76,6 +89,13 @@ export class ConfigService {
     }
     if (partial.fileIngest !== undefined) {
       this.store.set("fileIngest", partial.fileIngest);
+    }
+    if (partial.qmdSearch !== undefined) {
+      this.store.set("qmdSearch", {
+        ...DEFAULT_QMD_SEARCH_CONFIG,
+        ...(this.store.get("qmdSearch") ?? {}),
+        ...partial.qmdSearch,
+      });
     }
     if (partial.theme !== undefined) {
       this.store.set("theme", partial.theme);

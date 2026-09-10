@@ -14,7 +14,11 @@
     ],
     "asarUnpack": [
       "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-      "node_modules/@napi-rs/canvas/**/*"
+      "node_modules/@napi-rs/canvas/**/*",
+      "node_modules/node-llama-cpp/**/*",
+      "node_modules/@node-llama-cpp/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/sqlite-vec*/**/*"
     ],
     "directories": {
       "output": "release"
@@ -69,6 +73,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/vite": "^4.2.2",
+    "@tobilu/qmd": "^2.8.3",
     "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

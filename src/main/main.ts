@@ -183,14 +183,8 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Start vault file watcher — notify renderer of external changes
-  if (vaultPath && fileSystemService) {
-    fileSystemService.watchVault((event) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("wiki:vaultChange", event);
-      }
-    });
-  }
+  // Vault watcher (renderer notify + search/QMD refresh) is attached in
+  // registerIpcHandlers bootstrap when a vault is already open.
 
   // ── Quit handling ──────────────────────────────────────────
 

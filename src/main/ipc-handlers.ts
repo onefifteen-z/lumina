@@ -133,6 +133,32 @@ export function registerIpcHandlers(services: {
     qmdSearch?.scheduleUpdate();
   }
 
+  const VAULT_INDEX_REFRESH_DEBOUNCE_MS = 500;
+  let vaultIndexRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function shouldRefreshIndexOnVaultChange(filename: string): boolean {
+    const normalized = filename.replace(/\\/g, "/");
+    if (normalized.startsWith(".lumina/")) return false;
+    return normalized.toLowerCase().endsWith(".md");
+  }
+
+  function scheduleVaultIndexRefreshFromWatcher(): void {
+    if (vaultIndexRefreshTimer) clearTimeout(vaultIndexRefreshTimer);
+    vaultIndexRefreshTimer = setTimeout(() => {
+      vaultIndexRefreshTimer = null;
+      void refreshArticlesIndex();
+    }, VAULT_INDEX_REFRESH_DEBOUNCE_MS);
+  }
+
+  function attachVaultWatcher(fs: FileSystemService): void {
+    fs.watchVault((event) => {
+      getMainWindow()?.webContents.send("wiki:vaultChange", event);
+      if (shouldRefreshIndexOnVaultChange(event.filename)) {
+        scheduleVaultIndexRefreshFromWatcher();
+      }
+    });
+  }
+
   /**
    * Rebuild the LLM service from the current persisted config and API key,
    * then push the new instance into the chat service so it takes effect immediately.
@@ -227,9 +253,7 @@ export function registerIpcHandlers(services: {
     await newSearchIndex.buildIndex(articles);
     searchIndex = newSearchIndex;
 
-    fileSystem.watchVault((event) => {
-      getMainWindow()?.webContents.send("wiki:vaultChange", event);
-    });
+    attachVaultWatcher(fileSystem);
 
     chat?.setFileSystemService(fileSystem);
     await initQmdSearch(vaultPath);
@@ -1050,6 +1074,7 @@ export function registerIpcHandlers(services: {
   );
 
   if (fileSystem && searchIndex) {
+    attachVaultWatcher(fileSystem);
     void initQmdSearch(fileSystem.getVaultPath());
   } else if (searchIndex) {
     attachWikiSearchRouter();

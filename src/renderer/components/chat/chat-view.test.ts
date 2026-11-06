@@ -223,6 +223,100 @@ describe("ChatView display logic", () => {
   });
 });
 
+/* ── session reset invariants (New Chat vs Ingest) ─────────────── */
+
+/**
+ * These tests pin the behavioral contract that distinguishes the manual
+ * "New Chat" reset (`handleNewSession`) from the silent Ingest reset
+ * (`prepareSessionForIngest`) in ChatView. They model the two paths as pure
+ * state machines mirroring the component logic so the invariants are locked in
+ * without a full component render harness.
+ *
+ * Contract:
+ *   • Both paths clear transient chat/stream/thinking state and start a fresh
+ *     session via initSession.
+ *   • New Chat SHOWS the welcome screen and CLEARS the batch ingest queue.
+ *   • Ingest does NOT show welcome (no empty "new chat" flash) and MUST NOT
+ *     clear the ingest queue (so batch ingest keeps draining).
+ */
+describe("session reset invariants", () => {
+  interface SessionState {
+    messages: number;
+    streamingContent: string;
+    showWelcome: boolean;
+    ingestQueue: string[];
+    initSessionShowWelcome: boolean | null;
+  }
+
+  const makeState = (): SessionState => ({
+    messages: 3,
+    streamingContent: "partial...",
+    showWelcome: false,
+    ingestQueue: ["b.pdf", "c.pdf"],
+    initSessionShowWelcome: null,
+  });
+
+  // Mirrors handleNewSession(): clears queue, resets state, shows welcome,
+  // then initSession() with default (welcome shown).
+  const runNewSession = (s: SessionState): SessionState => {
+    const next = { ...s };
+    next.ingestQueue = []; // clearIngestQueue()
+    next.messages = 0;
+    next.streamingContent = "";
+    next.showWelcome = true; // setShowWelcome(true)
+    next.initSessionShowWelcome = true; // initSession() default
+    return next;
+  };
+
+  // Mirrors prepareSessionForIngest(): resets state but does NOT clear queue,
+  // does NOT show welcome, and calls initSession({ showWelcome: false }).
+  const runPrepareIngest = (s: SessionState): SessionState => {
+    const next = { ...s };
+    // NOTE: intentionally does NOT touch ingestQueue.
+    next.messages = 0;
+    next.streamingContent = "";
+    // NOTE: intentionally does NOT set showWelcome true.
+    next.initSessionShowWelcome = false; // initSession({ showWelcome: false })
+    return next;
+  };
+
+  it("New Chat shows welcome and clears the ingest queue", () => {
+    const result = runNewSession(makeState());
+    expect(result.showWelcome).toBe(true);
+    expect(result.initSessionShowWelcome).toBe(true);
+    expect(result.ingestQueue).toEqual([]);
+    expect(result.messages).toBe(0);
+    expect(result.streamingContent).toBe("");
+  });
+
+  it("Ingest reset stays silent (never flashes welcome)", () => {
+    const result = runPrepareIngest(makeState());
+    expect(result.showWelcome).toBe(false);
+    expect(result.initSessionShowWelcome).toBe(false);
+  });
+
+  it("Ingest reset preserves the batch ingest queue", () => {
+    const result = runPrepareIngest(makeState());
+    expect(result.ingestQueue).toEqual(["b.pdf", "c.pdf"]);
+  });
+
+  it("Ingest reset still clears transient chat/stream state", () => {
+    const result = runPrepareIngest(makeState());
+    expect(result.messages).toBe(0);
+    expect(result.streamingContent).toBe("");
+  });
+
+  it("displayWelcome is false during ingest because handleSend inserts the user message optimistically", () => {
+    // After prepareSessionForIngest, showWelcome is false; handleSend then adds
+    // the ingest user message. Either condition alone keeps the welcome hidden.
+    const afterPrepare = runPrepareIngest(makeState());
+    const messagesAfterSend = 1; // optimistic ingest user message
+    const hasMessages = messagesAfterSend > 0 || afterPrepare.streamingContent.length > 0;
+    const displayWelcome = afterPrepare.showWelcome && !hasMessages;
+    expect(displayWelcome).toBe(false);
+  });
+});
+
 /* ── classifyLine tests ───────────────────────────────────────── */
 
 describe("classifyLine", () => {

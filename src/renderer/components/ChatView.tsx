@@ -967,12 +967,18 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
 
   /* ── Session initialisation ─────────────────────────────────── */
 
-  const initSession = useCallback(async () => {
+  const initSession = useCallback(async (opts?: { showWelcome?: boolean }) => {
+    // `showWelcome` defaults to true so existing callers (mount restore, vault
+    // switch, manual New Chat) keep showing the welcome screen. The ingest path
+    // passes `false` to start a fresh session silently — the ingest user
+    // message is rendered optimistically by `handleSend`, so flashing an empty
+    // "new chat" welcome in between would be jarring.
+    const showWelcome = opts?.showWelcome ?? true;
     try {
       const session = await window.api.startChatSession();
       sessionRef.current = session;
       setMessages(session.messages.filter((m) => m.role !== 'system'));
-      setShowWelcome(true);
+      if (showWelcome) setShowWelcome(true);
       setError(null);
       setStreamingContent('');
       streamBuf.current = '';
@@ -1243,6 +1249,33 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     await initSession();
   }, [isGenerating, initSession, clearIngestQueue]);
 
+  // Silent session reset for the Files-sidebar "Ingest" path. Unlike
+  // `handleNewSession`, this deliberately:
+  //   • does NOT call `clearIngestQueue()` — batch ingest keeps its remaining
+  //     files in `ingestQueueRef`, and clearing it here would abort the queue.
+  //   • does NOT `setShowWelcome(true)` and passes `{ showWelcome: false }` to
+  //     `initSession` — the ingest user message is rendered optimistically by
+  //     `handleSend`, so we never flash an empty "new chat" welcome screen
+  //     while `startChatSession()` round-trips.
+  const prepareSessionForIngest = useCallback(async () => {
+    if (isGenerating) {
+      await window.api.stopChatGeneration();
+      setIsGenerating(false);
+    }
+    setMessages([]);
+    setStreamingContent('');
+    streamBuf.current = '';
+    thinkingBuf.current = '';
+    traceBuf.current = [];
+    firstTextFlushed.current = false;
+    firstThinkingFlushed.current = false;
+    userClosedStreamingRef.current = false;
+    setThinkingMap({});
+    setActiveThinkingMsgId(null);
+    setError(null);
+    await initSession({ showWelcome: false });
+  }, [isGenerating, initSession]);
+
   const loadSession = useCallback(async (sessionId: string) => {
     // Critical: sync the *main-process* chat session too. Without this, the
     // ChatService keeps appending to whatever session it auto-created at
@@ -1367,7 +1400,7 @@ const ChatView: React.FC<ChatViewProps> = ({ onThinkingChange, closeThinkingRef,
     const { filename } = pendingIngestRequest;
     clearPendingIngestRequest();
     void (async () => {
-      await handleNewSession();
+      await prepareSessionForIngest();
       await handleSend(
         formatIngestSlashCommand(filename),
         [],

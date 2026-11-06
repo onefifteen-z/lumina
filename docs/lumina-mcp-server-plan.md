@@ -1,5 +1,7 @@
 # Lumina MCP Server（CLI + App HTTP）
 
+> **状态：已实现（v0.8.8）。** 使用与配置见 [mcp.md](mcp.md)。与本草案的差异：App 侧不共享 `VaultRuntime`，而是用 `createVaultBackend` 直接包装 IPC 层的实时服务；新增写入工具（`write_wiki_page` / `append_wiki_log`）、`ingest_with_lumina` 与 `answer_from_wiki` / `ingest` Prompt；不使用 sampling。
+
 ## 目标
 
 让 Cursor、Claude Desktop 等外部工具通过 MCP 访问 Lumina vault，支持两种模式：

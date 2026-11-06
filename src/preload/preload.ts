@@ -120,6 +120,14 @@ const api: WikiAPI = {
     return ipcRenderer.invoke("wiki:rebuildQmdIndex");
   },
 
+  getMcpStatus() {
+    return ipcRenderer.invoke("wiki:getMcpStatus");
+  },
+
+  regenerateMcpToken() {
+    return ipcRenderer.invoke("wiki:regenerateMcpToken");
+  },
+
   onQmdProgress(callback: (progress: QmdSearchProgress) => void) {
     ipcRenderer.on("wiki:qmdProgress", (_event, progress: QmdSearchProgress) =>
       callback(progress),

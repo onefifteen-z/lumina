@@ -145,7 +145,7 @@ export interface PhoenixConfig {
   port: number;
 }
 
-/** QMD search mode: keyword-only (BM25) or hybrid (BM25 + vectors + rerank). */
+/** QMD search mode: keyword-only (BM25) or hybrid (BM25 + vectors). */
 export type QmdSearchMode = "lex" | "hybrid";
 
 /** Application-level QMD semantic search settings. */
@@ -163,6 +163,8 @@ export interface QmdSearchStatus {
   ready: boolean;
   indexing: boolean;
   embedding: boolean;
+  /** Embedding model is being downloaded (first enable only). */
+  downloading: boolean;
   totalDocuments: number;
   needsEmbedding: number;
   hasVectorIndex: boolean;
@@ -171,9 +173,9 @@ export interface QmdSearchStatus {
   progress: QmdSearchProgress | null;
 }
 
-/** Progress event while QMD is updating or embedding. */
+/** Progress event while QMD is downloading its model, updating, or embedding. Download progress is in bytes. */
 export interface QmdSearchProgress {
-  phase: "update" | "embed";
+  phase: "download" | "update" | "embed";
   current: number;
   total: number;
   message: string;
@@ -184,6 +186,38 @@ export const DEFAULT_QMD_SEARCH_CONFIG: QmdSearchConfig = {
   mode: "hybrid",
   autoEmbed: true,
 };
+
+/** Local MCP server exposing the open vault to other agents (see docs/mcp.md). */
+export interface McpServerConfig {
+  /** Serve streamable HTTP on 127.0.0.1 while the app runs. */
+  enabled: boolean;
+  port: number;
+  /** Bearer token required by the HTTP endpoint; generated on first enable. */
+  token: string;
+  /** Register write_wiki_page / append_wiki_log (HTTP and the stdio CLI). */
+  allowWrite: boolean;
+  /** Register ingest_with_lumina, which runs ingest with Lumina's own LLM (HTTP only). */
+  allowLuminaIngest: boolean;
+}
+
+export const DEFAULT_MCP_SERVER_CONFIG: McpServerConfig = {
+  enabled: false,
+  port: 8765,
+  token: "",
+  allowWrite: false,
+  allowLuminaIngest: false,
+};
+
+/** Runtime status of the in-app MCP HTTP server. */
+export interface McpServerStatus {
+  running: boolean;
+  url: string | null;
+  error: string | null;
+  /** Absolute path to the stdio CLI entry (inside app.asar when packaged). */
+  cliPath: string;
+  /** Executable to run the CLI with ELECTRON_RUN_AS_NODE=1. */
+  executablePath: string;
+}
 
 /** Application-level configuration persisted via electron-store. */
 export interface AppConfig {
@@ -203,6 +237,7 @@ export interface AppConfig {
   fileIngest: boolean;
   /** Optional QMD hybrid search for Chat `search_wiki` (UI search stays FlexSearch). */
   qmdSearch: QmdSearchConfig;
+  mcpServer: McpServerConfig;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -393,6 +428,8 @@ export interface WikiAPI {
   searchByTag(tag: string): Promise<ArticleMeta[]>;
   getQmdStatus(): Promise<QmdSearchStatus>;
   rebuildQmdIndex(): Promise<void>;
+  getMcpStatus(): Promise<McpServerStatus>;
+  regenerateMcpToken(): Promise<McpServerStatus>;
   onQmdProgress(callback: (progress: QmdSearchProgress) => void): void;
   removeQmdProgressListener(): void;
 

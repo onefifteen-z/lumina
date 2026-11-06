@@ -2422,6 +2422,21 @@ html.dark body {
   background: var(--color-bg-secondary);
 }
 
+.settings-code-block {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.45;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-width: 42rem;
+  overflow-x: auto;
+  white-space: pre;
+  user-select: text;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
 /* ── Phoenix toggle ─────────────────────────────────────────── */
 
 .phoenix-toggle {

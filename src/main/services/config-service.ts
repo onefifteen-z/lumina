@@ -4,8 +4,10 @@ import path from "path";
 import fs from "fs";
 import {
   AppConfig,
+  DEFAULT_MCP_SERVER_CONFIG,
   DEFAULT_QMD_SEARCH_CONFIG,
   LLMProviderConfig,
+  McpServerConfig,
   PhoenixConfig,
   QmdSearchConfig,
   VaultEntry,
@@ -23,6 +25,7 @@ interface StoreSchema {
   pdfImageIngest: boolean;
   fileIngest: boolean;
   qmdSearch: QmdSearchConfig;
+  mcpServer: McpServerConfig;
   theme: "light" | "dark" | "system";
   chatHistorySidebarOpen: boolean;
   lastChatSessionId: string;
@@ -44,6 +47,7 @@ export class ConfigService {
         pdfImageIngest: false,
         fileIngest: false,
         qmdSearch: DEFAULT_QMD_SEARCH_CONFIG,
+        mcpServer: DEFAULT_MCP_SERVER_CONFIG,
         theme: "system",
         chatHistorySidebarOpen: false,
         lastChatSessionId: "",
@@ -65,6 +69,10 @@ export class ConfigService {
       qmdSearch: {
         ...DEFAULT_QMD_SEARCH_CONFIG,
         ...(this.store.get("qmdSearch") ?? {}),
+      },
+      mcpServer: {
+        ...DEFAULT_MCP_SERVER_CONFIG,
+        ...(this.store.get("mcpServer") ?? {}),
       },
       theme: this.store.get("theme"),
       chatHistorySidebarOpen: this.store.get("chatHistorySidebarOpen"),
@@ -95,6 +103,13 @@ export class ConfigService {
         ...DEFAULT_QMD_SEARCH_CONFIG,
         ...(this.store.get("qmdSearch") ?? {}),
         ...partial.qmdSearch,
+      });
+    }
+    if (partial.mcpServer !== undefined) {
+      this.store.set("mcpServer", {
+        ...DEFAULT_MCP_SERVER_CONFIG,
+        ...(this.store.get("mcpServer") ?? {}),
+        ...partial.mcpServer,
       });
     }
     if (partial.theme !== undefined) {

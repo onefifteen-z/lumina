@@ -1,16 +1,37 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type {
-  LLMProviderConfig,
-  PhoenixConfig,
-  QmdSearchMode,
-  QmdSearchStatus,
-  VaultLanguage,
+import {
+  DEFAULT_MCP_SERVER_CONFIG,
+  type LLMProviderConfig,
+  type McpServerStatus,
+  type PhoenixConfig,
+  type QmdSearchMode,
+  type QmdSearchStatus,
+  type VaultLanguage,
 } from '../../shared/types';
+import { buildHttpMcpSnippet, buildStdioMcpSnippet, parseMcpPort } from './settings/mcp-snippets';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
 const DEFAULT_PHOENIX: PhoenixConfig = { enabled: false, scheme: 'http', host: 'localhost', port: 6006 };
 const DEFAULT_VAULT_LANGUAGE: VaultLanguage = 'en';
+
+const toMb = (bytes: number) => Math.round(bytes / (1024 * 1024));
+
+function describeQmdActivity(status: QmdSearchStatus): string {
+  const p = status.progress;
+  if (status.downloading) {
+    return p && p.phase === 'download' && p.total > 0
+      ? `Downloading embedding model ${toMb(p.current)} / ${toMb(p.total)} MB`
+      : 'Downloading embedding model…';
+  }
+  if (status.embedding) {
+    return p && p.phase === 'embed' && p.total > 0
+      ? `Embedding ${p.current} / ${p.total} chunks`
+      : 'Embedding…';
+  }
+  if (status.indexing) return 'Indexing…';
+  return status.ready ? 'Ready' : 'Not ready';
+}
 
 const SettingsPanel: React.FC = () => {
   // LLM provider fields
@@ -39,6 +60,15 @@ const SettingsPanel: React.FC = () => {
   const [qmdAutoEmbed, setQmdAutoEmbed] = useState(true);
   const [qmdStatus, setQmdStatus] = useState<QmdSearchStatus | null>(null);
   const [qmdRebuilding, setQmdRebuilding] = useState(false);
+
+  const [mcpEnabled, setMcpEnabled] = useState(false);
+  const [mcpPort, setMcpPort] = useState(String(DEFAULT_MCP_SERVER_CONFIG.port));
+  const [mcpToken, setMcpToken] = useState('');
+  const [mcpTokenVisible, setMcpTokenVisible] = useState(false);
+  const [mcpAllowWrite, setMcpAllowWrite] = useState(false);
+  const [mcpAllowLuminaIngest, setMcpAllowLuminaIngest] = useState(false);
+  const [mcpStatus, setMcpStatus] = useState<McpServerStatus | null>(null);
+  const [mcpCopied, setMcpCopied] = useState<string | null>(null);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -69,11 +99,22 @@ const SettingsPanel: React.FC = () => {
       setQmdSearchMode(config.qmdSearch?.mode ?? 'hybrid');
       setQmdAutoEmbed(config.qmdSearch?.autoEmbed ?? true);
       setVaultLanguage(vaultConfig.language ?? DEFAULT_VAULT_LANGUAGE);
+      const mcp = { ...DEFAULT_MCP_SERVER_CONFIG, ...config.mcpServer };
+      setMcpEnabled(mcp.enabled);
+      setMcpPort(String(mcp.port));
+      setMcpToken(mcp.token);
+      setMcpAllowWrite(mcp.allowWrite);
+      setMcpAllowLuminaIngest(mcp.allowLuminaIngest);
       try {
         const status = await window.api.getQmdStatus();
         setQmdStatus(status);
       } catch {
         setQmdStatus(null);
+      }
+      try {
+        setMcpStatus(await window.api.getMcpStatus());
+      } catch {
+        setMcpStatus(null);
       }
     } catch {
       // Defaults are fine
@@ -149,9 +190,20 @@ const SettingsPanel: React.FC = () => {
           mode: qmdSearchMode,
           autoEmbed: qmdAutoEmbed,
         },
+        mcpServer: {
+          enabled: mcpEnabled,
+          port: parseMcpPort(mcpPort, DEFAULT_MCP_SERVER_CONFIG.port),
+          token: mcpToken,
+          allowWrite: mcpAllowWrite,
+          allowLuminaIngest: mcpAllowLuminaIngest,
+        },
       });
       await window.api.saveVaultConfig({ language: vaultLanguage });
       await window.api.saveApiKey(apiKey);
+      const saved = await window.api.getConfig();
+      setMcpToken(saved.mcpServer.token);
+      setMcpPort(String(saved.mcpServer.port));
+      setMcpStatus(await window.api.getMcpStatus());
 
       setSaveMsg('Settings saved');
       setTimeout(() => setSaveMsg(null), 3000);
@@ -175,7 +227,33 @@ const SettingsPanel: React.FC = () => {
     qmdSearchEnabled,
     qmdSearchMode,
     qmdAutoEmbed,
+    mcpEnabled,
+    mcpPort,
+    mcpToken,
+    mcpAllowWrite,
+    mcpAllowLuminaIngest,
   ]);
+
+  const handleRegenerateMcpToken = useCallback(async () => {
+    try {
+      const status = await window.api.regenerateMcpToken();
+      setMcpStatus(status);
+      setMcpToken((await window.api.getConfig()).mcpServer.token);
+      setMcpTokenVisible(true);
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : 'Failed to regenerate token');
+    }
+  }, []);
+
+  const copyMcpText = useCallback(async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMcpCopied(key);
+      setTimeout(() => setMcpCopied((current) => (current === key ? null : current)), 2000);
+    } catch {
+      // Clipboard may be unavailable; the text stays selectable.
+    }
+  }, []);
 
   const handleRebuildQmd = useCallback(async () => {
     setQmdRebuilding(true);
@@ -388,8 +466,9 @@ const SettingsPanel: React.FC = () => {
         </div>
         <p className="settings-section__hint">
           When enabled, Chat <code className="settings-inline-code">search_wiki</code> uses local QMD
-          hybrid search (BM25 + vectors + reranking). Global search (<span className="kbd">⌘⇧F</span>)
-          stays on FlexSearch for instant results. First enable downloads local GGUF models (~hundreds of MB).
+          hybrid search (BM25 + vectors) over <code className="settings-inline-code">wiki/</code>. Global
+          search (<span className="kbd">⌘⇧F</span>) stays on FlexSearch for instant results. First enable
+          downloads a local embedding model (~334 MB).
         </p>
         {qmdSearchEnabled && (
           <>
@@ -420,7 +499,7 @@ const SettingsPanel: React.FC = () => {
             </div>
             {qmdStatus && (
               <p className="settings-section__hint">
-                {qmdStatus.ready ? 'Ready' : qmdStatus.indexing || qmdStatus.embedding ? 'Building index…' : 'Not ready'}
+                {describeQmdActivity(qmdStatus)}
                 {' · '}
                 {qmdStatus.totalDocuments} documents
                 {qmdStatus.needsEmbedding > 0
@@ -439,6 +518,144 @@ const SettingsPanel: React.FC = () => {
                 {qmdRebuilding ? 'Rebuilding…' : 'Rebuild index'}
               </button>
             </div>
+          </>
+        )}
+      </section>
+
+      {/* ── MCP server ────────────────────────────────── */}
+      <section className="settings-section">
+        <div className="settings-section__header-row">
+          <h3 className="settings-section__heading">MCP server</h3>
+          <button
+            type="button"
+            className={`phoenix-toggle ${mcpEnabled ? 'phoenix-toggle--on' : ''}`}
+            onClick={() => setMcpEnabled((v) => !v)}
+            aria-pressed={mcpEnabled}
+          >
+            <span className="phoenix-toggle__track">
+              <span className="phoenix-toggle__thumb" />
+            </span>
+            <span className="phoenix-toggle__label">{mcpEnabled ? 'Enabled' : 'Disabled'}</span>
+          </button>
+        </div>
+        <p className="settings-section__hint">
+          Lets other agents (Cursor, Claude Code, …) search and read this wiki over MCP and answer with
+          their own model via the <code className="settings-inline-code">answer_from_wiki</code> prompt.
+          The HTTP endpoint listens on <code className="settings-inline-code">127.0.0.1</code> only while
+          Lumina runs and requires the bearer token. The stdio command below works without the app.
+          Every vault in your vault list is reachable: agents call <code className="settings-inline-code">list_vaults</code>{' '}
+          and pass <code className="settings-inline-code">vault</code> to any tool (default: the open vault /{' '}
+          <code className="settings-inline-code">--vault</code>).
+        </p>
+        {mcpEnabled && (
+          <>
+            <label className="settings-field">
+              <span className="settings-field__label">Port</span>
+              <input
+                className="settings-field__input settings-field__input--short"
+                type="number"
+                min={1024}
+                max={65535}
+                value={mcpPort}
+                onChange={(e) => setMcpPort(e.target.value)}
+                placeholder={String(DEFAULT_MCP_SERVER_CONFIG.port)}
+              />
+            </label>
+            {mcpStatus && (
+              <p className="settings-section__hint">
+                {mcpStatus.running ? `Running at ${mcpStatus.url}` : 'Not running — save to start'}
+                {mcpStatus.error ? ` · Error: ${mcpStatus.error}` : ''}
+              </p>
+            )}
+            <label className="settings-field">
+              <span className="settings-field__label">Bearer token</span>
+              <div className="settings-field__row">
+                <input
+                  className="settings-field__input settings-field__input--path"
+                  type={mcpTokenVisible ? 'text' : 'password'}
+                  value={mcpToken}
+                  readOnly
+                  placeholder="Generated when you save"
+                />
+                <button className="settings-field__btn" type="button" onClick={() => setMcpTokenVisible((v) => !v)}>
+                  {mcpTokenVisible ? 'Hide' : 'Show'}
+                </button>
+                <button
+                  className="settings-field__btn"
+                  type="button"
+                  disabled={!mcpToken}
+                  onClick={() => void copyMcpText('token', mcpToken)}
+                >
+                  {mcpCopied === 'token' ? 'Copied' : 'Copy'}
+                </button>
+                <button
+                  className="settings-field__btn"
+                  type="button"
+                  disabled={!mcpToken}
+                  onClick={() => void handleRegenerateMcpToken()}
+                  title="Invalidates the current token for all HTTP clients"
+                >
+                  Regenerate
+                </button>
+              </div>
+            </label>
+            <div className="settings-section__header-row">
+              <span className="settings-field__label">Allow writing wiki pages</span>
+              <button
+                type="button"
+                className={`phoenix-toggle ${mcpAllowWrite ? 'phoenix-toggle--on' : ''}`}
+                onClick={() => setMcpAllowWrite((v) => !v)}
+                aria-pressed={mcpAllowWrite}
+              >
+                <span className="phoenix-toggle__track">
+                  <span className="phoenix-toggle__thumb" />
+                </span>
+                <span className="phoenix-toggle__label">{mcpAllowWrite ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+            <p className="settings-section__hint">
+              Adds <code className="settings-inline-code">write_wiki_page</code> and{' '}
+              <code className="settings-inline-code">append_wiki_log</code> so the caller&apos;s model can ingest
+              with the <code className="settings-inline-code">ingest</code> prompt. Writes are limited to{' '}
+              <code className="settings-inline-code">wiki/</code>; <code className="settings-inline-code">raw/</code> stays read-only.
+            </p>
+            <div className="settings-section__header-row">
+              <span className="settings-field__label">Allow ingest with Lumina&apos;s model</span>
+              <button
+                type="button"
+                className={`phoenix-toggle ${mcpAllowLuminaIngest ? 'phoenix-toggle--on' : ''}`}
+                onClick={() => setMcpAllowLuminaIngest((v) => !v)}
+                aria-pressed={mcpAllowLuminaIngest}
+              >
+                <span className="phoenix-toggle__track">
+                  <span className="phoenix-toggle__thumb" />
+                </span>
+                <span className="phoenix-toggle__label">{mcpAllowLuminaIngest ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+            <p className="settings-section__hint">
+              Adds <code className="settings-inline-code">ingest_with_lumina</code> (HTTP only): Lumina ingests a{' '}
+              <code className="settings-inline-code">raw/</code> file with its own LLM and tools, exactly like
+              <code className="settings-inline-code">/ingest</code> in Chat, and uses your API quota.
+            </p>
+            {(
+              [
+                ['http', 'HTTP (while Lumina runs)', buildHttpMcpSnippet(parseMcpPort(mcpPort, DEFAULT_MCP_SERVER_CONFIG.port), mcpToken)],
+                ...(mcpStatus
+                  ? [['stdio', 'stdio (no app needed, read-only unless writes are allowed)', buildStdioMcpSnippet(mcpStatus, vaultPath)]]
+                  : []),
+              ] as [string, string, string][]
+            ).map(([key, label, snippet]) => (
+              <div className="settings-field" key={key}>
+                <div className="settings-field__row">
+                  <span className="settings-field__label">{label}</span>
+                  <button className="settings-field__btn" type="button" onClick={() => void copyMcpText(key, snippet)}>
+                    {mcpCopied === key ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="settings-code-block">{mcpTokenVisible || key !== 'http' ? snippet : snippet.replace(mcpToken || '\u0000', '••••••••')}</pre>
+              </div>
+            ))}
           </>
         )}
       </section>

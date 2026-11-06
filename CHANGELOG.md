@@ -2,6 +2,13 @@
 
 All notable changes to Lumina are documented here. The app shows this on first launch after each update.
 
+## 0.8.8 — 2026-09-27
+
+- Optional QMD semantic search for Chat `search_wiki`, for better recall on conceptual queries
+- Search and semantic (QMD) indexes now refresh automatically when vault Markdown files change
+- Right-click "Ingest" (and batch ingest) now starts the ingest immediately instead of briefly flashing an empty "new chat" screen
+- MCP server: other agents (Cursor, Claude Code, …) can search and read your wiki and answer with their own model — over local HTTP while Lumina runs, or a stdio command that works without the app. Optional, off-by-default write and "ingest with Lumina" tools
+
 ## 0.8.7 — 2025-06-26
 
 - "What's new" changelog popup on first launch after each update

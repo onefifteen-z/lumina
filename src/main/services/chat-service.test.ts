@@ -12,6 +12,13 @@ import { LLMService } from "./llm-service";
 import { FileSystemService } from "./filesystem-service";
 import type { ChatMessage, VaultLanguage } from "../../shared/types";
 
+// Tests inject template loaders explicitly; keep the defaults from reading
+// the real bundled assets/templates.
+vi.mock("./template-service", () => ({
+  readClaudeMdTemplate: async () => null,
+  readIngestMdTemplate: async () => null,
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 /** Create a mock FileSystemService for vault prompt file reads. */

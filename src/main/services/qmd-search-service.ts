@@ -7,7 +7,10 @@ import type {
 } from "../../shared/types";
 import { DEFAULT_QMD_SEARCH_CONFIG } from "../../shared/types";
 
-type QmdModule = typeof import("@tobilu/qmd");
+import { loadTobiluQmdModule, type TobiluQmdModule } from "./load-tobilu-qmd";
+import type { QmdModelManager } from "./qmd-model-manager";
+
+type QmdModule = TobiluQmdModule;
 type QmdStore = Awaited<ReturnType<QmdModule["createStore"]>>;
 type QmdHybridResult = Awaited<ReturnType<QmdStore["search"]>>[number];
 type QmdLexResult = Awaited<ReturnType<QmdStore["searchLex"]>>[number];
@@ -19,12 +22,15 @@ export type WikiSearchHit = {
 };
 
 const COLLECTION_NAME = "vault";
+/** Only compiled wiki pages are indexed; raw/ sources are excluded. */
+const WIKI_DIR = "wiki";
 const UPDATE_DEBOUNCE_MS = 500;
 
 function qmdDbPath(vaultPath: string): string {
   return path.join(vaultPath, ".lumina", "qmd", "index.sqlite");
 }
 
+/** qmd paths are relative to the wiki/ collection root; callers expect vault-relative. */
 function toVaultRelativeFilename(
   vaultPath: string,
   displayPath: string,
@@ -37,12 +43,25 @@ function toVaultRelativeFilename(
   if (normalized.startsWith(vaultPrefix + "/")) {
     return normalized.slice(vaultPrefix.length + 1);
   }
+  let relative = normalized;
   if (normalized.startsWith("qmd://")) {
     const withoutScheme = normalized.slice("qmd://".length);
     const slash = withoutScheme.indexOf("/");
-    return slash >= 0 ? withoutScheme.slice(slash + 1) : withoutScheme;
+    relative = slash >= 0 ? withoutScheme.slice(slash + 1) : withoutScheme;
   }
-  return normalized.replace(/^\/+/, "");
+  relative = relative.replace(/^\/+/, "");
+  if (relative.startsWith(`${COLLECTION_NAME}/`)) {
+    relative = relative.slice(COLLECTION_NAME.length + 1);
+  }
+  return `${WIKI_DIR}/${relative}`;
+}
+
+function toExcerpt(text: string): string {
+  return text
+    .replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
 }
 
 function mapHybridResult(
@@ -54,10 +73,7 @@ function mapHybridResult(
     result.displayPath,
     result.file,
   );
-  const excerpt = (result.bestChunk || result.body || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 200);
+  const excerpt = toExcerpt(result.bestChunk || result.body || "");
   return {
     title: result.title || path.basename(filename, ".md"),
     filename,
@@ -71,10 +87,7 @@ function mapLexResult(vaultPath: string, result: QmdLexResult): WikiSearchHit {
     result.displayPath,
     result.filepath,
   );
-  const excerpt = (result.body || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 200);
+  const excerpt = toExcerpt(result.body || "");
   return {
     title: result.title || path.basename(filename, ".md"),
     filename,
@@ -85,15 +98,19 @@ function mapLexResult(vaultPath: string, result: QmdLexResult): WikiSearchHit {
 /**
  * Wraps the @tobilu/qmd SDK for per-vault semantic/keyword search used by
  * Chat `search_wiki`. UI search continues to use FlexSearch.
+ * Only the embedding model is used: no LLM query expansion and no reranking.
  */
 export class QmdSearchService {
   private readonly vaultPath: string;
+  private readonly models: QmdModelManager | null;
   private config: QmdSearchConfig;
   private store: QmdStore | null = null;
+  private storeEmbedModel: string | null = null;
   private qmdModule: QmdModule | null = null;
   private ready = false;
   private indexing = false;
   private embedding = false;
+  private downloading = false;
   private lastUpdatedAt: string | null = null;
   private error: string | null = null;
   private progress: QmdSearchProgress | null = null;
@@ -102,9 +119,14 @@ export class QmdSearchService {
   private embedQueued = false;
   private onProgress: ((progress: QmdSearchProgress) => void) | null = null;
 
-  constructor(vaultPath: string, config?: Partial<QmdSearchConfig>) {
+  constructor(
+    vaultPath: string,
+    config?: Partial<QmdSearchConfig>,
+    models: QmdModelManager | null = null,
+  ) {
     this.vaultPath = vaultPath;
     this.config = { ...DEFAULT_QMD_SEARCH_CONFIG, ...config };
+    this.models = models;
   }
 
   setConfig(config: Partial<QmdSearchConfig>): void {
@@ -125,6 +147,7 @@ export class QmdSearchService {
       ready: this.isReady(),
       indexing: this.indexing,
       embedding: this.embedding,
+      downloading: this.downloading,
       totalDocuments: 0,
       needsEmbedding: 0,
       hasVectorIndex: false,
@@ -157,27 +180,74 @@ export class QmdSearchService {
 
   private async loadQmdModule(): Promise<QmdModule> {
     if (this.qmdModule) return this.qmdModule;
-    this.qmdModule = await import("@tobilu/qmd");
+    this.qmdModule = await loadTobiluQmdModule();
     return this.qmdModule;
   }
 
+  private needsEmbedModel(): boolean {
+    return (
+      this.models !== null &&
+      (this.config.mode !== "lex" || this.config.autoEmbed)
+    );
+  }
+
+  private async ensureEmbedModelPath(): Promise<string | undefined> {
+    if (!this.models || !this.needsEmbedModel()) return undefined;
+    if (this.models.isEmbedModelReady()) return this.models.embedModelPath;
+    this.downloading = true;
+    this.emitProgress({
+      phase: "download",
+      current: 0,
+      total: 0,
+      message: "Downloading embedding model…",
+    });
+    let lastReportedMb = -1;
+    try {
+      return await this.models.ensureEmbedModel({
+        onProgress: ({ receivedBytes, totalBytes }) => {
+          const mb = Math.floor(receivedBytes / (1024 * 1024));
+          if (mb === lastReportedMb && receivedBytes !== totalBytes) return;
+          lastReportedMb = mb;
+          this.emitProgress({
+            phase: "download",
+            current: receivedBytes,
+            total: totalBytes,
+            message: "Downloading embedding model…",
+          });
+        },
+      });
+    } finally {
+      this.downloading = false;
+    }
+  }
+
   private async ensureStore(): Promise<QmdStore> {
-    if (this.store) return this.store;
+    // A store opened without an embed model would make qmd fall back to its own
+    // hf: download, which hangs behind TLS-inspecting proxies.
+    if (this.store && (this.storeEmbedModel || !this.needsEmbedModel())) {
+      return this.store;
+    }
+    const embedModel = await this.ensureEmbedModelPath();
+    if (this.store) {
+      await this.store.close();
+      this.store = null;
+    }
     const qmd = await this.loadQmdModule();
     const dbPath = qmdDbPath(this.vaultPath);
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.store = await qmd.createStore({
       dbPath,
       config: {
+        ...(embedModel ? { models: { embed: embedModel } } : {}),
         collections: {
           [COLLECTION_NAME]: {
-            path: this.vaultPath,
+            path: path.join(this.vaultPath, WIKI_DIR),
             pattern: "**/*.md",
-            ignore: [".lumina/**", "node_modules/**"],
           },
         },
       },
     });
+    this.storeEmbedModel = embedModel ?? null;
     return this.store;
   }
 
@@ -315,9 +385,12 @@ export class QmdSearchService {
     }
     try {
       const results = await store.search({
-        query: q,
+        queries: [
+          { type: "lex", query: q },
+          { type: "vec", query: q },
+        ],
         limit,
-        rerank: true,
+        rerank: false,
       });
       return results.map((r) => mapHybridResult(this.vaultPath, r));
     } catch (err) {

@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, app, shell } from "electron";
+import path from "path";
+import { ipcMain, BrowserWindow, app, shell, net } from "electron";
 import type {
   ArticleFile,
   ArticleMeta,
@@ -7,13 +8,17 @@ import type {
   LLMAssistParams,
   ChatContentBlock,
   IngestRequest,
+  McpServerStatus,
   VaultConfig,
 } from "../shared/types";
+import { AppMcpServer } from "./services/mcp-app-server";
+import { VaultRuntime } from "../core/vault-runtime";
 import { reconfigureTelemetry } from "./telemetry";
 import { titleToFilename, parseArticleFile } from "../shared/markdown-parser";
 import { FileSystemService } from "./services/filesystem-service";
 import { SearchIndexService } from "./services/search-index-service";
 import { QmdSearchService } from "./services/qmd-search-service";
+import { QmdModelManager } from "./services/qmd-model-manager";
 import { WikiSearchRouter } from "./services/wiki-search-router";
 import { LLMService, LLMError } from "./services/llm-service";
 import { ConfigService } from "./services/config-service";
@@ -64,12 +69,21 @@ export function registerIpcHandlers(services: {
   let fileSystem = services.fileSystem;
   let searchIndex = services.searchIndex;
   let qmdSearch: QmdSearchService | null = null;
+  let qmdModels: QmdModelManager | null = null;
+  const getQmdModels = (): QmdModelManager => {
+    qmdModels ??= new QmdModelManager({
+      modelsDir: path.join(app.getPath("userData"), "qmd", "models"),
+      fetch: (url) => net.fetch(url),
+    });
+    return qmdModels;
+  };
   let wikiSearchRouter: WikiSearchRouter | null = null;
   const { config } = services;
   let llm = services.llm;
   const chat = services.chat ?? null;
   const chatHistory = services.chatHistory ?? null;
   const ingest = new IngestService(llm, fileSystem);
+  let syncMcpServer: () => Promise<void> = async () => {};
 
   function syncPdfImageIngestFromConfig(): void {
     const cfg = config.getConfig();
@@ -111,14 +125,36 @@ export function registerIpcHandlers(services: {
     }
   }
 
-  async function initQmdSearch(vaultPath: string): Promise<void> {
-    await closeQmdSearch();
+  /**
+   * Drop the active QMD instance without waiting for store.close().
+   * First-time indexing/embedding can take minutes; awaiting close blocked vault switch.
+   */
+  function detachQmdSearch(): void {
+    const previous = qmdSearch;
+    qmdSearch = null;
+    if (!previous) return;
+    previous.setProgressHandler(null);
+    void previous.close().catch((err) => {
+      console.warn("Background QMD close failed:", err);
+    });
+    attachWikiSearchRouter();
+  }
+
+  async function initQmdSearch(
+    vaultPath: string,
+    options?: { awaitPreviousClose?: boolean },
+  ): Promise<void> {
+    if (options?.awaitPreviousClose) {
+      await closeQmdSearch();
+    } else {
+      detachQmdSearch();
+    }
     const qmdCfg = config.getConfig().qmdSearch;
     if (!qmdCfg.enabled) {
       attachWikiSearchRouter();
       return;
     }
-    qmdSearch = new QmdSearchService(vaultPath, qmdCfg);
+    qmdSearch = new QmdSearchService(vaultPath, qmdCfg, getQmdModels());
     qmdSearch.setProgressHandler((progress) => {
       getMainWindow()?.webContents.send("wiki:qmdProgress", progress);
     });
@@ -252,12 +288,14 @@ export function registerIpcHandlers(services: {
     const articles = await fileSystem.scanVault();
     await newSearchIndex.buildIndex(articles);
     searchIndex = newSearchIndex;
+    cachedArticles = articles;
 
     attachVaultWatcher(fileSystem);
 
     chat?.setFileSystemService(fileSystem);
-    await initQmdSearch(vaultPath);
     syncQmdSearchFromConfig();
+    // QMD first index/embed runs in the background; do not block vault switch on it.
+    void initQmdSearch(vaultPath);
     ingest.setFileSystemService(fileSystem);
     try {
       chatHistory?.open(vaultPath);
@@ -558,6 +596,7 @@ export function registerIpcHandlers(services: {
         ready: false,
         indexing: false,
         embedding: false,
+        downloading: false,
         totalDocuments: 0,
         needsEmbedding: 0,
         hasVectorIndex: false,
@@ -980,6 +1019,9 @@ export function registerIpcHandlers(services: {
           }
         }
       }
+      if (partial.mcpServer !== undefined) {
+        await syncMcpServer();
+      }
       // If the provider config changed, rebuild the LLM service immediately.
       if (partial.llmProvider !== undefined) {
         rebuildLLMService();
@@ -1072,6 +1114,67 @@ export function registerIpcHandlers(services: {
       debugLog("debug", `ui:${payload.tag}`, payload.message, payload.data);
     },
   );
+
+  // ── MCP server ───────────────────────────────────────────────────
+
+  const mcpServer = new AppMcpServer({
+    getConfig: () => config.getConfig().mcpServer,
+    saveConfig: (partial) =>
+      config.saveConfig({ mcpServer: { ...config.getConfig().mcpServer, ...partial } }),
+    backend: {
+      getVaultPath: () => fileSystem?.getVaultPath() ?? null,
+      listAllArticles: () => getArticlesForLinkResolution(),
+      search: async (query) => (wikiSearchRouter ? wikiSearchRouter.search(query) : []),
+      searchEngine: () =>
+        config.getConfig().qmdSearch.enabled && qmdSearch?.isReady() ? "qmd" : "flexsearch",
+      qmdStatus: async () => (qmdSearch ? qmdSearch.getDetailedStatus() : null),
+      loadBundledTemplate: (name) =>
+        name === "CLAUDE.md" ? readClaudeMdTemplate() : readIngestMdTemplate(),
+      pdfImageIngest: () => config.getConfig().pdfImageIngest,
+    },
+    getVaultEntries: () => config.getVaultHistory(),
+    openVaultRuntime: (vaultPath) =>
+      VaultRuntime.open({
+        vaultPath,
+        qmdSearch: config.getConfig().qmdSearch,
+        userDataDir: app.getPath("userData"),
+        watch: true,
+        log: (message) => console.log(`[mcp ${path.basename(vaultPath)}] ${message}`),
+      }),
+    pdfImageIngest: () => config.getConfig().pdfImageIngest,
+    createIngestChat: (vaultPath, search) => {
+      if (!llm) throw new Error("Lumina has no LLM configured. Set one up in Settings first.");
+      const cfg = config.getConfig();
+      const vaultFs = search ? new FileSystemService(vaultPath) : fileSystem;
+      if (!vaultFs) throw new Error("No Lumina vault is open.");
+      const ingestChat = new ChatService(llm, vaultFs);
+      ingestChat.setSearchIndex(search ?? wikiSearchRouter);
+      ingestChat.setQmdSearchEnabled(cfg.qmdSearch.enabled);
+      ingestChat.setPdfImageIngest(cfg.pdfImageIngest);
+      ingestChat.setFileIngest(cfg.fileIngest);
+      return ingestChat;
+    },
+    version: app.getVersion(),
+    cliPath: path.join(app.getAppPath(), "dist", "main", "mcp", "cli.js"),
+    executablePath: process.execPath,
+  });
+
+  ipcMain.handle("wiki:getMcpStatus", async (): Promise<McpServerStatus> => mcpServer.getStatus());
+
+  ipcMain.handle("wiki:regenerateMcpToken", async (): Promise<McpServerStatus> =>
+    mcpServer.regenerateToken(),
+  );
+
+  app.on("will-quit", () => {
+    void mcpServer.stop();
+  });
+
+  syncMcpServer = () =>
+    mcpServer.sync().then((status) => {
+      if (status.error) console.warn("MCP server:", status.error);
+      getMainWindow()?.webContents.send("wiki:mcpStatusChanged");
+    });
+  void syncMcpServer();
 
   if (fileSystem && searchIndex) {
     attachVaultWatcher(fileSystem);

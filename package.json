@@ -1,6 +1,6 @@
 {
   "name": "Lumina",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "A local, AI-powered wiki desktop application built with Electron",
   "main": "dist/main/main/main.js",
   "build": {
@@ -18,7 +18,10 @@
       "node_modules/node-llama-cpp/**/*",
       "node_modules/@node-llama-cpp/**/*",
       "node_modules/better-sqlite3/**/*",
-      "node_modules/sqlite-vec*/**/*"
+      "node_modules/sqlite-vec*/**/*",
+      "node_modules/@tobilu/qmd/**/*",
+      "node_modules/tree-sitter*/**/*",
+      "node_modules/web-tree-sitter/**/*"
     ],
     "directories": {
       "output": "release"
@@ -57,13 +60,15 @@
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "npm run build && electron-builder --config electron-builder.json"
+    "package": "npm run build && electron-builder --config electron-builder.json",
+    "mcp": "cross-env ELECTRON_RUN_AS_NODE=1 electron dist/main/mcp/cli.js"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.3.1",
     "@codemirror/search": "^6.6.0",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
+    "@modelcontextprotocol/server": "2.0.0",
     "@napi-rs/canvas": "^0.1.99",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.215.0",
@@ -96,7 +101,13 @@
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
     "unified": "^11.0.5",
-    "unist-util-visit": "^5.1.0"
+    "unist-util-visit": "^5.1.0",
+    "zod": "4.2.1"
+  },
+  "overrides": {
+    "@tobilu/qmd": {
+      "better-sqlite3": "$better-sqlite3"
+    }
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

@@ -1,33 +1,31 @@
-import { app } from "electron";
 import * as path from "path";
 import * as fs from "fs/promises";
 
 /**
- * Resolve the on-disk path for a bundled template file.
+ * Candidate on-disk paths for a bundled template file, first hit wins.
+ * No `electron` import: the stdio MCP CLI loads this under ELECTRON_RUN_AS_NODE.
  *
- * Dev: read from `assets/templates/` next to the project root (cwd-based,
- *      since electron's main process runs with cwd = project root in dev).
- * Prod: read from `process.resourcesPath/templates/` — which matches the
- *       `extraResources` mapping in package.json that copies
- *       `assets/templates → templates`.
+ * - Packaged: `process.resourcesPath/templates/` — the `extraResources`
+ *   mapping copies `assets/templates → templates`.
+ * - Dev: main compiles to `dist/main/main/services/`, so four levels up is the
+ *   repo root (or `app.asar` when packaged, whose sibling is `templates/`).
+ * - cwd-relative for unusual run contexts (e.g. tests).
  */
-function resolveTemplatePath(basename: string): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "templates", basename);
+function templateCandidates(basename: string): string[] {
+  const candidates: string[] = [];
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, "templates", basename));
   }
-  // In dev, walk up from compiled main file to repo root. main.ts compiles to
-  // `dist/main/main/main.js`, so going up 3 levels lands on the repo root in
-  // both `npm run dev` (electronmon) and direct `electron .` invocations.
-  const repoRoot = path.resolve(__dirname, "..", "..", "..");
-  return path.join(repoRoot, "assets", "templates", basename);
+  const fourUp = path.resolve(__dirname, "..", "..", "..", "..");
+  candidates.push(path.join(fourUp, "assets", "templates", basename));
+  candidates.push(path.join(path.dirname(fourUp), "templates", basename));
+  candidates.push(path.join(process.cwd(), "assets", "templates", basename));
+  return candidates;
 }
 
 /** Read a bundled template by basename. Returns null if missing/unreadable. */
 export async function readTemplate(basename: string): Promise<string | null> {
-  const candidates = [resolveTemplatePath(basename)];
-  // Belt-and-suspenders: also try cwd-relative for unusual run contexts (e.g.
-  // tests that don't go through electron). First hit wins.
-  candidates.push(path.join(process.cwd(), "assets", "templates", basename));
+  const candidates = templateCandidates(basename);
 
   for (const p of candidates) {
     try {

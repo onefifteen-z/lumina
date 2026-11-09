@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildHttpMcpSnippet, buildStdioMcpSnippet, parseMcpPort } from './mcp-snippets';
+import { buildHttpMcpSnippet, buildHttpUrlTokenMcpSnippet, buildStdioMcpSnippet, parseMcpPort } from './mcp-snippets';
 
 describe('mcp snippets', () => {
   it('builds the HTTP entry with the bearer header', () => {
@@ -7,6 +7,12 @@ describe('mcp snippets', () => {
       mcpServers: {
         lumina: { url: 'http://127.0.0.1:8765/mcp', headers: { Authorization: 'Bearer abc' } },
       },
+    });
+  });
+
+  it('builds the HTTP entry with the token in the URL', () => {
+    expect(JSON.parse(buildHttpUrlTokenMcpSnippet(8765, 'abc'))).toEqual({
+      mcpServers: { lumina: { url: 'http://127.0.0.1:8765/mcp?token=abc' } },
     });
   });
 

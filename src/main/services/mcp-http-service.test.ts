@@ -42,7 +42,7 @@ describe("McpHttpService", () => {
     const init = await readRpcResponse(await fetch(rpcRequest(url, "initialize", INITIALIZE_PARAMS, auth)));
     expect((init.result?.serverInfo as { name: string }).name).toBe("lumina");
     const tools = await readRpcResponse(await fetch(rpcRequest(url, "tools/list", {}, auth)));
-    expect((tools.result?.tools as unknown[]).length).toBe(7);
+    expect((tools.result?.tools as unknown[]).length).toBe(8);
   });
 
   it("rejects missing and wrong tokens with 401", async () => {
@@ -51,6 +51,13 @@ describe("McpHttpService", () => {
     const wrong = await fetch(rpcRequest(url, "tools/list", {}, { authorization: "Bearer nope" }));
     expect(wrong.status).toBe(401);
     expect(wrong.headers.get("www-authenticate")).toMatch(/Bearer/);
+  });
+
+  it("accepts the token as a ?token= query parameter", async () => {
+    const url = await startService();
+    const ok = await fetch(rpcRequest(`${url}?token=${TOKEN}`, "initialize", INITIALIZE_PARAMS));
+    expect(ok.status).toBe(200);
+    expect((await fetch(rpcRequest(`${url}?token=wrong`, "tools/list"))).status).toBe(401);
   });
 
   it("rejects foreign Origin and Host headers (DNS rebinding)", async () => {

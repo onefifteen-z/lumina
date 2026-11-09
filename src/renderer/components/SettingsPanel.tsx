@@ -8,7 +8,12 @@ import {
   type QmdSearchStatus,
   type VaultLanguage,
 } from '../../shared/types';
-import { buildHttpMcpSnippet, buildStdioMcpSnippet, parseMcpPort } from './settings/mcp-snippets';
+import {
+  buildHttpMcpSnippet,
+  buildHttpUrlTokenMcpSnippet,
+  buildStdioMcpSnippet,
+  parseMcpPort,
+} from './settings/mcp-snippets';
 
 type ConnectionStatus = 'idle' | 'testing' | 'success' | 'error';
 
@@ -641,6 +646,7 @@ const SettingsPanel: React.FC = () => {
             {(
               [
                 ['http', 'HTTP (while Lumina runs)', buildHttpMcpSnippet(parseMcpPort(mcpPort, DEFAULT_MCP_SERVER_CONFIG.port), mcpToken)],
+                ['http-url', 'HTTP, token in URL (for clients that reject an Authorization header)', buildHttpUrlTokenMcpSnippet(parseMcpPort(mcpPort, DEFAULT_MCP_SERVER_CONFIG.port), mcpToken)],
                 ...(mcpStatus
                   ? [['stdio', 'stdio (no app needed, read-only unless writes are allowed)', buildStdioMcpSnippet(mcpStatus, vaultPath)]]
                   : []),
@@ -653,7 +659,7 @@ const SettingsPanel: React.FC = () => {
                     {mcpCopied === key ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-                <pre className="settings-code-block">{mcpTokenVisible || key !== 'http' ? snippet : snippet.replace(mcpToken || '\u0000', '••••••••')}</pre>
+                <pre className="settings-code-block">{mcpTokenVisible || !key.startsWith('http') ? snippet : snippet.replace(mcpToken || '\u0000', '••••••••')}</pre>
               </div>
             ))}
           </>

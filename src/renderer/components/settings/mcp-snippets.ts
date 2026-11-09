@@ -16,6 +16,12 @@ export function buildHttpMcpSnippet(port: number, token: string): string {
   );
 }
 
+/** HTTP entry with the token in the URL, for clients that refuse a static Authorization header. */
+export function buildHttpUrlTokenMcpSnippet(port: number, token: string): string {
+  const query = token ? `?token=${encodeURIComponent(token)}` : '?token=<enable and save to generate>';
+  return JSON.stringify({ mcpServers: { lumina: { url: `http://127.0.0.1:${port}/mcp${query}` } } }, null, 2);
+}
+
 /** `mcp.json` entry that runs the stdio CLI through the app's bundled Electron runtime. */
 export function buildStdioMcpSnippet(
   status: Pick<McpServerStatus, 'cliPath' | 'executablePath'>,

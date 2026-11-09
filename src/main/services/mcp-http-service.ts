@@ -120,8 +120,10 @@ export class McpHttpService {
     const originRejection = originValidationResponse(request, localhostAllowedOrigins());
     if (originRejection) return originRejection;
     const auth = request.headers.get("authorization") ?? "";
-    const match = auth.match(/^Bearer\s+(.+)$/i);
-    if (!this.options.token || !match || !tokensEqual(match[1].trim(), this.options.token)) {
+    // `?token=` serves clients that refuse to store a static Authorization header.
+    const presented =
+      auth.match(/^Bearer\s+(.+)$/i)?.[1].trim() ?? new URL(request.url).searchParams.get("token") ?? "";
+    if (!this.options.token || !presented || !tokensEqual(presented, this.options.token)) {
       return jsonError(401, "Unauthorized: missing or invalid bearer token", {
         "www-authenticate": 'Bearer realm="lumina"',
       });

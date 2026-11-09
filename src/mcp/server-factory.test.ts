@@ -31,7 +31,16 @@ async function toolNames(backend: LuminaBackend, caps: McpCapabilities): Promise
   return ((res.result?.tools as { name: string }[]) ?? []).map((t) => t.name).sort();
 }
 
-const READ_TOOLS = ["get_article", "get_backlinks", "ingest_source", "list_articles", "list_vaults", "lumina_status", "search_wiki"];
+const READ_TOOLS = [
+  "get_article",
+  "get_backlinks",
+  "get_vault_instructions",
+  "ingest_source",
+  "list_articles",
+  "list_vaults",
+  "lumina_status",
+  "search_wiki",
+];
 
 describe("createLuminaMcpServer", () => {
   it("exposes only read tools by default", async () => {
@@ -98,6 +107,23 @@ describe("createLuminaMcpServer", () => {
     });
     const messages = prompt.result?.messages as { content: { text: string } }[];
     expect(messages[0].content.text).toMatch(/^ANSWER PROMPT\n\n## Vault\n.*"\/vaults\/main"/s);
+  });
+
+  it("returns the prompt text from get_vault_instructions", async () => {
+    const backend = fakeBackend();
+    const handler = handlerFor(backend, { allowWrite: false, allowLuminaIngest: false });
+    const ingest = await callRpc(handler, "tools/call", {
+      name: "get_vault_instructions",
+      arguments: { path: "raw/a.pdf" },
+    });
+    expect(backend.ingestPrompt).toHaveBeenCalledWith("raw/a.pdf");
+    expect(ingest.result!.content![0].text).toMatch(/^INGEST PROMPT\n\n## Vault\n.*"\/vaults\/main"/s);
+    const answer = await callRpc(handler, "tools/call", {
+      name: "get_vault_instructions",
+      arguments: { task: "answer" },
+    });
+    expect(backend.answerPrompt).toHaveBeenCalledWith(undefined);
+    expect(answer.result!.content![0].text).toMatch(/^ANSWER PROMPT/);
   });
 
   describe("multiple vaults", () => {

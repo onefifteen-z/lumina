@@ -1,17 +1,17 @@
 # Lumina MCP Server
 
-让 Cursor、Claude Code、Claude Desktop 等外部 Agent 通过 MCP 查询（以及可选地写入）Lumina 的 `wiki/`，并用**调用方自己的模型**生成答案。
+Lets external agents such as Cursor, Claude Code and Claude Desktop query (and optionally write to) Lumina's `wiki/` over MCP, generating answers with **the caller's own model**.
 
-## 两种接入方式
+## Two ways to connect
 
-| 方式 | 何时可用 | 能力 |
-|------|----------|------|
-| **HTTP**（App 内） | Lumina 正在运行，且 Settings → MCP server 已启用 | 全部工具；共享 App 的热索引（FlexSearch + QMD）；`ingest_with_lumina` 仅此方式提供 |
-| **stdio CLI** | 任何时候（不需要 App 运行） | 检索 + 可选写入；QMD 只读复用 App 已建好的索引和已下载的 embedding 模型（不会自行下载或生成 embedding） |
+| Transport | Available when | Capabilities |
+|-----------|----------------|--------------|
+| **HTTP** (in the app) | Lumina is running and Settings → MCP server is enabled | All tools; shares the app's warm index (FlexSearch + QMD); `ingest_with_lumina` is only offered here |
+| **stdio CLI** | Any time (the app does not need to be running) | Retrieval + optional writes; QMD reuses the index and embedding model the app already built/downloaded, read-only (it never downloads models or generates embeddings) |
 
-### HTTP 配置
+### HTTP setup
 
-Settings → **MCP server** → 打开开关 → Save。首次启用会生成 bearer token。把面板里的 HTTP 片段复制到 `~/.cursor/mcp.json`（或其他客户端的 MCP 配置）：
+Settings → **MCP server** → turn it on → Save. A bearer token is generated the first time it is enabled. Copy the HTTP snippet from the panel into `~/.cursor/mcp.json` (or another client's MCP config):
 
 ```json
 {
@@ -24,9 +24,15 @@ Settings → **MCP server** → 打开开关 → Save。首次启用会生成 be
 }
 ```
 
-### stdio 配置
+If the client refuses to store a static `Authorization` header (e.g. it only accepts OAuth / `${USER_JWT}`), put the token in the URL so only a server URL is needed (the panel has a "token in URL" snippet):
 
-用 App 自带的 Electron 运行时以 Node 模式启动 CLI，无需单独安装 Node：
+```json
+{ "mcpServers": { "lumina": { "url": "http://127.0.0.1:8765/mcp?token=<token>" } } }
+```
+
+### stdio setup
+
+The CLI runs on the app's bundled Electron runtime in Node mode, so no separate Node install is needed:
 
 ```json
 {
@@ -43,65 +49,74 @@ Settings → **MCP server** → 打开开关 → Save。首次启用会生成 be
 }
 ```
 
-CLI 参数：
+CLI options:
 
-- `--vault <path>`：默认 vault（工具调用不传 `vault` 时使用）。优先级：`--vault` > 环境变量 `LUMINA_VAULT` > App 最近打开的 vault。App 的 vault 列表非空时可省略。
-- `--allow-write`：注册写入工具（或在 App 里打开 “Allow writing wiki pages”，CLI 会读取同一设置）。
-- `--user-data <dir>`：App 的 userData 目录（默认 `~/Library/Application Support/Lumina`），用于读取 QMD 设置和 embedding 模型。
+- `--vault <path>`: the default vault (used when a tool call omits `vault`). Precedence: `--vault` > the `LUMINA_VAULT` environment variable > the vault last opened in the app. Optional when the app's vault list is non-empty.
+- `--allow-write`: register the write tools (or turn on "Allow writing wiki pages" in the app; the CLI reads the same setting).
+- `--user-data <dir>`: the app's userData directory (default `~/Library/Application Support/Lumina`), used to read QMD settings and the embedding model.
 
-开发环境：`npm run build:main && npm run mcp -- --vault <path>`（`npm run` 会向 stdout 打印头部，客户端配置里请直接用 `electron dist/main/mcp/cli.js`）。
+Development: `npm run build:main && npm run mcp -- --vault <path>` (`npm run` prints a header to stdout, so in client configs run `electron dist/main/mcp/cli.js` directly).
 
-## 多 vault
+## Multiple vaults
 
-可访问的 vault = App 的 vault 列表（Vault switcher 历史），CLI 额外包括显式传入的 `--vault`。列表外的路径一律拒绝。
+Accessible vaults = the app's vault list (the vault switcher history); the CLI also includes an explicitly passed `--vault`. Any path outside that list is rejected.
 
-- `list_vaults()` 返回 `[{name, path, default, initialized}]`。
-- 所有工具和两个 Prompt 都接受可选参数 `vault`：可以是名称（不区分大小写）或完整路径；省略时使用默认 vault（HTTP：App 当前打开的 vault；CLI：`--vault`）。同名 vault 需用路径区分。
-- HTTP 模式下当前打开的 vault 使用 App 的热索引；其他 vault 按需加载独立索引（最多同时 3 个，LRU 释放），QMD 复用该 vault 已有的索引，不在此时生成 embedding。
-- 写入开关对所有 vault 统一生效；`ingest_with_lumina` 也可指定 `vault`，所有 vault 的 Lumina ingest 共用一个串行队列。
+- `list_vaults()` returns `[{name, path, default, initialized}]`.
+- Every tool and both prompts accept an optional `vault`: a name (case-insensitive) or a full path. When omitted, the default vault is used (HTTP: the vault currently open in the app; CLI: `--vault`). Vaults with the same name must be addressed by path.
+- Over HTTP, the open vault uses the app's warm index; other vaults load their own index on demand (at most 3 at once, released LRU). QMD reuses that vault's existing index and does not generate embeddings at that point.
+- The write switches apply to all vaults. `ingest_with_lumina` also accepts `vault`; Lumina ingests for all vaults share one serial queue.
 
-## 工具
+## Tools
 
-| 工具 | 默认 | 说明 |
-|------|------|------|
-| `list_vaults()` | ✅ | 可访问的 vault 列表及默认 vault |
-| `search_wiki(query, limit?)` | ✅ | QMD 就绪时走 hybrid（BM25 + 向量），否则 FlexSearch |
-| `get_article(filename)` | ✅ | 读取 `wiki/` 下页面（frontmatter + 正文）；`wiki/` 前缀可省略 |
-| `list_articles(prefix?, tag?, limit?)` | ✅ | 按目录前缀 / 标签过滤，最近修改优先 |
-| `get_backlinks(title)` | ✅ | 哪些页面 `[[链接]]` 到该标题 |
-| `ingest_source(path, mode?)` | ✅ | 提取 `raw/` 源文件内容（与 App 内同一实现，只读） |
-| `lumina_status()` | ✅ | vault、页面数、搜索引擎、QMD 状态、已启用能力 |
-| `write_wiki_page(path, content, overwrite?)` | 需 Allow write | 只能写 `wiki/**.md`；已存在需 `overwrite: true` |
-| `append_wiki_log(operation, title, details?)` | 需 Allow write | 按 `## [YYYY-MM-DD] op \| title` 格式追加到 `wiki/log.md` |
-| `ingest_with_lumina(path, note?)` | 需 Allow ingest（仅 HTTP） | 由 Lumina 自己的 LLM 完整执行 ingest；串行执行，发送进度通知，返回回复与变更文件 |
+| Tool | Default | Description |
+|------|---------|-------------|
+| `list_vaults()` | ✅ | Accessible vaults and the default vault |
+| `search_wiki(query, limit?)` | ✅ | Hybrid search (BM25 + vectors) when QMD is ready, otherwise FlexSearch |
+| `get_article(filename)` | ✅ | Read a page under `wiki/` (frontmatter + body); the `wiki/` prefix may be omitted |
+| `list_articles(prefix?, tag?, limit?)` | ✅ | Filter by folder prefix / tag, most recently modified first |
+| `get_backlinks(title)` | ✅ | Pages that `[[link]]` to the title |
+| `ingest_source(path, mode?)` | ✅ | Extract a `raw/` source file (same implementation as the app; read-only) |
+| `get_vault_instructions(task?, path?, question?)` | ✅ | The vault's `CLAUDE.md` (plus `INGEST.md` for `task=ingest`) mapped to the MCP tools — the same text as the matching prompt. For clients / skills without prompt support to read before writing |
+| `lumina_status()` | ✅ | Vault, page count, search engine, QMD state, enabled capabilities |
+| `write_wiki_page(path, content, overwrite?)` | Requires Allow write | Writes only `wiki/**.md`; existing pages need `overwrite: true` |
+| `append_wiki_log(operation, title, details?)` | Requires Allow write | Appends `## [YYYY-MM-DD] op \| title` to `wiki/log.md` |
+| `ingest_with_lumina(path, note?)` | Requires Allow ingest (HTTP only) | Lumina's own LLM performs the whole ingest; serialized, sends progress notifications, returns the reply and changed files |
 
-## Prompts（用调用方的模型生成答案）
+## Prompts (the caller's model writes the answer)
 
-MCP 没有让服务端“借用”调用方模型的通用方式（sampling 客户端支持很少），因此 Lumina 提供 Prompt 模板，由调用方的模型按步骤调用上面的工具：
+MCP has no generally supported way for a server to "borrow" the caller's model (few clients support sampling), so Lumina provides prompt templates that the caller's model follows, calling the tools above:
 
-- `answer_from_wiki(question)`：检索 → 阅读 → 带 `wiki/...` 引用作答；wiki 没覆盖时明确说明。
-- `ingest(path)`：把 vault 的 `CLAUDE.md` + `INGEST.md` 映射为 MCP 工具（`write_wiki_page` 代替 shell heredoc 等），让调用方模型完成 ingest。需要开启写入。
+- `answer_from_wiki(question)`: search → read → answer with `wiki/...` citations; says so when the wiki does not cover the question.
+- `ingest(path)`: maps the vault's `CLAUDE.md` + `INGEST.md` onto the MCP tools (`write_wiki_page` instead of shell heredocs, etc.) so the caller's model can perform the ingest. Requires writes to be enabled.
 
-在 Cursor 中可直接让 Agent “用 lumina 的 answer_from_wiki 回答 …”，或在支持 Prompt 的客户端里选择该 Prompt。
+In Cursor you can ask the agent to "answer … using lumina's answer_from_wiki", or pick the prompt in clients that support prompts.
 
-## 安全边界
+Clients without prompt support can call the `get_vault_instructions` tool instead (`task: "ingest"` by default, or `"answer"`), which returns the same text. For example, in a third-party skill:
 
-- 不暴露 `shell`、API key、聊天记录。
-- HTTP 只绑定 `127.0.0.1`，必须携带 bearer token（常量时间比较），并校验 Host / Origin 以防 DNS rebinding 与浏览器跨站调用。
-- 写入与 Lumina ingest 两个开关默认关闭；切换即时生效（无需重启服务）。Regenerate 会立即使旧 token 失效。
-- `write_wiki_page` 拒绝绝对路径、`..`、隐藏目录、非 `.md`、`raw/`，并按 realpath 校验，符号链接也无法逃出 `wiki/`。
-- `ingest_with_lumina` 只接受 `raw/` 下已存在的文件，附加说明最长 500 字符，在独立会话中串行执行（不影响 App 内对话），20 分钟超时。
+```markdown
+1. Call lumina's `get_vault_instructions` with `{ task: "ingest", path: "<raw/ file>", vault: "<vault>" }`.
+2. Follow the returned CLAUDE.md / INGEST.md exactly: `ingest_source` → `search_wiki` / `get_article` → `write_wiki_page` → update `wiki/index.md` → `append_wiki_log`.
+3. Pass the same `vault` to every call.
+```
 
-## 代码结构
+## Security boundaries
 
-| 文件 | 作用 |
-|------|------|
-| `src/mcp/server-factory.ts` | 注册工具 / Prompt（与传输无关） |
-| `src/mcp/vault-registry.ts` | `vault` 参数解析、按需加载与 LRU 缓存 |
-| `src/mcp/backend.ts` | `LuminaBackend`：vault 读取、搜索、Prompt 文本 |
-| `src/mcp/wiki-write.ts` | 受限写入与 log 格式 |
-| `src/mcp/cli.ts` | stdio 入口（不加载 electron） |
-| `src/core/vault-runtime.ts` / `headless-config.ts` | CLI 用的无 Electron vault 服务与配置解析 |
-| `src/main/services/mcp-http-service.ts` | 127.0.0.1 HTTP + 鉴权 |
-| `src/main/services/mcp-app-server.ts` | App 内生命周期与设置同步 |
-| `src/main/services/lumina-ingest-runner.ts` | `ingest_with_lumina` 执行器 |
+- Never exposes `shell`, the API key, or chat history.
+- HTTP binds to `127.0.0.1` only and requires a bearer token or `?token=` parameter (constant-time comparison), and validates Host / Origin against DNS rebinding and cross-site browser requests.
+- The write and Lumina-ingest switches are off by default and take effect immediately (no restart). Regenerate invalidates the old token immediately.
+- `write_wiki_page` rejects absolute paths, `..`, hidden directories, non-`.md` files and `raw/`, and checks the realpath so symlinks cannot escape `wiki/`.
+- `ingest_with_lumina` only accepts existing files under `raw/` and a note of at most 500 characters; it runs serialized in a separate session (the in-app chat is unaffected) with a 20-minute timeout.
+
+## Code layout
+
+| File | Purpose |
+|------|---------|
+| `src/mcp/server-factory.ts` | Registers tools / prompts (transport-agnostic) |
+| `src/mcp/vault-registry.ts` | `vault` argument resolution, on-demand loading and LRU cache |
+| `src/mcp/backend.ts` | `LuminaBackend`: vault reads, search, prompt text |
+| `src/mcp/wiki-write.ts` | Restricted writes and log format |
+| `src/mcp/cli.ts` | stdio entry point (does not load electron) |
+| `src/core/vault-runtime.ts` / `headless-config.ts` | Electron-free vault services and config parsing for the CLI |
+| `src/main/services/mcp-http-service.ts` | 127.0.0.1 HTTP + auth |
+| `src/main/services/mcp-app-server.ts` | In-app lifecycle and settings sync |
+| `src/main/services/lumina-ingest-runner.ts` | `ingest_with_lumina` runner |

@@ -61,8 +61,8 @@ export interface LuminaBackend {
   writePage(pagePath: string, content: string, overwrite: boolean): Promise<WriteWikiPageResult>;
   appendLog(entry: WikiLogEntry): Promise<{ path: string }>;
   status(caps: McpCapabilities): Promise<LuminaStatus>;
-  answerPrompt(question: string): Promise<string>;
-  ingestPrompt(sourcePath: string): Promise<string>;
+  answerPrompt(question?: string): Promise<string>;
+  ingestPrompt(sourcePath?: string): Promise<string>;
   ingestWithLumina?: (
     sourcePath: string,
     note: string | undefined,
@@ -106,6 +106,7 @@ async function readFirstNonEmpty(vault: string, candidates: readonly string[]): 
 
 const MCP_TOOL_MAPPING = [
   "## Tools available over MCP (these replace the in-app tools mentioned below)",
+  "- `get_vault_instructions(task, path?)` returns these instructions again (e.g. for another vault).",
   "- `search_wiki(query, limit?)` instead of `search_wiki` / `grep` over wiki/.",
   "- `get_article(filename)` to read a wiki page instead of `cat`.",
   "- `list_articles(prefix?, tag?)` instead of `ls wiki/...`.",
@@ -247,9 +248,7 @@ export function createVaultBackend(deps: VaultBackendDeps): LuminaBackend {
         "",
         "## The vault's operating manual (CLAUDE.md)",
         claude,
-        "",
-        "## Question",
-        question,
+        ...(question ? ["", "## Question", question] : []),
       ].join("\n");
     },
 
@@ -257,7 +256,9 @@ export function createVaultBackend(deps: VaultBackendDeps): LuminaBackend {
       const vault = requireVault(deps);
       const { claude, ingest } = await loadManual(vault);
       return [
-        `Ingest the source \`${sourcePath}\` into this Lumina wiki.`,
+        sourcePath
+          ? `Ingest the source \`${sourcePath}\` into this Lumina wiki.`
+          : "Ingest a source under raw/ into this Lumina wiki.",
         "Follow the vault's ingest workflow below exactly, using the MCP tools in place of shell.",
         "Start with `ingest_source`, read related pages with `search_wiki`/`get_article`, write pages with `write_wiki_page`, update wiki/index.md, and finish with `append_wiki_log`.",
         "",

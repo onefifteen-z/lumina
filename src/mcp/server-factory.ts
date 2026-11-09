@@ -53,7 +53,7 @@ export function createLuminaMcpServer(
     { name: LUMINA_MCP_SERVER_NAME, version },
     {
       instructions:
-        "Lumina is a personal LLM-maintained wiki. Use search_wiki then get_article to answer from it and cite wiki/ filenames. Several vaults may be available: call list_vaults and pass `vault` to target one (default: the open vault). The answer_from_wiki and ingest prompts contain the vault's own conventions.",
+        "Lumina is a personal LLM-maintained wiki. Use search_wiki then get_article to answer from it and cite wiki/ filenames. Several vaults may be available: call list_vaults and pass `vault` to target one (default: the open vault). Before writing any wiki page, call get_vault_instructions (task=ingest) for that vault and follow its CLAUDE.md / INGEST.md conventions; the answer_from_wiki and ingest prompts carry the same text.",
     },
   );
 
@@ -151,6 +151,27 @@ export function createLuminaMcpServer(
   );
 
   server.registerTool(
+    "get_vault_instructions",
+    {
+      title: "Get vault instructions",
+      description:
+        "Return the vault's operating manual (CLAUDE.md, plus INGEST.md for task=ingest) mapped to these MCP tools — the same text as the ingest / answer_from_wiki prompts. Call it before write_wiki_page and follow it exactly.",
+      inputSchema: z.object({
+        task: z.enum(["ingest", "answer"]).optional().describe("Default: ingest."),
+        path: z.string().optional().describe("raw/ source being ingested (task=ingest)."),
+        question: z.string().optional().describe("Question being answered (task=answer)."),
+        vault: VAULT_ARG,
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    ({ task, path, question, vault }) =>
+      withVault(vault, async (b, info) => {
+        const text = task === "answer" ? await b.answerPrompt(question) : await b.ingestPrompt(path);
+        return { content: [{ type: "text", text: text + vaultHint(info) }] };
+      }),
+  );
+
+  server.registerTool(
     "lumina_status",
     {
       title: "Lumina status",
@@ -169,7 +190,7 @@ export function createLuminaMcpServer(
       {
         title: "Write wiki page",
         description:
-          "Create or replace a markdown page under wiki/ (e.g. wiki/sources/foo.md). Fails if the page exists unless overwrite is true. raw/ is read-only.",
+          "Create or replace a markdown page under wiki/ (e.g. wiki/sources/foo.md). Fails if the page exists unless overwrite is true. raw/ is read-only. Call get_vault_instructions first and follow the vault's page conventions.",
         inputSchema: z.object({
           path: z.string().min(1),
           content: z.string(),

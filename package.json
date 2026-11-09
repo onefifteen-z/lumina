@@ -135,5 +135,6 @@
       "!**/*.map"
     ],
     "logLevel": "quiet"
-  }
+  },
+  "license": "Apache-2.0"
 }

@@ -16,7 +16,7 @@
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-D4731A)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-D4731A)](LICENSE)
 
 </div>
 
@@ -175,4 +175,4 @@ loop, code conventions, IPC/preload boundaries, and the test expectations.
 
 ## 📄 License
 
-MIT
+Licensed under the [Apache License, Version 2.0](LICENSE).

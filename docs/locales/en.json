@@ -102,7 +102,7 @@
   "devTitle": "Clone, install, run",
   "devFootnoteHtml": "End users: use the <a href=\"https://mckinsey.box.com/s/9q1pxbfehje4q17shlrmpyef0vr0jtzh\" target=\"_blank\" rel=\"noopener noreferrer\">Box download</a> above. Developers: first launch picks a vault folder; add your model under <strong>Settings</strong>. Full docs in the <a href=\"https://github.com/McK-Playground/prj-lumina/blob/main/README.md\" target=\"_blank\" rel=\"noopener noreferrer\">README</a>.",
   "macInstallNoteHtml": "<p><strong>macOS (private beta).</strong> The distributed app is not Apple-notarized yet. After installing <code>Lumina.app</code> to <code>/Applications</code>, run once in Terminal:</p><div class=\"pre-block\"><pre>xattr -dr com.apple.quarantine /Applications/Lumina.app</pre></div><p>Then open Lumina from Finder.</p>",
-  "footTagline": "MIT License · crafted for focused minds",
+  "footTagline": "Apache 2.0 License · crafted for focused minds",
   "footDl": "Download",
   "footGuide": "User guide",
   "footGh": "GitHub",
